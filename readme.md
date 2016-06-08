@@ -8,4 +8,8 @@
   - electron and React
   - text editor
   - stop watch
+  - watchify
   - terminal emulator
+    - spawn
+    - stdio
+    - data event
