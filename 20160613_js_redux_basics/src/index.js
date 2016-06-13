@@ -6,10 +6,11 @@ import todoApp from './reducers'
 import App from './components/App.js'
 
 let store = createStore(todoApp)
-// import { addTodo } from './actions'
+// import { addTodo, toggleTodo, setVisibilityFilter } from './actions'
 // store.dispatch(addTodo('Hello React!'))
 // store.dispatch(addTodo('Hello Redux!'))
 // store.dispatch(toggleTodo(0))
+// store.dispatch(setVisibilityFilter('SHOW_ALL'))
 
 render(
   <Provider store={store}>
