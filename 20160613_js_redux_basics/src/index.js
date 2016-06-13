@@ -9,6 +9,7 @@ let store = createStore(todoApp)
 // import { addTodo } from './actions'
 // store.dispatch(addTodo('Hello React!'))
 // store.dispatch(addTodo('Hello Redux!'))
+// store.dispatch(toggleTodo(0))
 
 render(
   <Provider store={store}>
