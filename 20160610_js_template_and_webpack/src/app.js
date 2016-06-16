@@ -1,7 +1,9 @@
-console.log("Hello, Template!")
+import ejs from 'ejs'
+let fn = ejs.compile('Hello! <%= a %>')
+let html = fn({a:"World."});
+console.log(html)
 
-const fs = require('fs');
-const ejs = require('ejs');
-const templateString = fs.readFileSync('src/template.ejs', 'utf-8');
-html = ejs.render(templateString, {people: ['geddy', 'neil', 'alex']});
+import pug from 'pug'
+fn = pug.compile('="Hello! "+a')
+html = fn({a:"World."});
 console.log(html)
