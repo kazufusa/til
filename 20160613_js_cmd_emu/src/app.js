@@ -4,8 +4,15 @@ import React from 'react'
 import ReactDOM from 'react-dom'
 import * as child_process from 'child_process'
 
+import * as fs from 'fs'
+import ejs from 'ejs'
+let fn = ejs.compile('Hello! <%= a %>')
+let html = fn({a:"World."});
+console.log(html)
+
 // reducer
 const counter = (state={v: 0, text: ""}, action) => {
+
   switch (action.type) {
     case 'INCREMENT':
       console.log(state)
