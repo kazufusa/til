@@ -16,3 +16,4 @@
     - data event
   - ESLint
     - http://d.hatena.ne.jp/tomoya/20160403/1459665374
+  - template and webpack and es6
