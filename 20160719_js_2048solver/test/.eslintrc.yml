@@ -1,0 +1,6 @@
+env:
+  mocha: true
+extends: airbnb
+rules:
+  semi: 0
+  new-cap: ["error", { capIsNew: false }]
