@@ -1,1 +1,1 @@
-# 2048 Solver
+# MonteCarlo2048

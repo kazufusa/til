@@ -1,7 +1,7 @@
 import * as assert from 'assert'
-import { Board, LEFT, RIGHT, UP, DOWN } from '../src/board.js'
+import { Board, LEFT, RIGHT, UP, DOWN } from '../lib/index.js'
 
-describe('board', () => {
+describe('Board', () => {
   // 0 2 2
   // 2 2 4
   // 4 4 4
@@ -40,7 +40,7 @@ describe('board', () => {
   })
 
   describe('#add', () => {
-    it('should change one of zero cells to 2/4 cell', () => {
+    it('should change the value of one of the zero cells to 2 or 4', () => {
       let board = setup()
       assert.deepStrictEqual(board.array[0][0], 0)
       board.add()
@@ -52,8 +52,9 @@ describe('board', () => {
       assert.notDeepStrictEqual(board.array[1][1], 0)
     })
 
-    it('should be overed when there are no zero cells', () => {
+    it('should set board is overed when there are no zero cells', () => {
       const board = new Board([[0, 0, 0], [0, 0, 0], [0, 0, 0]])
+      assert.deepStrictEqual(board.isOvered, false)
       for (let i = 0; i < 9; i++) board.add()
       assert.deepStrictEqual(board.isOvered, false)
       board.add()
@@ -62,25 +63,25 @@ describe('board', () => {
   })
 
   describe('#move', () => {
-    it('should be enable to left move', () => {
+    it('should take a move to left', () => {
       const board = setup()
       board.move(LEFT)
       assert.deepStrictEqual(board.array, left)
     })
 
-    it('should be enable to right move', () => {
+    it('should take a move to right', () => {
       const board = setup()
       board.move(RIGHT)
       assert.deepStrictEqual(board.array, right)
     })
 
-    it('should be enable to up move', () => {
+    it('should take a move to up', () => {
       const board = setup()
       board.move(UP)
       assert.deepStrictEqual(board.array, up)
     })
 
-    it('should be enable to down move', () => {
+    it('should take a move to down', () => {
       const board = setup()
       board.move(DOWN)
       assert.deepStrictEqual(board.array, down)
@@ -88,22 +89,10 @@ describe('board', () => {
   })
 
   describe('#predict', () => {
-    it('returns best move', () => {
+    it('should return a direction(0 to 3)', () => {
       const board = new Board([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
       board.add()
-      for (let i = 0; i < 2000; i++) {
-        console.log(board.print())
-        console.log()
-        board.move(board.predict())
-        console.log(board.print())
-        console.log()
-        if (board.isCleared) break
-        if (board.isOvered) break
-        board.add()
-      }
-      console.log(board.print())
-      console.log(board.sum(), board.isOvered, board.isCleared)
-      console.log(board.predict())
+      assert.ok([0, 1, 2, 3].includes(board.predict()))
     })
   })
 })

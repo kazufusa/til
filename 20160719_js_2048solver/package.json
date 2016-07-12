@@ -1,16 +1,16 @@
 {
-  "name": "2048Solver",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "MonteCalro2048",
+  "version": "0.0.1",
+  "description": "2048 solver using MonteCalro sampling",
+  "main": "lib/index.js",
   "directories": {
     "doc": "doc"
   },
   "scripts": {
-    "test": "mocha --compilers js:babel-register --recursive --timeout 5000",
+    "test": "mocha --compilers js:babel-register --recursive",
     "test:watch": "npm test -- --watch",
-    "build": "rm -rf dist/*.js && webpack",
-    "build:watch": "rm -rf dist/*.js && webpack -w"
+    "build": "rm -rf lib/*.js && webpack",
+    "build:watch": "rm -rf lib/*.js && webpack -w"
   },
   "keywords": [],
   "author": "",

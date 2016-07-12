@@ -1,13 +1,11 @@
-var webpack = require('webpack')
-var ExternalsPlugin = webpack.ExternalsPlugin
-
-module.exports={
-  entry: ["./src/index.js"],
+module.exports = {
+  entry: ['./src/index.js'],
   output: {
-    path: __dirname+"/dist",
-    filename: "bundle.js"
+    path: `${__dirname}/lib`,
+    filename: 'index.js',
+    library: 'MonteCalro2048',
+    libraryTarget: 'umd',
   },
-  target: 'electron-renderer',
   module: {
     loaders: [
       {
@@ -15,9 +13,9 @@ module.exports={
         exclude: /node_modules/,
         loader: 'babel-loader',
         query: {
-          presets: ['es2015']
-        }
-      }
-    ]
-  }
+          presets: ['es2015'],
+        },
+      },
+    ],
+  },
 }
