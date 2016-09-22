@@ -1,27 +1,26 @@
-var co = require('co')
-var client = require('cheerio-httpcli')
-var google = 'http://www.google.com/search'
+const co = require('co')
+const client = require('cheerio-httpcli')
 
-global.targets = [google]
+const yahoo = 'http://www.yahoo.co.jp'
+const targets = [yahoo]
 
-client.fetch(global.targets.pop())
-.then(function(result){
-  console.log(result.$('title').text())
-  global.targets.push(google)
-  return client.fetch(global.targets.pop())
+function scrape(url){
+  return client.fetch(url)
+  .then(function(result){
+    console.log(result.$('title').text())
+    targets.push(yahoo)
+  })
+}
+
+client.fetch(yahoo)
+.then(function(result){console.log('# preprocess')})
+.then(function(){
+  return co(function *(){
+    let n = 0
+    while (targets.length > 0 && n < 10) {
+      yield scrape(targets.pop())
+      n ++
+    }
+  })
 })
-.then(function(result){
-  console.log(result.$('title').text())
-  global.targets.push(google)
-  return client.fetch(global.targets.pop())
-})
-.then(function(result){
-  console.log(result.$('title').text())
-  global.targets.push(google)
-  return client.fetch(global.targets.pop())
-})
-.then(function(result){
-  console.log(result.$('title').text())
-  global.targets.push(google)
-  return client.fetch(global.targets.pop())
-})
+.then(function(result){console.log('# postprocess')})
