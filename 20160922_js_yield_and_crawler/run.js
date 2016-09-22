@@ -3,6 +3,7 @@ const client = require('cheerio-httpcli')
 
 const folders = ['https://github.com/ktty1220/cheerio-httpcli']
 const files = []
+const parallel = 1
 
 function scrapeFolder(url){
   return client.fetch(url)
@@ -34,18 +35,22 @@ function scrapeFile(url){
   })
 })()
 .then(function(){
-  return co(function *(){
-    while (folders.length > 0) {
-      yield scrapeFolder(folders.pop())
-    }
-  })
+  return Promise.all(Array(parallel, null).map(function(){
+    return co(function *(){
+      while (folders.length > 0) {
+        yield scrapeFolder(folders.pop())
+      }
+    })
+  }))
 })
 .then(function(result){console.log('# scrape files')})
 .then(function(){
-  return co(function *(){
-    while (files.length > 0) {
-      yield scrapeFile(files.pop())
-    }
-  })
+  return Promise.all(Array(parallel, null).map(function(){
+    return co(function *(){
+      while (files.length > 0) {
+        yield scrapeFile(files.pop())
+      }
+    })
+  }))
 })
 .then(function(result){console.log('# process end')})
