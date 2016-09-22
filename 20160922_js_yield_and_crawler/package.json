@@ -1,0 +1,16 @@
+{
+  "name": "20160922_js_yield_and_crawler",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "cheerio-httpcli": "^0.6.9",
+    "co": "^4.6.0"
+  },
+  "scripts": {
+    "crawl": "node run.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
