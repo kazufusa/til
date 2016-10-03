@@ -28,7 +28,7 @@ scrapeFile = (url) => {
   .then((result) => {
     console.log(result.$.documentInfo().url)
     // do something
-    global.files.push(result.$.documentInfo().url)
+    global.files.push({url: result.$.documentInfo().url})
   })
 }
 
