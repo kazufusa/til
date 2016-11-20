@@ -1,0 +1,10 @@
+version: '2'
+services:
+  node1:
+    build: node
+    cpuset: '0'
+  node2:
+    build: node
+    cpuset: '1-3'
+  node3:
+    build: node
