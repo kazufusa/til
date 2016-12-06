@@ -1,0 +1,8 @@
+version: '2'
+services:
+  postgis:
+    build: postgis
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./postgis/:/usr/app"

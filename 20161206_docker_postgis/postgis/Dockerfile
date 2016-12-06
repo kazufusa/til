@@ -1,0 +1,7 @@
+FROM mdillon/postgis:latest
+
+ENV POSTGRES_USER postgres
+ENV POSTGRES_PASSWORD postgres
+
+WORKDIR /usr/app/N03-160101_GML
+EXPOSE 5432
