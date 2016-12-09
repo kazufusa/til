@@ -6,9 +6,7 @@
 2. exec below code
 
 ```
-$ docker-compose build && docker-compose up -d
-$ docker-compose exec postgis bash -c "shp2pgsql -s 4612 -D -i -I -W cp932 N03-16_160101.shp japan > japan.sql"
-$ docker-compose exec postgis bash -c "psql -h localhost -U postgres -f japan.sql"
+$ docker-compose build && docker-compose up
 ```
 
 ## test
