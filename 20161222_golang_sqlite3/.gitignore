@@ -1,0 +1,3 @@
+*.csv
+exec_sql
+foo.db
