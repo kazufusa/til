@@ -2,7 +2,7 @@ program read
   use iso_fortran_env, wp => real64
 
   implicit none
-  character(len=1000)  :: line, charval
+  character(len=100)   :: line, charval
   integer              :: intval, istat, iunit
   real(kind=kind(0D0)) :: realval
   namelist /param/ charval, intval, realval
@@ -33,4 +33,5 @@ program read
   endif
   close(iunit)
 
+  write(*, param)
 end program read
