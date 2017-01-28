@@ -1,0 +1,27 @@
+--- docker-compose.yml	2017-01-28 00:42:18.000000000 +0900
++++ docker-compose.yml	2017-01-28 00:43:30.000000000 +0900
+@@ -7,13 +7,12 @@
+     command:
+     - --loglevel warning
+     volumes:
+-    - /srv/docker/gitlab/redis:/var/lib/redis:Z
+-
++    - ./docker/gitlab/redis:/var/lib/redis:Z
+   postgresql:
+     restart: always
+     image: sameersbn/postgresql:9.6-1
+     volumes:
+-    - /srv/docker/gitlab/postgresql:/var/lib/postgresql:Z
++    - ./docker/gitlab/postgresql:/var/lib/postgresql:Z
+     environment:
+     - DB_USER=gitlab
+     - DB_PASS=password
+@@ -30,7 +29,7 @@
+     - "10080:80"
+     - "10022:22"
+     volumes:
+-    - /srv/docker/gitlab/gitlab:/home/git/data:Z
++    - ./docker/gitlab/gitlab:/home/git/data:Z
+     environment:
+     - DEBUG=false
+ 
