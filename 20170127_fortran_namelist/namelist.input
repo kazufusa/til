@@ -1,7 +1,40 @@
 &param
-charval   =   "Hello World"
-intval    =   1
-realval   =   130.1
+p%charval   =   "Hello World"
+p%intval    =   1
+p%realval   =   130.1
 /
-
+&delta_q
+maximum = 1.
+minimum = 0.
+constant = 190.
+/
+&f_k
+maximum = 1.
+minimum = 0.
+constant = 190.
+/
+&x
+maximum = 1.
+minimum = 0.
+constant = 190.
+/
+&y
+maximum = 1.
+minimum = 0.
+constant = 190.
+/
+&z
+maximum = 1.
+minimum = 0.
+constant = 190.
+/
+&sigma
+maximum = 1.
+minimum = 0.
+constant = 190.
+/
+&q
+P = 120
+upper_limit =120.
+/
 

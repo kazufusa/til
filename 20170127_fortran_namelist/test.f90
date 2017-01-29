@@ -4,9 +4,18 @@ program read
   implicit none
   character(len=100)   :: line, charval
   integer              :: intval, istat, iunit
-  real(kind=kind(0D0)) :: realval
-  namelist /param/ charval, intval, realval
+  real(kind=kind(0D0)) :: realval, qmax
+  type p_type
+    character(len=100)   :: charval
+    integer              :: intval
+    real(kind=kind(0D0)) :: realval
+  end type
+  type(p_type) :: p
+  ! namelist /param/ charval, intval, realval
+  namelist /param/ p
 
+  p%charval = ""
+  p%realval = 0/realval
   open(newunit=iunit, file='namelist.input', status='old')
   read(iunit, nml=param, iostat=istat)
   if (istat /= 0) then
@@ -14,9 +23,9 @@ program read
     read(iunit, fmt='(A)') line
     write(error_unit,'(A)') 'Invalid line in namelist: '//trim(line)
   else
-    print *, trim(charval)
-    print *, intval
-    print *, realval
+    print *, trim(p%charval)
+    print *, p%intval
+    print *, p%realval
   endif
   close(iunit)
 
@@ -27,9 +36,9 @@ program read
     read(iunit, fmt='(A)') line
     write(error_unit,'(A)') 'Invalid line in namelist: '//trim(line)
   else
-    print *, trim(charval)
-    print *, intval
-    print *, realval
+    print *, trim(p%charval)
+    print *, p%intval
+    print *, p%realval
   endif
   close(iunit)
 
