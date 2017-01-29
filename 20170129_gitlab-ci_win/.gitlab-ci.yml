@@ -1,0 +1,6 @@
+exam:
+  script:
+    - 'call "C:\Program Files (x86)\IntelSWTools\compilers_and_libraries_2017.1.143\windows\bin\ipsxe-comp-vars.bat" intel64 vs2015'
+    - powershell -NoProfile -C "cat test.vfproj | %% { $_ -replace 'test.f90','test2.f90' }" > test2.vfproj
+    - devenv test.vfproj /Build Release^|x64 2>&1 | nkf -Sw
+    - devenv test2.vfproj /Build Release^|x64 2>&1 | nkf -Sw
