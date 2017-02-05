@@ -1,0 +1,10 @@
+version: '2'
+services:
+  master:
+    build: node
+  node1:
+    build: node
+  node2:
+    build: node
+  node3:
+    build: node
