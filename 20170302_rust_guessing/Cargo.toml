@@ -1,0 +1,8 @@
+[package]
+name = "20170302_rust_guessing"
+version = "0.1.0"
+authors = ["kazufusa"]
+
+[dependencies]
+
+rand="0.3.0"
