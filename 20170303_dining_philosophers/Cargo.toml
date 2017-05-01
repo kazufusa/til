@@ -1,0 +1,6 @@
+[package]
+name = "dining_philosohpers"
+version = "0.1.0"
+authors = ["ishibashi"]
+
+[dependencies]

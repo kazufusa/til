@@ -3,3 +3,8 @@
 *js*/**/bundle.js
 
 */.venv
+
+# Rust/Cargo
+*/target/
+Cargo.lock
+**/*.rs.bk
