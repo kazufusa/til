@@ -1,23 +1,30 @@
 library(rstan)
+library(dplyr)
 library(tidyr)
-load(file="result.rda")
+library(ggmcmc)
 
-# data <- data %>% gather(xtype, x, -c(ncluster_mean, sd_of_residual, ncluster_sd, nvars))
-# data <- data[which(data[, 'x'] != ''),]
-# # p <- ggplot(data, aes(x=x, y=sd_of_residual)) +
-# p <- ggplot(data, aes(x=reorder(x=x, X = sd_of_residual, FUN = min), y=sd_of_residual)) +
-#   geom_violin() +
-#   ggtitle('') +
-#   xlab("") + ylab("") +
-#   theme(title=element_text(size=18)) +
-#   theme(axis.text.x=element_text(size=14)) +
-#   theme(axis.text.y=element_text(size=14)) +
-#   theme(axis.title.x=element_text(size=18)) +
-#   theme(axis.title.y=element_text(size=18)) +
-#   theme(legend.title=element_text(colour="black",size=18)) +
-#   theme(legend.text=element_text(colour="black",size=18)) +
-#   theme(axis.text.x = element_text(angle=90, vjust=0.5)) +
-#   scale_y_continuous(limit=c(5,20),breaks=seq(0, 30, 1))
-# png(filename='', width=1000, height=600)
-# plot(p)
-# garbage <- dev.off()
+load(file="result.rda")
+ggmcmc(ggs(fit))
+
+actual_data <- read.delim("actual.txt", as.is=T, sep="\t")
+
+df <- rstan::extract(fit, pars="power")$power %>%
+  data.frame %>%
+  setNames(actual_data$name) %>%
+  gather(name, power) %>%
+  inner_join(actual_data, name="name")
+
+range <- df %>%
+  group_by(name) %>%
+  summarise(actual_power=mean(actual_power),
+            median=median(power),
+            lower_95=sort(power)[length(power)*0.025],
+            upper_95=sort(power)[length(power)*0.975])
+
+p <- ggplot(df, aes(factor(actual_power), power)) +
+  geom_violin() +
+  geom_pointrange(range, mapping=aes(x=factor(actual_power), y=median, ymin=lower_95, ymax=upper_95))
+
+png(filename='result.png', width=600, height=600)
+plot(p)
+garbage <- dev.off()
