@@ -1,4 +1,4 @@
-options(width=100)
+options(width=200)
 library(rstan)
 library(dplyr)
 
@@ -38,11 +38,7 @@ data <- list(
 init <- function(...) {
   list(
     winner_performance = rep(1, N_game),
-    loser_performance  = rep(0, N_game),
-    skill              = matrix(0, nrow=N_kishi, ncol=N_year),
-    r_skill            = matrix(0, nrow=N_kishi, ncol=N_year-1),
-    initial_skill      = rep(0, N_kishi),
-    beta               = rep(0, N_kishi)
+    loser_performance  = rep(0, N_game)
   )
 }
 
@@ -64,7 +60,7 @@ parameters {
   real initial_skill[N_kishi];
   real beta[N_kishi];
   real<lower=0> s_k[N_kishi];
-  real<lower=0> mu_s_k;
+  real mu_s_k;
   real<lower=0> s[3];
 }
 
@@ -96,7 +92,7 @@ model {
 
     for (y in 1:(N_year-1))
       r_skill[k,y] ~ normal(0, s[2]);
-    
+
     s_k[k] ~ lognormal(mu_s_k, s[3]);
   }
   mu_s_k ~ normal(0, 100);
@@ -109,15 +105,13 @@ chains <- 3
 fit <- stan(model_code = model,
             data       = data,
             init       = lapply(1:chains, init),
-            iter       = 2000,
-            warmup     = 1000,
-            thin       = 5,
+            iter       = 153000,
+            warmup     = 3000,
+            thin       = 100,
             chains     = chains,
-            cores      = chains
+            cores      = chains,
+            pars       = c('skill', 's_k')
             )
 
 print(fit)
-save(fit, file="result.rda")
-
-library(ggmcmc)
-ggmcmc(ggs(fit))
+save(fit, file="run.rda")
