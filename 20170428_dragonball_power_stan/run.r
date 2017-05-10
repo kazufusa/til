@@ -66,4 +66,4 @@ print(fit)
 save(fit, file="result.rda")
 
 library(ggmcmc)
-ggmcmc(ggs(fit))
+ggmcmc(ggs(fit), plot=c("histogram", "density", "traceplot", "running", "compare_partial", "autocorrelation", "Rhat", "geweke"))
