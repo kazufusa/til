@@ -112,6 +112,7 @@ if __name__ == '__main__':
             nl = nl + i
 
     l = nl
+    l.replace("\n%matplotlib inline", "")
 
     latex = LatexText()
     code = CodeBlock()
