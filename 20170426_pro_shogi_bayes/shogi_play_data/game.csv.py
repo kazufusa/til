@@ -3,6 +3,7 @@ import urllib.request
 import re
 from itertools import chain
 from bs4 import BeautifulSoup
+import progressbar
 
 KISHI_URL = "http://kishi.a.la9.jp/{year}/{id}.html"
 KONKI_URL = "http://kishi.a.la9.jp/konki/{id}.html"
@@ -12,12 +13,19 @@ def kishi_years(id):
     """
     >>> kishi_years(1244)
     ['2015', '2014', '2013', '2012', '2011', '2010', '2009', '2008', '2007', '2006', '2005', '2004', '2003', '2002']
+    >>> kishi_years(1307)
+    ['2017', '2016']
     """
     soup = BeautifulSoup(
             urllib.request.urlopen(KONKI_URL.format(id=id)).read().decode('cp932'),
             "html.parser"
             )
-    return list(filter(lambda x: YEAR_MATCHER.match(x), map(lambda x:x.string, soup.find_all("a"))))
+    years = list(filter(lambda x: YEAR_MATCHER.match(x), map(lambda x:x.string, soup.find_all("a"))))
+
+    if len(soup.find_all("table")) == 3:
+        years = [str(int(max(years))+1)] + years
+
+    return years
 
 def kishi_games_in_year(id, year):
     """
@@ -72,15 +80,15 @@ def parse_game(id, year, game):
     else:
         players = ","
 
-    tournament = game.find_all("td")[5].text.strip()
+    tournament = game.find_all("td")[-2].text.strip()
 
     return("{},{},{},{}".format(date, players, winner_loser, tournament))
 
 def main(kishi_list):
+    bar = progressbar.ProgressBar()
     with open("game.csv", "w") as f:
         f.write("year,month,day,first,second,winner,loser,tournament\n")
-        for kishi in kishi_list:
-            print(kishi)
+        for kishi in bar(kishi_list):
             for game in kishi_games(kishi):
                 f.write(game + "\n")
 
