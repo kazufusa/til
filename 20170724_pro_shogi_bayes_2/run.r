@@ -141,10 +141,24 @@ if (all(smr[,'Rhat'] <=1.1)) {
 }
 print(smr[c('a', 's'),])
 
+narows <- sapply(1:nrow(data$Career), function(i){
+  debut <- data$Career[i,1]
+  retire <- data$Career[i,2]
+  pre_debut <- c()
+  post_retire <- c()
+  if (debut != 1) pre_debut <- 1:(debut-1)
+  if (retire != N_year) post_retire <- (retire+1):N_year
+  remove <- c(pre_debut, post_retire)
+  sapply(remove, function(x){
+    rowname <- sprintf("skill[%d,%d]", i, x)
+  })
+})
+narows <- unlist(narows)
 skill <- smr %>%
   data.frame(check.names=F) %>%
   tibble::rownames_to_column() %>%
   filter(grepl("skill", rowname)) %>%
+  filter(!rowname %in% narows) %>%
   mutate(year=as.integer(str_match(rowname, "([0-9]+),([0-9]+)")[,3])+MIN_year-1) %>%
   mutate(kishi_id=as.integer(str_match(rowname, "([0-9]+),([0-9]+)")[,2])) %>%
   inner_join(target_kishi, by=c("kishi_id"="sid")) %>%
