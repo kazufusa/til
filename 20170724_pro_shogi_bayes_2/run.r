@@ -6,7 +6,6 @@ suppressMessages({
   options(mc.cores = parallel::detectCores())
   library(dplyr)
   library(tidyr)
-  library(stringr)
 })
 
 game <- read.csv("../20170426_pro_shogi_bayes/shogi_play_data/game.uniq.csv", as.is=T)
@@ -131,60 +130,11 @@ fit <- stan(
   thin       = thin,
   chains     = chains
 )
-save(fit, file="fit.rda")
-load("fit.rda")
+
+save(fit, file="fit.2017.07.30.rda")
 smr <- summary(fit, pars=c('skill', 'a', 's'))$summary
 if (all(smr[,'Rhat'] <=1.1)) {
   cat("[!] All Rhats of skill/a/s <=1.1.\n\n")
 } else {
   print(smr[smr[,'Rhat'] >= 1.1,])
 }
-print(smr[c('a', 's'),])
-
-narows <- sapply(1:nrow(data$Career), function(i){
-  debut <- data$Career[i,1]
-  retire <- data$Career[i,2]
-  pre_debut <- c()
-  post_retire <- c()
-  if (debut != 1) pre_debut <- 1:(debut-1)
-  if (retire != N_year) post_retire <- (retire+1):N_year
-  remove <- c(pre_debut, post_retire)
-  sapply(remove, function(x){
-    rowname <- sprintf("skill[%d,%d]", i, x)
-  })
-})
-narows <- unlist(narows)
-skill <- smr %>%
-  data.frame(check.names=F) %>%
-  tibble::rownames_to_column() %>%
-  filter(grepl("skill", rowname)) %>%
-  filter(!rowname %in% narows) %>%
-  mutate(year=as.integer(str_match(rowname, "([0-9]+),([0-9]+)")[,3])+MIN_year-1) %>%
-  mutate(kishi_id=as.integer(str_match(rowname, "([0-9]+),([0-9]+)")[,2])) %>%
-  inner_join(target_kishi, by=c("kishi_id"="sid")) %>%
-  select(-kishi_id, -rowname, id, name)
-skill <- skill[, c(12,13,11,1:10)]
-write.table(skill, "skill_rstan.csv", sep=",", row.names=F)
-
-# ret <- target_kishi[, c('sid', 'id', 'name')]
-# for (year in 1:N_year){
-#   stats <- sapply(c('mean'), function(column){
-#     sapply(target_kishi[, 'sid'], function(i){
-#       if (!year %in% data$Career[i,1]:data$Career[i,2]) return(NA)
-#       smr[sprintf("skill[%d,%d]", i, year), column]
-#     })
-#   })
-#   colnames(stats) <- sapply(colnames(stats), function(x){
-#     sprintf("%s.%d", x, year+MIN_year-1)
-#   })
-#   ret <- cbind(ret, stats)
-# }
-# print(ret[order(ret[, ncol(ret)]), ])
-
-# waic <- function(loglik) {
-#   training_error <- - mean(log(colMeans(exp(loglik))))
-#   functional_variance_div_N <- mean(colMeans(loglik^2) - colMeans(loglik)^2)
-#   waic <- training_error + functional_variance_div_N
-#   return(waic)
-# }
-# cat(sprintf("\n[!] WAIC=%f\n", waic(rstan::extract(fit)$log_p)))

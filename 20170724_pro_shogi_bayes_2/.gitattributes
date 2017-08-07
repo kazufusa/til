@@ -1,0 +1,12 @@
+a_s.2017.07.30.csv filter=lfs diff=lfs merge=lfs -text
+amahiko.skill.2017.07.30.csv filter=lfs diff=lfs merge=lfs -text
+rating.2017.07.30.csv filter=lfs diff=lfs merge=lfs -text
+skill.2017.07.30.csv filter=lfs diff=lfs merge=lfs -text
+top10.png filter=lfs diff=lfs merge=lfs -text
+all_skill.png filter=lfs diff=lfs merge=lfs -text
+rating-skill.png filter=lfs diff=lfs merge=lfs -text
+rating_function.png filter=lfs diff=lfs merge=lfs -text
+sato_amahiko.png filter=lfs diff=lfs merge=lfs -text
+skill_density.png filter=lfs diff=lfs merge=lfs -text
+skill_peak_age.png filter=lfs diff=lfs merge=lfs -text
+standing_peak_age.png filter=lfs diff=lfs merge=lfs -text
