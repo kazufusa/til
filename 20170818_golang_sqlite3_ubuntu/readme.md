@@ -1,3 +1,4 @@
+# Build go-sqlite3 on plain Ubuntu
 
 ```
 $ sh build.sh
