@@ -80,12 +80,30 @@ rgbformulae <- function(n, alpha=1, rf=7, gf=5, bf=15){
 # 13: sin(180x)
 # 10: cos(90x)
 
-heat.colors
+rgbformulae33 <- function(x){
+  max(0, min(1, abs(2*x - 0.5)))
+}
+rgbformulae13 <- function(x){
+  max(0, min(1, sin(pi*x)))
+}
+rgbformulae10 <- function(x){
+  max(0, min(1, cos(0.5*pi*x)))
+}
+
+rgbformulae <- function(n){
+  sapply(seq(0, 1, 1/(n-1)), function(x){
+    rgb(
+      rgbformulae33(x),
+      rgbformulae13(x),
+      rgbformulae10(x)
+    )
+  })
+}
 
 png(filename="geom.png")
 ggplot(df, aes(x=x, y=y, fill=z)) + 
   geom_tile() +
   coord_fixed() +
-  scale_fill_gradientn(colours=heat.colors(100))
+  scale_fill_gradientn(colours=rgbformulae(1000), limits=c(0, 40), name="") +
+  guides(fill = guide_colorbar(barheight=25), ticks=T)
 null <- dev.off()
-

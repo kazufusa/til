@@ -29,3 +29,6 @@ $ gnuplot -e "show palette rgbformulae"
 	  * negative numbers mean inverted=negative colour component
 	  * thus the ranges in `set pm3d rgbformulae' are -36..36
 ```
+
+x = [0, 1]
+R/G/B = function(x) * 255
