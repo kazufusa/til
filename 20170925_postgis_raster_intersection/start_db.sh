@@ -23,7 +23,6 @@ docker run \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -v "$PWD":/usr/src/myapp \
-  -v /media/sf_workssd/LC:/usr/src/LC \
   -w /usr/src/myapp \
   --name postgis_calcgreen \
   -p 5432:5432 \

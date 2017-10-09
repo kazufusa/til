@@ -9,6 +9,9 @@ export PGDATABASE=postgres
 export PGUSER=postgres
 export PGPASSWORD=postgres
 
+psql -c "create extension if not exists postgis;"
+psql -c "\dx;"
+
 if ! psql -c "\dt;" | grep -q japan_ks; then
   TASK=LOADING_JAPAN_KS
   echo "LOG:" `date '+%Y-%m-%dT%H:%M:%S'` START_$TASK
@@ -54,8 +57,7 @@ if ! psql -c "\dt;" | grep -q "alos_rast"; then
   TASK=LOADING_ALOS_RASTERS
   echo "LOG:" `date '+%Y-%m-%dT%H:%M:%S'` START_$TASK
 
-  ALOS_GEOTIF=/usr/src/LC/ver1609_LC_GeoTiff_500m.tif
-  ALOS_GEOTIF=/usr/src/LC/LC*.tif
+  ALOS_GEOTIF=./geotiff/LC*.tif
   docker exec -i $PGCONTAINER bash <<EOF | psql > /dev/null
   raster2pgsql -I -C -s 4326 -N 0 -t 100x100 \
     $ALOS_GEOTIF \
@@ -86,25 +88,6 @@ EOF
 EOS
   echo "LOG:" `date '+%Y-%m-%dT%H:%M:%S'` FINISH_$TASK
 fi
-
-# # 何故か失敗
-# cat <<EOS | psql
-# select
-#   alos_rast.rid as rid
-#   , (ST_Intersection(japan_ks.geom, alos_rast.rast)).val
-#   , (ST_Intersection(japan_ks.geom, alos_rast.rast)).geom
-# from
-#   (select
-#       *
-#     from
-#       japan_ks
-#     where city_name = '東久留米市'
-#   ) as japan_ks
-#   , (select * from alos_rast)
-# where
-#   ST_Intersects(japan_ks.geom, alos_rast.rast)
-# ;
-# EOS
 
 if ! psql -c "\dt;" | grep -q alos_geo; then
   TASK=CONVERTING_ALOS_RASTERS_TO_GEOMETRIES
@@ -152,33 +135,20 @@ EOS
   echo "LOG:" `date '+%Y-%m-%dT%H:%M:%S'` FINISH_$TASK
 fi
 
-# cat <<EOS | psql
-# select
-#   ratios.city_code as city_code
-#   , min(ratios.city_name) as city_name
-#   , sum(ratios.ratio) as green_ratio
-# from
-#   (select
-#     japan_alos.city_code
-#     , min(japan_alos.city_name) as city_name
-#     , min(alos_code_name.name) as alos_name
-#     , min(alos_code_name.code) as alos_code
-#     , sum(ST_Area(geography(japan_alos.geom))) / min(japan_ks.area) as ratio
-#   from
-#     japan_alos
-#     left join alos_code_name on (japan_alos.alos_code = alos_code_name.code)
-#     left join japan_ks on (japan_alos.city_code = japan_ks.city_code)
-#   where
-#     alos_code between 5 and 9
-#   group by
-#     japan_alos.city_code
-#     , japan_alos.alos_code
-#   order by
-#     japan_alos.city_code
-#   ) as ratios
-# group by
-#   ratios.city_code
-# order by
-#   green_ratio
-# ;
-# EOS
+cat <<EOS | psql
+select
+  japan_alos.city_code
+  , min(japan_alos.city_name) as city_name
+  , 100 * sum(ST_Area(geography(japan_alos.geom))) / min(japan_ks.area) as green_ratio
+from
+  japan_alos
+  left join alos_code_name on (japan_alos.alos_code = alos_code_name.code)
+  left join japan_ks on (japan_alos.city_code = japan_ks.city_code)
+where
+  alos_code between 5 and 9
+group by
+  japan_alos.city_code
+order by
+  green_ratio
+;
+EOS
