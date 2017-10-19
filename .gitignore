@@ -11,3 +11,4 @@ Cargo.lock
 
 *.pdf
 *.rda
+*.ipynb_checkpoints
