@@ -1,0 +1,5 @@
+CA/*
+server/svcert.crt
+server/svcert.pem
+server/svkey.pem
+server/svreq.pem
