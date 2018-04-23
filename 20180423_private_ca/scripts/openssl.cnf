@@ -120,7 +120,7 @@ x509_extensions	= v3_ca	# The extentions to add to the self signed cert
 # nombstr : PrintableString, T61String (no BMPStrings or UTF8Strings).
 # MASK:XXXX a literal mask value.
 # WARNING: ancient versions of Netscape crash on BMPStrings or UTF8Strings.
-string_mask = utf8only
+string_mask = nombstr
 
 # req_extensions = v3_req # The extensions to add to a certificate request
 

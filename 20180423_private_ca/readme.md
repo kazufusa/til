@@ -34,3 +34,20 @@ TEXT:        {"hello": "world"}
 ## Sample code to access mock server via ssl
 
 `scripts/access-test.py`
+
+## Tips
+
+### The difference of string_mask will cause error
+
+```
++ openssl ca -config ./scripts/openssl.cnf -keyfile ./demoCA/private/cakey.pem -cert ./demoCA/cacert.pem -in ./demoCA/repository/testuser/testuser-client.csr -out ./demoCA/repository/testuser/testuser-client.pem
+Using configuration from ./scripts/openssl.cnf
+Enter pass phrase for ./demoCA/private/cakey.pem:
+Check that the request matches the signature
+Signature ok
+The stateOrProvinceName field needed to be the same in the
+CA certificate (Tokyo) and the request (Tokyo)
+rake aborted!
+```
+
+You should change string_mask  in local openssl.cnf to `utf8only`.

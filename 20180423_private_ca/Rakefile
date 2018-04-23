@@ -39,3 +39,11 @@ task :test do
     python scripts/access-test.py
   EOS
 end
+
+desc "clean up"
+task :clean do
+  sh <<-EOS
+    rm -rf demoCA
+    rm -rf server/*.pm
+  EOS
+end

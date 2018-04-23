@@ -1,0 +1,61 @@
+    python scripts/access-test.py
+----------------------------------
+TARGET:      http://localhost:8080/
+STATUS_CODE: 200
+TEXT:        MockServer: Hello World!
+
+----------------------------------
+Traceback (most recent call last):
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/connectionpool.py", line 601, in urlopen
+    chunked=chunked)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/connectionpool.py", line 346, in _make_request
+    self._validate_conn(conn)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/connectionpool.py", line 850, in _validate_conn
+    conn.connect()
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/connection.py", line 326, in connect
+    ssl_context=context)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/util/ssl_.py", line 329, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/ssl.py", line 401, in wrap_socket
+    _context=self, _session=session)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/ssl.py", line 808, in __init__
+    self.do_handshake()
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/ssl.py", line 1061, in do_handshake
+    self._sslobj.do_handshake()
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/ssl.py", line 683, in do_handshake
+    self._sslobj.do_handshake()
+ssl.SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/requests/adapters.py", line 440, in send
+    timeout=timeout
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/connectionpool.py", line 639, in urlopen
+    _stacktrace=sys.exc_info()[2])
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/urllib3/util/retry.py", line 388, in increment
+    raise MaxRetryError(_pool, url, error or ResponseError(cause))
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='localhost', port=8443): Max retries exceeded with url: / (Caused by SSLError(SSLError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)'),))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "scripts/access-test.py", line 32, in <module>
+    https()
+  File "scripts/access-test.py", line 23, in https
+    r = s.get(uri)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/requests/sessions.py", line 521, in get
+    return self.request('GET', url, **kwargs)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/requests/sessions.py", line 508, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/requests/sessions.py", line 618, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/kazufusa/.anyenv/envs/pyenv/versions/3.6.1/lib/python3.6/site-packages/requests/adapters.py", line 506, in send
+    raise SSLError(e, request=request)
+requests.exceptions.SSLError: HTTPSConnectionPool(host='localhost', port=8443): Max retries exceeded with url: / (Caused by SSLError(SSLError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)'),))
+rake aborted!
+Command failed with status (1): [    python scripts/access-test.py
+...]
+/Users/kazufusa/Documents/til/20180423_private_ca/Rakefile:38:in `block in <top (required)>'
+Tasks: TOP => test
+(See full trace by running task with --trace)
