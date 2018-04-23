@@ -24,6 +24,15 @@ task :start do
   EOS
 end
 
+desc "stop api mock server"
+task :stop do
+  sh <<-EOS
+    docker stop ssl-test || :
+    docker rm ssl-test || :
+    docker rmi ssl-test || :
+  EOS
+end
+
 desc "access to mock server(http/https)"
 task :test do
   sh <<-EOS
