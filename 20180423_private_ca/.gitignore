@@ -1,5 +1,6 @@
-CA/*
-server/svcert.crt
-server/svcert.pem
-server/svkey.pem
-server/svreq.pem
+demoCA/*
+server/cacert.pem
+server/cert.pem
+server/nokey.pem
+server/document_root/*
+server/log/*
