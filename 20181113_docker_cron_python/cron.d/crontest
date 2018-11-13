@@ -1,0 +1,4 @@
+# crontest
+SHELL = /bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+* * * * * root pwd >> /tmp/crontest.txt && python -c "import datetime;print(datetime.datetime.now())" >> /tmp/crontest.txt
