@@ -1,6 +1,6 @@
 # javascript
-*js*/**/node_modules/*
-*js*/**/bundle.js
+**/node_modules/*
+**/bundle.js
 
 */.venv
 
