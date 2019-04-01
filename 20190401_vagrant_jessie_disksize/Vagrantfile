@@ -1,0 +1,26 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "debian/stretch64"
+
+  # vagrant plugin install vagrant-disksize
+  config.disksize.size = '20GB'
+
+  config.vm.provision "shell", inline: <<~EOS
+    set -ex
+    df -h
+
+    apt-get update -qq
+    apt-get install -y --no-install-recommends cloud-guest-utils parted
+    if [[ $(blkid | wc -l) != 1 ]]; then
+      swapoff -a
+      echo -e "d\n5\nd\n2\nw" | fdisk /dev/sda || :
+      partprobe /dev/sda
+      growpart /dev/sda 1
+      resize2fs /dev/sda1
+    fi
+
+    df -h
+  EOS
+
+end
+
+# vim:set ft=ruby:
