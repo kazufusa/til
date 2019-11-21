@@ -3,8 +3,6 @@ package main
 import (
 	"log"
 	"net"
-
-	"github.com/juntaki/pp"
 )
 
 func main() {
@@ -26,7 +24,6 @@ func main() {
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
-	conn.Write([]byte("Hello"))
 
 	buf := make([]byte, 1)
 	_, err := conn.Read(buf)
@@ -34,14 +31,15 @@ func handleConn(conn net.Conn) {
 		log.Println(err)
 		return
 	}
-	pp.Println(buf)
-	pp.Println(string(buf))
 	switch string(buf) {
 	case "a":
-		conn.Write([]byte("It's A"))
+		_, err = conn.Write([]byte("It's A"))
 	case "b":
-		conn.Write([]byte("It's B"))
+		_, err = conn.Write([]byte("It's B"))
 	default:
-		conn.Write([]byte("Unknown request"))
+		_, err = conn.Write([]byte("Unknown request"))
+	}
+	if err != nil {
+		log.Print(err)
 	}
 }
