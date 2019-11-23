@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net"
+	"time"
 )
 
 func main() {
@@ -24,21 +25,27 @@ func main() {
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
+	var ret string
+	timeout := time.Second
 
+	conn.SetReadDeadline(time.Now().Add(timeout))
 	buf := make([]byte, 1)
 	_, err := conn.Read(buf)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
 	switch string(buf) {
 	case "a":
-		_, err = conn.Write([]byte("It's A"))
+		ret = "It's A"
 	case "b":
-		_, err = conn.Write([]byte("It's B"))
+		ret = "It's B"
 	default:
-		_, err = conn.Write([]byte("Unknown request"))
+		ret = "Unknown request"
 	}
+	conn.SetWriteDeadline(time.Now().Add(timeout))
+	_, err = conn.Write([]byte(ret))
 	if err != nil {
 		log.Print(err)
 	}
