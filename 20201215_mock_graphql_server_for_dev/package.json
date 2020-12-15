@@ -1,0 +1,9 @@
+{
+  "name": "20201215_mock_graphql_server_for_dev",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "json-graphql-server": "^2.2.0"
+  }
+}
