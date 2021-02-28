@@ -3,5 +3,5 @@
 set -Ceux
 
 date >| A.txt
-curl -v -X POST -F "name=A.txt" -F "file=@A.txt" localhost:8080/upload
+curl --trace-ascii - -X POST -F "aaa[name]=A.txt" -F "aaa[file]=@A.txt" -F "n=\"1\"" localhost:8080/upload
 rm -rf A.txt
