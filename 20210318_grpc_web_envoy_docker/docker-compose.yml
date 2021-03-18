@@ -1,0 +1,25 @@
+version: '3'
+
+services:
+  server:
+    image: golang:latest
+    volumes:
+      - $PWD:/work
+    working_dir: /work/server
+    entrypoint: "go run ."
+
+  envoy:
+    image: envoyproxy/envoy:v1.17-latest
+    environment:
+    - ENVOY_UID=0
+    ports:
+      - 9000:9000
+    volumes:
+    - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - 8000:80
+    volumes:
+      - ./client:/usr/share/nginx/html
