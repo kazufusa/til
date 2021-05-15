@@ -35,3 +35,9 @@ RUN echo 'eval "$(anyenv init -)"' >> /etc/profile.d/anyenv.sh
 
 RUN bash -lc "rbenv install 2.6.3 && rbenv global 2.6.3"
 RUN bash -lc "pyenv install 3.7.10 && pyenv global 3.7.10"
+
+RUN echo -e '#!/bin/bash -l\n\
+exec "$@"\n' > /usr/bin/entrypoint.sh \
+  && chmod +x /usr/bin/entrypoint.sh
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["bash", "-xc", "ruby --version && python --version"]
