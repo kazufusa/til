@@ -23,20 +23,20 @@ RUN yum install -y \
 
 RUN git clone https://github.com/anyenv/anyenv /opt/anyenv
 RUN echo 'set -xe && \
-	git clone https://github.com/anyenv/anyenv /opt/anyenv && \
-	export PATH="/opt/anyenv/bin:$PATH" && \
-	eval "$(anyenv init -)" && \
-	yes | anyenv install --init && \
-	anyenv install rbenv && \
-	anyenv install pyenv' | bash
+  git clone https://github.com/anyenv/anyenv /opt/anyenv && \
+  export PATH="/opt/anyenv/bin:$PATH" && \
+  eval "$(anyenv init -)" && \
+  yes | anyenv install --init && \
+  anyenv install rbenv && \
+  anyenv install pyenv' | bash
 
-RUN echo 'export PATH="/opt/anyenv/bin:$PATH"' > /etc/profile.d/anyenv.sh
-RUN echo 'eval "$(anyenv init -)"' >> /etc/profile.d/anyenv.sh
+RUN echo -e 'export PATH="/opt/anyenv/bin:$PATH"\n\
+eval "$(anyenv init -)"\n\
+export PATH=$(pyenv root)/bin:$PATH\n\
+eval "$(pyenv init --path)"' >> /etc/profile.d/anyenv.sh
 
 RUN bash -lc "rbenv install 2.6.3 && rbenv global 2.6.3"
 RUN bash -lc "pyenv install 3.7.10 && pyenv global 3.7.10"
-RUN echo 'export PATH="/root/.anyenv/envs/rbenv/shims:$PATH"' >> /etc/profile.d/anyenv.sh
-RUN echo 'export PATH="/root/.anyenv/envs/pyenv/shims:$PATH"' >> /etc/profile.d/anyenv.sh
 
 RUN echo -e '#!/bin/bash -l\n\
 exec "$@"\n' > /usr/bin/entrypoint.sh \
