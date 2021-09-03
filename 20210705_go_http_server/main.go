@@ -25,8 +25,16 @@ func server1() {
 	}
 }
 
-// http.Handlerを使う
+// handleFuncをhttp.HandlerFuncに変換して使う
 func server2() {
+	http.Handle("/hello", http.HandlerFunc(helloHandlerFunc))
+	if err := http.ListenAndServe(":8010", nil); err != nil {
+		log.Println(err)
+	}
+}
+
+// http.Handlerを使う
+func server3() {
 	http.Handle("/hello", &helloHandler{})
 	if err := http.ListenAndServe(":8010", nil); err != nil {
 		log.Println(err)
@@ -35,7 +43,7 @@ func server2() {
 
 // http.Handlerをhttp.Server構造体から使う
 // routingはできない
-func server3() {
+func server4() {
 	server := &http.Server{Addr: ":8020", Handler: &helloHandler{}}
 	if err := server.ListenAndServe(); err != nil {
 		log.Println(err)
@@ -44,7 +52,7 @@ func server3() {
 
 // http.Handlerをhttp.ServeMux経由でhttp.Server構造体から使う
 // routingできる
-func server4() {
+func server5() {
 	mux := http.NewServeMux()
 	mux.Handle("/hello", &helloHandler{})
 	server := &http.Server{Addr: ":8030", Handler: mux}
@@ -54,5 +62,5 @@ func server4() {
 }
 
 func main() {
-	server4()
+	server2()
 }
