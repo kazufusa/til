@@ -29,6 +29,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// SELECT
 	rows, err := db.QueryContext(ctx, "select id, name from users;")
 	if err != nil {
 		log.Fatal(err)
@@ -52,8 +53,9 @@ func main() {
 	}
 	log.Printf("%#+v", users)
 
+	// INSERT
 	user := users[0]
-	post := Post{Content: "test post"}
+	post := Post{Content: "tttest post"}
 	err = db.QueryRowContext(
 		ctx,
 		"insert into posts (user_id, content) values ($1, $2) returning id",
@@ -62,6 +64,22 @@ func main() {
 	).Scan(&post.Id)
 	if err != nil {
 		log.Fatal(err)
+	}
+	log.Printf("%#+v", post)
+
+	// UPDATE Post
+	res, err := db.ExecContext(
+		ctx,
+		"update posts set content = $1 where id = $2",
+		"test post",
+		post.Id,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("%#+v", post)
+	if n, err := res.RowsAffected(); n != 1 || err != nil {
+		log.Fatalf("error in generating login credentilas. %s: %d", err, n)
 	}
 
 	rows, err = db.QueryContext(ctx, "select id, content from posts where user_id=$1", user.Id)
@@ -87,6 +105,7 @@ func main() {
 	}
 	log.Printf("%#+v", posts)
 
+	// DELETE
 	_, err = db.Exec("delete from posts where content = $1", "test post")
 	if err != nil {
 		log.Fatal(err)
