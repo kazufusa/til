@@ -169,3 +169,137 @@ func (ta *TaskApplication) PostponeTask(taskId int) error {
   return err
 }
 ```
+
+## Consistency of Aggregations
+
+https://little-hands.hatenablog.com/entry/2021/03/08/aggregation
+
+### Example 1. Use Case updates aggregations
+
+- Pros.
+    1. symple and easy
+- Cons.
+    1. Use Case can break the consistency between Task and ActivityHistory(EvilTaskUseCase1)
+    2. The domain knowledge of "When a Task created, an ActivityHistory is also created." is not implemented in Domain layer
+
+```go
+// domain/task/task.go
+type Task struct {
+  Name string
+}
+
+type TaskRepository interface {
+  Insert (context.Context, *Task) error
+}
+```
+
+```go
+// domain/activity_history/activity_history.go
+type ActivityHistory struct {
+  Detail string
+}
+
+func NewActivityHistory(task *Task) *ActivityHistory {
+  return &ActivityHistory{Detail: fmt.Sprintf("%s was created", task.Name)}
+}
+
+type ActivityHistoryRepository interface {
+  Insert(context.Context, *ActivityHistory) error
+}
+```
+
+```go
+// domain/transaction/transaction.go
+type Transaction interface {
+  Do(func(context.Context) error) error
+}
+```
+
+```go
+// usecase/task/task.go
+type CreateTaskUseCase1 struct {
+  transaction         transaction.Transaction
+  taskRepo            task.TaskRepository
+  activityHistoryRepo activity_history.ActivityHistoryRepository
+}
+
+
+func (ct *CreateTaskUseCase) Execute(ctx context.Context, taskName string) error {
+  ct.transaction.Do(ctx, func(ctx context.Context) {
+    task := &task.Task{Name: taskName}
+    err := ct.taskRepository.Insert(ctx, task)
+    if err != nil {
+      return err
+    }
+    activityHistory := activity_history.NewActivityHistory(task)
+    err := ct.activityHistoryRepo.Insert(ctx, activityHistory)
+    if err != nil {
+      return err
+    }
+  })
+}
+```
+
+```go
+// usecase/task/task.go
+type EvilTaskUseCase1 struct {
+  transact           entity.Transaction
+  taskRepo           entity.TaskRepository
+  activityHistoryRepo entity.ActivityHistoryRepository
+}
+
+
+func (ct *CreateTaskUseCase) Execute(ctx context.Context, taskName string) error {
+  return ct.transaction.Do(ctx, func(ctx context.Context) {
+    task := &task.Task{Name: taskName}
+    err := ct.taskRepository.Insert(ctx, task)
+    if err != nil {
+      return err
+    }
+    // Oops! ActivityHistory creation is forgotten!
+  })
+}
+```
+
+### Example 2. Use Domain Service
+
+- Pros.
+    1. Can implement the domain knowledge of "When a Task created, an ActivityHistory is also created." in Domain layer
+- Cons.
+    1. In this example, the responsibilities of the domain service tend to be vague and low cohesive.
+
+```go
+// usecase/task/task.go
+type CreateTaskUseCase2 struct {
+  taskCreator task.TaskCreator1
+}
+
+func (ct *CreateTaskUseCase) Execute(ctx context.Context, taskName string) error {
+  return ct.taskCreator.Create(ctx, taskName)
+}
+```
+
+```Go
+// domain/task/task_creator.go
+type TaskCreator1 struct {
+  transaction         transaction.Transaction
+  taskRepo            TaskRepository
+  activityHistoryRepo activity_history.ActivityHistoryRepository
+}
+
+func (tc *TaskCreator1)Create(ctx context.Context, taskName string) error {
+  return tc.transaction.Do(ctx, func(ctx context.Context) {
+    task := &Task{Name: taskName}
+    err := tc.taskRepository.Insert(ctx, task)
+    if err != nil {
+      return err
+    }
+    activityHistory := activity_history.NewActivityHistory(task)
+    err := tc.activityHistoryRepo.Insert(ctx, activityHistory)
+    if err != nil {
+      return err
+    }
+  })
+}
+```
+
