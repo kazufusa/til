@@ -79,7 +79,7 @@ func main() {
 	}
 	log.Printf("%#+v", post)
 	if n, err := res.RowsAffected(); n != 1 || err != nil {
-		log.Fatalf("error in generating login credentilas. %s: %d", err, n)
+		log.Fatalf("error in updating %s: %d", err, n)
 	}
 
 	rows, err = db.QueryContext(ctx, "select id, content from posts where user_id=$1", user.Id)
