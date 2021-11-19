@@ -9,13 +9,20 @@ import (
 )
 
 type User struct {
-	Id   int64
-	Name string
+	Id   int64  `db:"id"`
+	Name string `db:"name"`
 }
 
 type Post struct {
-	Id      int64
-	Content string
+	Id      int64  `db:"id"`
+	Content string `db:"content"`
+	UserId  int64  `db:"user_id"`
+}
+
+type User2 struct {
+	Id    int64  `db:"id"`
+	Name  string `db:"name"`
+	Posts []Post `db:"-,fkey=posts"`
 }
 
 func main() {
@@ -50,4 +57,39 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("%#+v", users)
+
+	// var posts []Post
+	// _, err = dbmap.Select(&posts, "select * from posts")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// log.Printf("%#+v", posts)
+
+	// SELECT with INNER JOIN
+	var ups []User2
+	_, err = dbmap.Select(&ups, `
+	select
+		users.id,
+		users.name,
+		posts.id,
+		posts.user_id as posts_user_id,
+		posts.content as posts_content
+	from
+		users
+	right join
+		posts
+	on
+		users.id = posts.user_id
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("%#+v", ups)
+
+	// INSERT
+
+	// UPDATE
+	// optimistic-locking(https: //github.com/go-gorp/gorp#optimistic-locking)
+
+	// DELETE
 }

@@ -14,4 +14,5 @@ insert into posts (user_id, content) values
 select * from users;
 select * from posts;
 select posts.id, posts.user_id, users.name, posts.content from posts left join users on user_id = users.id;
+select users.id, users.name, posts.id, posts.user_id, posts.content from users right join posts on users.id = posts.user_id;
 EOF
