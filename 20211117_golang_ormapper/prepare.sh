@@ -3,8 +3,8 @@
 PGPASSWORD=postgres psql -h localhost -U postgres <<EOF
 drop table users;
 drop table posts;
-create table if not exists users (id serial primary key, name text, version int not null);
-create table if not exists posts (id serial primary key, user_id int, content text, version int not null);
+create table if not exists users (id serial primary key, name text, version int not null default 0);
+create table if not exists posts (id serial primary key, user_id int, content text, version int not null default 0);
 insert into users (name, version) values ('Alpha', 0), ('Bravow', 0);
 insert into posts (user_id, content, version) values
   (1, 'I am Alpha.', 0),
