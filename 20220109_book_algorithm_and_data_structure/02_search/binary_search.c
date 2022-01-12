@@ -7,9 +7,7 @@
 
 int binary_search(int x, int a[], int n) {
   int left, right, mid;
-  left = 0;
-  right = n-1;
-  while (left <= right) {
+  for (left = 0, right = n - 1; left <= right;) {
     mid = (left + right) / 2;
     if (a[mid] == x) {
       return mid;
@@ -19,8 +17,7 @@ int binary_search(int x, int a[], int n) {
       right = mid - 1;
     }
   }
-
-  return EXIT_SUCCESS;
+  return NOT_FOUND;
 }
 
 int main() {

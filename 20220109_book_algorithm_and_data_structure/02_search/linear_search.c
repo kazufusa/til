@@ -7,7 +7,7 @@
 
 int linear_search(int x, int a[], int n) {
   int i = 0;
-  while (i < n && a[i] != x) {
+  while (i<n && a[i] != x) {
     i++;
   }
   if (i < n) {

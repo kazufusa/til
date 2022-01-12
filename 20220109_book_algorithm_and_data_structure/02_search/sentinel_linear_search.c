@@ -17,7 +17,7 @@ int linear_search(int x, int a[], int n) {
     return i;
   }
   if (x == tmp) {
-    return n-1;
+    return n - 1;
   }
   return NOT_FOUND;
 }
