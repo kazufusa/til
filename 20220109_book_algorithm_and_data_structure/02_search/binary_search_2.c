@@ -3,13 +3,11 @@
 #include "time.h"
 
 #define NOT_FOUND (-1)
-#define N (2)
+#define N (10)
 
 int binary_search_2(int x, int a[], int n) {
   int left, right, mid;
-  left = 0;
-  right = n - 1;
-  while (left < right) {
+  for (left = 0, right = n - 1; left < right;) {
     mid = (left + right) / 2;
     if (a[mid] < x) {
       left = mid + 1;
@@ -17,9 +15,9 @@ int binary_search_2(int x, int a[], int n) {
       right = mid;
     }
   }
-  if (a[left] == x){
+  if (a[left] == x) {
     return left;
-  };
+  }
 
   return NOT_FOUND;
 }
