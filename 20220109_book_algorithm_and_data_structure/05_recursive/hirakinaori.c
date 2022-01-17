@@ -8,21 +8,23 @@
 
 u_int32_t RET[100] = {};
 int IRET = 0;
+u_int32_t EXPS[10];
 
-u_int32_t myPow(int i, int n) {
-  if (i == 0 && n == 0) {
-    return 0;
-  } else {
-    return pow(i, n);
+void prepareEXPS() {
+  EXPS[0] = 0;
+  for (int i = 1; i < 10; i++) {
+    EXPS[i] = pow(i, i);
   }
 }
+
+u_int32_t myPow(int i) { return EXPS[i]; }
 
 void evaluate(int in[]) {
   int i, freq[10] = {};
   u_int32_t n = 0;
   char val[11];
   for (i = 0; i < 10; i++) {
-    n += myPow(in[i], in[i]);
+    n += myPow(in[i]);
     freq[in[i]]++;
   }
   sprintf(val, "%010u", n);
@@ -41,6 +43,7 @@ int main() {
   int i[10];
   int j;
   int N = 10;
+  prepareEXPS();
 
   for (i[0] = 0; i[0] < N; i[0]++) {
     for (i[1] = i[0]; i[1] < N; i[1]++) {
