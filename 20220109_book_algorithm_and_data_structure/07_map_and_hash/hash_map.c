@@ -2,12 +2,12 @@
 #include "stdlib.h"
 #include "string.h"
 
-#define SUCCESS (0);
-#define FAILURE (-1);
+#define SUCCESS 0
+#define FAILURE -1
 
 typedef struct {
-  char *japanese;
   char *english;
+  char *japanese;
 } WORDSET;
 
 typedef struct {
@@ -54,7 +54,6 @@ void CleanUpHashTable(HASHTABLE *hashtable) {
     free(hashtable->data[i]);
   }
   free(hashtable->data);
-  free(hashtable);
 }
 
 void PrintAllData(HASHTABLE *hashtable) {
@@ -62,20 +61,24 @@ void PrintAllData(HASHTABLE *hashtable) {
   for (int i = 0; i < hashtable->size; i++) {
     ws = hashtable->data[i];
     if (ws != NULL) {
-      printf("'%s' : '%s'\n", ws->english, ws->japanese);
+      printf("(%d) '%s' : '%s'\n", i, ws->english, ws->japanese);
     }
   }
 }
 
 int AddDataFromMap(HASHTABLE *hashtable, WORDSET *ws) {
-  int hash = MakeHash2(ws->english);
+  int hash = MakeHash2(ws->english) % hashtable->size;
   if (hashtable->data[hash] != NULL) {
     hash = Rehash(hashtable, hash);
   }
   if (hash < 0) {
     return FAILURE;
   }
-  hashtable->data[hash] = ws;
+  hashtable->data[hash] = (WORDSET *)malloc(sizeof(WORDSET));
+  hashtable->data[hash]->english = (char *)malloc(sizeof(char) * strlen(ws->english));
+  hashtable->data[hash]->japanese = (char *)malloc(sizeof(char) * strlen(ws->japanese));
+  strcpy(hashtable->data[hash]->english, ws->english);
+
   return SUCCESS;
 }
 
@@ -108,18 +111,59 @@ void DeleteDataFromMap(HASHTABLE *hashtable, char *key) {
   }
 }
 
+void CommandInsert(HASHTABLE * table){
+  char japanese[256], english[256];
+  WORDSET ws;
+  int ret;
+
+  printf("キーを入力してください\n");
+  scanf("%s", english);
+  printf("値を入力してください\n");
+  scanf("%s", japanese);
+
+  ws.japanese = japanese;
+  ws.english = english;
+  ret = AddDataFromMap(table, &ws);
+  if (ret == SUCCESS) {
+    printf("追加しました\n");
+  }
+}
+
+void CommandDelete(HASHTABLE*table){
+}
+
 int main() {
-  WORDSET *ws;
-  HASHTABLE *table = (HASHTABLE *)malloc(sizeof(HASHTABLE));
-  InitHashTable(table, 1000);
+  HASHTABLE table;
+  InitHashTable(&table, 503);
+  WORDSET initialWs[5] = {
+    {"dolphin", "イルカ"}, {"beluga", "シロイルカ"},
+    {"grampus", "シャチ"}, {"medusa", "海月"},
+    {"otter", "カワウソ"},
+  };
+  int n =1;
 
-  ws = (WORDSET *)malloc(sizeof(ws));
-  ws->english="mountain";
-  ws->japanese="山";
-  AddDataFromMap(table, ws);
+  for (int i = 0; i < 5; i++) {
+    AddDataFromMap(&table, &initialWs[i]);
+  }
 
-  printf("-----SHOW ALL HASH TABLE--------\n");
-  PrintAllData(table);
-  printf("--------------------------------\n");
+  while(n!=0) {
+    printf("どの操作を行いますか? 0: 終了, 1: 追加, 2: 検索, 3: 削除, 4: 全表示\n");
+    scanf("%d", &n);
+    switch (n) {
+      case 1:
+        CommandInsert(&table);
+        break;
+      case 2:
+        CommandDelete(&table);
+        break;
+      case 3:
+        printf("-----SHOW HASH TABLE--------\n");
+        PrintAllData(&table);
+        printf("--------------------------------\n");
+        break;
+    }
+  }
+
+  CleanUpHashTable(&table);
   return EXIT_SUCCESS;
 }
