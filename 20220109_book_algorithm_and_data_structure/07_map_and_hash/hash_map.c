@@ -78,32 +78,32 @@ int AddDataFromMap(HASHTABLE *hashtable, WORDSET *ws) {
   hashtable->data[hash]->english = (char *)malloc(sizeof(char) * strlen(ws->english));
   hashtable->data[hash]->japanese = (char *)malloc(sizeof(char) * strlen(ws->japanese));
   strcpy(hashtable->data[hash]->english, ws->english);
-
+  strcpy(hashtable->data[hash]->japanese, ws->japanese);
   return SUCCESS;
 }
 
 char *GetDataFromMap(HASHTABLE *hashtable, char *key) {
   WORDSET *ws;
-  int hash = MakeHash2(key);
-  while (hash != -1) {
+  int hash = MakeHash2(key) % hashtable->size, k;
+  for (k=0; k<hashtable->size/2; k++) {
+    hash = (hash + k*k) % hashtable->size;
     ws = hashtable->data[hash];
-    if (ws != NULL && ws->english == key) {
+    if (ws && strcmp(ws->english, key) == 0) {
       return ws->japanese;
     }
-    hash = Rehash(hashtable, hash);
   }
   return NULL;
 }
 
 void DeleteDataFromMap(HASHTABLE *hashtable, char *key) {
   WORDSET *ws;
-  int hash = MakeHash2(key);
-  while (hash != -1) {
+  int hash = MakeHash2(key) %hashtable->size, k;
+  for (k=0; k<hashtable->size/2; k++) {
+    hash = (hash + k*k) % hashtable->size;
     ws = hashtable->data[hash];
-    if (ws != NULL && ws->english == key) {
+    if (ws && strcmp(ws->english, key) == 0) {
       break;
     }
-    hash = Rehash(hashtable, hash);
   }
   if (ws != NULL) {
     hashtable->data[hash] = NULL;
@@ -126,10 +126,35 @@ void CommandInsert(HASHTABLE * table){
   ret = AddDataFromMap(table, &ws);
   if (ret == SUCCESS) {
     printf("追加しました\n");
+  } else {
+    printf("ハッシュテーブルの容量不足で追加できませんでした\n");
   }
 }
 
 void CommandDelete(HASHTABLE*table){
+  char english[256];
+
+  printf("キーを入力してください\n");
+  scanf("%s", english);
+
+  DeleteDataFromMap(table, english);
+  printf("削除しました\n");
+}
+
+void CommandSearch(HASHTABLE*table){
+  char english[256];
+  char * japanese;
+  WORDSET *ws;
+
+  printf("キーを入力してください\n");
+  scanf("%s", english);
+
+  japanese = GetDataFromMap(table, english);
+  if (japanese == NULL) {
+    printf("キーが見つかりません\n");
+  } else {
+    printf("=> %s\n", japanese);
+  }
 }
 
 int main() {
@@ -149,14 +174,18 @@ int main() {
   while(n!=0) {
     printf("どの操作を行いますか? 0: 終了, 1: 追加, 2: 検索, 3: 削除, 4: 全表示\n");
     scanf("%d", &n);
+    printf("%d", n);
     switch (n) {
       case 1:
         CommandInsert(&table);
         break;
       case 2:
-        CommandDelete(&table);
+        CommandSearch(&table);
         break;
       case 3:
+        CommandDelete(&table);
+        break;
+      case 4:
         printf("-----SHOW HASH TABLE--------\n");
         PrintAllData(&table);
         printf("--------------------------------\n");
