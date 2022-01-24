@@ -10,37 +10,46 @@ typedef struct tagPATTERN {
   u_int32_t prev_hash;
 } PATTERN;
 
-PATTERN *queue[100000];
+PATTERN *queue;
+int N = 1000;
 int ipush = 0;
 int ipop = 0;
 
 void push(u_int32_t hash, u_int32_t prev_hash) {
-  queue[ipush] = (PATTERN *)malloc(sizeof(PATTERN));
-  queue[ipush]->hash = hash;
-  queue[ipush]->prev_hash = prev_hash;
+  if (queue == NULL) {
+    queue = (PATTERN *)malloc(sizeof(PATTERN) * N);
+    if (queue == NULL) {
+      printf("メモリ不足です");
+      exit(EXIT_FAILURE);
+    }
+  } else if (N <= ipush) {
+    N += 1000;
+    queue = realloc(queue, N);
+    if (queue == NULL) {
+      printf("メモリ不足です");
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  queue[ipush].hash = hash;
+  queue[ipush].prev_hash = prev_hash;
   ipush++;
 }
 
 PATTERN *find(u_int32_t v) {
   int i = 0;
-  while (queue[i] != NULL) {
-    if (queue[i]->hash == v) {
-      return queue[i];
+  while (queue[i].hash != 0) {
+    if (queue[i].hash == v) {
+      return &queue[i];
     }
     i++;
   }
   return NULL;
 }
 
-PATTERN *pop() { return queue[ipop++]; }
+PATTERN *pop() { return &queue[ipop++]; }
 
-void cleanup() {
-  for (int i = 0; i < 2048; i++) {
-    if (queue[i]) {
-      free(queue[i]);
-    }
-  }
-}
+void cleanup() { free(queue); }
 
 void bprint(u_int32_t v) {
   for (int i = 0; i < 32; i++) {
@@ -157,9 +166,6 @@ int main() {
   int *route;
   goal = 0x12345670;
   start = 0x27145036;
-  for (int i = 0; i < 2048; i++) {
-    queue[i] = NULL;
-  }
 
   ans = solve(start, goal);
   if (ans == NULL) {
