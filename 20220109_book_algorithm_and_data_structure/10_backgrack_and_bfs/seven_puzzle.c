@@ -161,7 +161,7 @@ PATTERN *solve(u_int32_t start, u_int32_t goal) {
 
 int main() {
   u_int32_t start, goal;
-  int i = 0, n = 10;
+  int i = 0, j, n = 10;
   PATTERN *ans;
   int *route;
   goal = 0x12345670;
@@ -182,7 +182,9 @@ int main() {
     }
   }
   route[i] = start;
+  j = 0;
   for (; i >= 0; i--) {
+    printf("%d\n", j++);
     print(route[i]);
   }
 
