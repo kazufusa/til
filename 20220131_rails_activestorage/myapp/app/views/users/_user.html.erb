@@ -4,4 +4,26 @@
     <%= user.name %>
   </p>
 
+  <p>
+  <h3>files download</h3>
+    <ul>
+      <% user.assets.each do |asset| %>
+        <li>
+          <%= link_to asset.blob.filename, rails_blob_path(asset.blob, disposition: 'attachment') %>
+        </li>
+      <% end %>
+    </ul>
+  </p>
+
+  <p>
+  <h3>files preview</h3>
+    <ul>
+      <% user.assets.each do |asset| %>
+        <li>
+          <%= link_to asset.blob.filename, rails_blob_path(asset.blob, disposition: 'preview') %>
+        </li>
+      <% end %>
+    </ul>
+  </p>
+
 </div>
