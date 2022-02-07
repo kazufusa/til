@@ -1,6 +1,7 @@
 # compare alpine and distroless
 
 ```sh
+$ export DOCKER_BUILDKIT=1
 $ docker image build -f Dockerfile.alpine -t hello/alpine .
 $ docker container run --rm -t hello/alpine
 Hello, world%
