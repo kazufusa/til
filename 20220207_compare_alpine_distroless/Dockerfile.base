@@ -1,6 +1,0 @@
-FROM golang:1.17 as build
-WORKDIR /go/src/hello
-COPY go.mod hello.go ./
-RUN go build -o hello .
-
-# vim: set ft=dockerfile :
