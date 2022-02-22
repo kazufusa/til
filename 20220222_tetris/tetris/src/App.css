@@ -40,3 +40,40 @@
 button {
   font-size: calc(10px + 2vmin);
 }
+
+td {
+  width: 20px;
+  height: 20px;
+}
+
+.td-0 {
+  background-color: cyan;
+}
+
+.td-1 {
+  background-color: yellow;
+}
+
+.td-2 {
+  background-color: green;
+}
+
+.td-3 {
+  background-color: red;
+}
+
+.td-4 {
+  background-color: blue;
+}
+
+.td-5 {
+  background-color: orange;
+}
+
+.td-6 {
+  background-color: purple;
+}
+
+.td--1 {
+  background-color: white;
+}
