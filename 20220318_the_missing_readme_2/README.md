@@ -30,3 +30,19 @@
 
 - AWS S3 storage system was down on 2017-02-18
 - This was impacting basically the entire internet.
+- Simple typo caused this trouble.
+
+### Do's and Don'ts
+
+| Do's | Don'ts|
+|:-|:-|
+| **Do** prefer compilation errors to runtime errors.                                             | **Don't** use exceptions for application logics.             |
+| **Do** make things immutable whatever possible.                                                 | **Don't** use return codes for exception handling.           |
+| **Do** validate inputs and outputs.                                                             | **Don't** catch exceptions that you can't handle.            |
+| **Do** study the OWASP Top 10..                                                                 | **Don't** write multiline logs.                              |
+| **Do** use bug-checking tools and types or type hinting.                                        | **Don't** write secrets or sensitive data to logs.           |
+| **Do** clean up resources after exceptions<br>(especially sockets, file pointers and memories). | **Don't** manually edit configuration on a machine.          |
+| **Do** instruct your code with metrics.                                                         | **Don't** store passwords or secrets in configuration files. |
+| **Do** make your application configurable.                                                      | **Don't** write custom configuration formats.                |
+| **Do** validate and log all configuration.                                                      | **Don't** use dynamic configuration if you can avoid it.     |
+
