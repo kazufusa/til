@@ -3,7 +3,7 @@
 ```
 $ go get fyne.io/fyne/v2
 $ go install github.com/fyne-io/fyne-cross
-$ fine-cross windows
+$ fyne-cross windows
 ...
 $ tree --charset=C
 .
