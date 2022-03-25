@@ -3,5 +3,13 @@ services:
     image: jupyter/base-notebook
     ports:
       - 8888:8888
-    volumes:
-      - ${PWD}:/home/jovyan
+    # volumes:
+    #   - ${PWD}:/home/jovyan
+    configs:
+      - source: note
+        target: /home/jovyan/楕円曲線暗号のPythonによる実装その1（有限体とECDH鍵共有）.ipynb
+
+configs:
+  note:
+    file: ./楕円曲線暗号のPythonによる実装その1（有限体とECDH鍵共有）.ipynb
+
