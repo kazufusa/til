@@ -14,5 +14,6 @@ export default function TextInput({ onChange, text }: Props) {
       />
       <br />
       Echo: {text}
-    </div>);
+    </div>
+  );
 }
