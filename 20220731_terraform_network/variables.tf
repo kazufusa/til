@@ -1,0 +1,3 @@
+variable "projectID" {}
+
+variable "ip" {}
