@@ -21,4 +21,49 @@ index d1646f0..d7c6330 100644
      "src/**/*.ts",
 $ yarn add apollo-server graphql
 $ yarn add -D ts-node ts-node-dev
+$ : edit src/index.ts
+$ yarn dev
+$ : open http://localhost:4000/
 ```
+
+##
+
+```sh
+$ yarn add @graphql-tools/load @graphql-tools/schema @graphql-tools/graphql-file-loader
+$ : fix src/index.ts
+$ : open http://localhost:4000/ or query with curl
+$ curl -s --request POST \
+  --header 'content-type: application/json' \
+  --url http://localhost:4000/ \
+  --data '{"query":"query { books {author title} }"}' | jq
+{
+  "data": {
+    "books": [
+      {
+        "author": "Kate Chopin",
+        "title": "The Awakening"
+      },
+      {
+        "author": "Paul Auster",
+        "title": "City of Glass"
+      }
+    ]
+  }
+}
+```
+
+## Sample query
+
+```graphql
+query {
+  books {
+    author
+    __typename
+    title
+  }
+}
+```
+
+## References
+
+- https://zenn.dev/intercept6/articles/3daca0298d32d8022e71
