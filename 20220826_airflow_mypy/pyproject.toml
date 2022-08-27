@@ -1,0 +1,16 @@
+[tool.pysen]
+version = "0.10"
+
+[tool.pysen.lint]
+enable_black = true
+enable_flake8 = true
+enable_isort = true
+enable_mypy = true
+mypy_preset = "entry"
+# mypy_preset = "strict"
+# mypy_preset = "very_strict"
+line_length = 88
+py_version = "py39"
+[[tool.pysen.lint.mypy_targets]]
+  paths = ["."]
+
