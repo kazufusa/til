@@ -13,4 +13,4 @@ line_length = 88
 py_version = "py39"
 [[tool.pysen.lint.mypy_targets]]
   paths = ["."]
-
+  # namespace_packages = true

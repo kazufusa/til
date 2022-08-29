@@ -4,8 +4,31 @@ pysenはmypyの"ignore_missing_imports"を常に有効にしている.
 そのため, importできないpackageがある場合は無視, それに付随するエラー(importできないpackageを使った際の型エラー当)も無視する.
 この辺理解していないと使いにくい.
 
-ようするに`__init__.py`大事.
+## 検討
 
+dagsディレクトリ下に`.mypy.ini`を配置し, 以下を設定する.
+
+```ini
+[mypy]
+ignore_missing_imports = false  # missing importsを無視しない
+namespace_packages = true       # namespace packagesを有効化
+explicit_package_bases = true   # カレントディレクトリをtoplevel packageとする
+# こちらと等価: mypy . --namespace-package --explicit-package-bases
+```
+
+dagsディレクトリ下でmypyを実行する.
+
+```sh
+$ (cd dags && mypy .)
+test.py:5: error: Incompatible return value type (got "Person", expected "Dog")
+Found 1 error in 1 file (checked 2 source files)
+
+```
+
+期待通りの動き. pysenで`explicit_package_bases = true`を設定できるといいのだが...
+
+
+## 以下試行錯誤
 
 
 ```sh
@@ -70,4 +93,11 @@ mypy .......... Failed (5.30 sec)
 lint finished with error(s)
 Errored:
  - mypy
+
+
+❯ (cd dags && mypy . --explicit-package-bases --namespace-package)
+test.py:5: error: Incompatible return value type (got "Person", expected "Dog")
+Found 1 error in 1 file (checked 2 source files)
+
 ```
+
