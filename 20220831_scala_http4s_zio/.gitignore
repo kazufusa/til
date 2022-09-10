@@ -24,3 +24,6 @@ project/plugins/project/
 .lib/
 
 metals/*
+.bloop
+.metals
+metals.sbt
