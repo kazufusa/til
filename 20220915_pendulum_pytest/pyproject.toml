@@ -1,0 +1,8 @@
+[tool.black]
+target-version = ['py39']
+line-length = 120
+
+[tool.mypy]
+mypy_path = "."
+namespace_packages = true
+# explicit_package_bases = true
