@@ -3,34 +3,52 @@ import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import './App.css'
 import Box from '@mui/material/Box';
-import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import { DataGrid, GridToolbar, GridColumnVisibilityModel } from '@mui/x-data-grid';
 import CssBaseline from '@mui/material/CssBaseline'
 import Button from '@mui/material/Button'
 import ThumbUp from '@mui/icons-material/ThumbUp'
+import useLocalStorageState from 'use-local-storage-state'
 
-function BasicColumnsGrid({ mode }) {
+interface Props {
+  mode: boolean
+}
+
+interface Record {
+  id: number
+  username?: string
+  firstname?: string
+  lastname?: string
+  age: number
+}
+
+type VisibilityModel<T> = {
+  [K in keyof Omit<T, 'id'>]: boolean
+}
+
+const initialVisibilityModel: VisibilityModel<Record> = Object.apply({
+  username: true,
+  firstname: true,
+  lastname: true,
+  age: true,
+}, JSON.parse(localStorage.getItem('tableVisibilityModel') || '{}'))
+
+const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
   const columns1 = [{ field: 'username' }, { field: 'age' }]
-  const rows1 = [
+  const rows1: Record[] = [
     { id: 1, username: 'aaa AAA', age: 20, },
     { id: 2, username: 'bbb BBB', age: 30, },
     { id: 3, username: 'ccc CCC', age: 40, },
   ]
 
-  const columns2 = [{ field: 'firstname' }, { field: 'secondname' }, { field: 'age' }]
-  const rows2 = [
-    { id: 1, firstname: 'aaa', secondname: 'AAA', age: 20, },
-    { id: 2, firstname: 'bbb', secondname: 'BBB', age: 30, },
-    { id: 3, firstname: 'ccc', secondname: 'CCC', age: 40, },
+  const columns2 = [{ field: 'firstname' }, { field: 'lastname' }, { field: 'age' }]
+  const rows2: Record[] = [
+    { id: 1, firstname: 'aaa', lastname: 'AAA', age: 20, },
+    { id: 2, firstname: 'bbb', lastname: 'BBB', age: 30, },
+    { id: 3, firstname: 'ccc', lastname: 'CCC', age: 40, },
   ]
 
-  const [columnVisibilityModel, setColumnVisibilityModel] = useState(
-    {
-      firstname: true,
-      secondname: true,
-      username: true,
-      age: false,
-    }
-  );
+  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorageState<GridColumnVisibilityModel>(
+    'tableVisibilityModel', { defaultValue: initialVisibilityModel });
 
   return (
     <Box sx={{ height: 250, width: '100%' }}>
