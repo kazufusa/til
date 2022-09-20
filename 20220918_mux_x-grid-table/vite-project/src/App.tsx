@@ -56,6 +56,7 @@ const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
         initialState={{
           columns: { columnVisibilityModel },
         }}
+        sortingOrder={['desc', 'asc']}
         onColumnVisibilityModelChange={(model) => setColumnVisibilityModel(model)}
         columns={mode ? columns1 : columns2}
         rows={mode ? rows1 : rows2}
