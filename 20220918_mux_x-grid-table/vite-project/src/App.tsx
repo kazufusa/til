@@ -7,7 +7,7 @@ import { DataGrid, GridToolbar, GridColumnVisibilityModel } from '@mui/x-data-gr
 import CssBaseline from '@mui/material/CssBaseline'
 import Button from '@mui/material/Button'
 import ThumbUp from '@mui/icons-material/ThumbUp'
-import useLocalStorageState from 'use-local-storage-state'
+import { usePersistedState } from './usePersistedState';
 
 interface Props {
   mode: boolean
@@ -25,12 +25,12 @@ type VisibilityModel<T> = {
   [K in keyof Omit<T, 'id'>]: boolean
 }
 
-const initialVisibilityModel: VisibilityModel<Record> = Object.apply({
+const initialVisibilityModel: VisibilityModel<Record> = {
   username: true,
   firstname: true,
   lastname: true,
   age: true,
-}, JSON.parse(localStorage.getItem('tableVisibilityModel') || '{}'))
+}
 
 const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
   const columns1 = [{ field: 'username' }, { field: 'age' }]
@@ -47,17 +47,14 @@ const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
     { id: 3, firstname: 'ccc', lastname: 'CCC', age: 40, },
   ]
 
-  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorageState<GridColumnVisibilityModel>(
-    'tableVisibilityModel', { defaultValue: initialVisibilityModel });
+  const [a, setA] = usePersistedState<GridColumnVisibilityModel>("columnVisibilityModel", initialVisibilityModel)
 
   return (
     <Box sx={{ height: 250, width: '100%' }}>
       <DataGrid
-        initialState={{
-          columns: { columnVisibilityModel },
-        }}
+        columnVisibilityModel={a}
         sortingOrder={['desc', 'asc']}
-        onColumnVisibilityModelChange={(model) => setColumnVisibilityModel(model)}
+        onColumnVisibilityModelChange={(model) => setA(model)}
         columns={mode ? columns1 : columns2}
         rows={mode ? rows1 : rows2}
         components={{
