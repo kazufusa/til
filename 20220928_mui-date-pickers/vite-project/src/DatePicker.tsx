@@ -63,6 +63,7 @@ export function DatePickerSample() {
               maxDate={value.end}
               mask="____年__月__日"
               toolbarTitle="日付選択"
+              showDaysOutsideCurrentMonth
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -84,6 +85,7 @@ export function DatePickerSample() {
               maxDate={subDays(new Date(), 1)}
               mask="____年__月__日"
               toolbarTitle="日付選択"
+              showDaysOutsideCurrentMonth
               renderInput={(params) => (
                 <TextField
                   {...params}
