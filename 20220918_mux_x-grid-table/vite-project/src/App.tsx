@@ -3,7 +3,7 @@ import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import './App.css'
 import Box from '@mui/material/Box';
-import { DataGrid, GridToolbar, GridColumnVisibilityModel } from '@mui/x-data-grid';
+import { DataGrid, GridToolbar, GridColumnVisibilityModel, GridColumns } from '@mui/x-data-grid';
 import CssBaseline from '@mui/material/CssBaseline'
 import Button from '@mui/material/Button'
 import ThumbUp from '@mui/icons-material/ThumbUp'
@@ -32,20 +32,34 @@ const initialVisibilityModel: VisibilityModel<Record> = {
   age: true,
 }
 
+const canvas = document.createElement("canvas")
+function getTextWidth(text: string, font: string): number {
+  const context = canvas.getContext("2d");
+  if (context === null) return 200;
+  context.font = font
+  const metrics = context.measureText(text);
+  console.log(text, metrics.width)
+  return Math.ceil(metrics.width) + 40;
+}
+
 const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
-  const columns1 = [{ field: 'username' }, { field: 'age' }]
+
   const rows1: Record[] = [
-    { id: 1, username: 'aaa AAA', age: 20, },
+    { id: 1, username: 'aaa AAAAA AAA ', age: 20, },
     { id: 2, username: 'bbb BBB', age: 30, },
     { id: 3, username: 'ccc CCC', age: 40, },
   ]
+  const columns1: GridColumns = [
+    { field: 'username', width: Math.max.apply(null, rows1.map((v) => getTextWidth(v.username ?? "", `400 0.875rem "Roboto","Helvetica","Arial",sans-serif`))) },
+    { field: 'age' },
+  ]
 
-  const columns2 = [{ field: 'firstname' }, { field: 'lastname' }, { field: 'age' }]
   const rows2: Record[] = [
     { id: 1, firstname: 'aaa', lastname: 'AAA', age: 20, },
     { id: 2, firstname: 'bbb', lastname: 'BBB', age: 30, },
     { id: 3, firstname: 'ccc', lastname: 'CCC', age: 40, },
   ]
+  const columns2 = [{ field: 'firstname' }, { field: 'lastname' }, { field: 'age' }]
 
   const [a, setA] = usePersistedState<GridColumnVisibilityModel>("columnVisibilityModel", initialVisibilityModel)
 
