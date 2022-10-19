@@ -86,13 +86,15 @@ const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
   const columns2 = [{ field: 'firstname' }, { field: 'lastname' }, { field: 'age' }]
 
   const [a, setA] = usePersistedState<GridColumnVisibilityModel>("columnVisibilityModel", initialVisibilityModel)
+  const fieldBlackList = ['age']
+  const fields = (mode ? columns1 : columns2).map((v) => v.field).filter((v) => !fieldBlackList.includes(v))
 
   return (
     <Box sx={{ height: 250, width: '100%' }}>
       <DataGrid
         componentsProps={{
           toolbar: {
-            csvOptions: { allColumns: true, utf8WithBom: true },
+            csvOptions: { allColumns: true, utf8WithBom: true, fields: fields },
             printOptions: { disableToolbarButton: true },
           }
         }}
