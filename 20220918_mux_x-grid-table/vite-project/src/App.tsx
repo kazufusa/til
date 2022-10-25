@@ -3,12 +3,15 @@ import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import './App.css'
 import Box from '@mui/material/Box';
-import { DataGrid, GridToolbar, GridColumnVisibilityModel, GridColumns, GridRowModel } from '@mui/x-data-grid';
+import { DataGrid, GridToolbar, GridColumnVisibilityModel, GridColumns, GridRowModel, GridColumnHeaderParams } from '@mui/x-data-grid';
 import CssBaseline from '@mui/material/CssBaseline'
 import Button from '@mui/material/Button'
 import ThumbUp from '@mui/icons-material/ThumbUp'
 import { usePersistedState } from './usePersistedState';
-
+import { Popover, styled, Tooltip, tooltipClasses, TooltipProps } from '@mui/material';
+import InfoIcon from '@mui/icons-material/Info';
+import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 interface Props {
   mode: boolean
 }
@@ -42,6 +45,18 @@ function getTextWidth(text: string, font: string): number {
   return Math.ceil(metrics.width) + 40;
 }
 
+const LightTooltip = styled(({ className, ...props }: TooltipProps) => (
+  <Tooltip {...props} classes={{ popper: className }}  />
+))(({ theme }) => ({
+  [`& .${tooltipClasses.tooltip}`]: {
+    backgroundColor: theme.palette.common.white,
+    color: 'rgba(0, 0, 0, 0.87)',
+    boxShadow: theme.shadows[1],
+    fontSize: 14,
+    maxWidth: 200,
+  },
+}));
+
 const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
 
   const rows1: Record[] = [
@@ -74,8 +89,22 @@ const BasicColumnsGrid: React.FC<Props> = ({ mode }) => {
     { id: 27, username: 'ccc CCC', age: 58, },
   ]
   const columns1: GridColumns = [
-    { field: 'username', width: Math.max.apply(null, rows1.map((v) => getTextWidth(v.username ?? "", `400 0.875rem "Roboto","Helvetica","Arial",sans-serif`))) },
-    { field: 'age' },
+    {
+      field: 'username',
+      width: Math.max.apply(null, rows1.map((v) => getTextWidth(v.username ?? "", `400 0.875rem "Roboto","Helvetica","Arial",sans-serif`))),
+    },
+    {
+      field: 'age',
+      width: 150,
+      renderHeader: (params: GridColumnHeaderParams) => (
+        <div>
+          {'age '}
+          <LightTooltip title="私は二週間頑張ってお仕事しましたのでお休みをいただきます。">
+            <InfoOutlinedIcon color="primary" sx={{ verticalAlign: "-7px" }} />
+          </LightTooltip>
+        </div>
+      )
+    },
   ]
 
   const rows2: Record[] = [
