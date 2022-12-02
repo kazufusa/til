@@ -1,15 +1,13 @@
 @charset "utf-8";
 
+html {
+	scroll-behavior: smooth;
+}
 body {
+	overflow-x: hidden;
 	margin: 0;
 	font-family: "Noto Sans JP", sans-serif;
 	background: url(../../img/bg.png);
-}
-.container {
-	scroll-behavior: smooth;
-	position: absolute;
-	inset: 0;
-	overflow: auto;
 }
 .contents {
 	transition: transform .6s cubic-bezier(0.215, 0.61, 0.355, 1);
