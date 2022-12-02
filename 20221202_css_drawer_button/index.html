@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>下のコンテンツがロックされる</title>
+<meta name="viewport" content="width=device-width">
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="ドロワーメニューを開くと下のコンテンツがスクロールできなくなるサンプル">
+<meta name="theme-color" content="#553968">
+<link rel="canonical" href="https://lopan.jp/css-animation/drawer/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP&family=Ubuntu+Condensed&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+	<input type="checkbox" id="drawer">
+	<label for="drawer" class="open"><span></span></label>
+	<label for="drawer" class="close"></label>
+	<nav class="menu">
+		<h2>menu</h2>
+		<ul>
+			<li><a href="#css-animation">動くCSSのためのメモ。</a></li>
+			<li><a href="#about-svg">SVGでやることのまとめ。</a></li>
+			<li><a href="#css-layout2">段組みのCSS。</a></li>
+			<li><a href="#scroll-parapara">スクロールパラパラ。</a></li>
+			<li><a href="#ruby-elements">ふりがなを振る。</a></li>
+		</ul>
+	</nav>
+	
+	<div class="contents">
+		<header>
+			<h1 class="logo">Lopan.jp</h1>
+		</header>
+		
+		<main>
+			<section id="css-animation">
+				<h2>動くCSSのためのメモ。</h2>
+				<figure><img src="../../img/css-animation.webp" alt="" width="750" height="500"></figure>
+				<p>JavaScriptを使って実装するようなレイアウトやUIも、CSSだけで作れちゃうほど、便利なプロパティがどんどん増えてます。CSSアニメーションを使ったいろいろについて。</p>
+				<a href="#" class="btn">この記事を読む</a>
+			</section>
+			
+			<section id="about-svg">
+				<h2>SVGでやることのまとめ。</h2>
+				<figure><img src="../../img/about-svg.webp" alt="" width="750" height="500"></figure>
+				<p>Webサイトの中では、アイコンやロゴやシンプルなイラストに使われている「SVG（Scalable Vector Graphics）ファイル」を作るときに、僕がよくやることのまとめです。</p>
+				<a href="#" class="btn">この記事を読む</a>
+			</section>
+			
+			<section id="css-layout2">
+				<h2>段組みのCSS。</h2>
+				<figure><img src="../../img/css-layout2.webp" alt="" width="750" height="500"></figure>
+				<p>段CSSでは、ページレイアウトするためのプロパティがいろいろあるけれど、どんなときにどのプロパティを使うのがベストなのでしょう？さまざまな「段組みするためのCSS」を使って、段組みレイアウトをしてゆきます。</p>
+				<a href="#" class="btn">この記事を読む</a>
+			</section>
+			
+			<section id="scroll-parapara">
+				<h2>スクロールパラパラ。</h2>
+				<figure><img src="../../img/scroll-parapara.webp" alt="" width="750" height="500"></figure>
+				<p>Web上でパラパラまんがを再現する「スクロールパラパラ」の紹介と作り方。</p>
+				<a href="#" class="btn">この記事を読む</a>
+			</section>
+			
+			<section id="ruby-elements">
+				<h2>ふりがなを振る。</h2>
+				<figure><img src="../../img/ruby-elements.webp" alt="" width="750" height="500"></figure>
+				<p>HTMLで、難しい漢字や英単語にふりがなを振りたい時に使う「ruby要素」について、基本的な書き方のまとめ。</p>
+				<a href="#" class="btn">この記事を読む</a>
+			</section>
+		</main>
+		
+		<footer>
+			<p class="copyright"><small>© Lopan.jp</small></p>
+		</footer>
+	</div>
+</div>
+</body>
+</html>
