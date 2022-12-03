@@ -20,7 +20,7 @@ a {
     color-scheme: dark;
   }
   body {
-    color: white;
-    background: black;
+    color: black;
+    background: linear-gradient(to bottom, #FFC778, #FFF);
   }
 }
