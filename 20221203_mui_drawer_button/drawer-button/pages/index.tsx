@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Typography, Stack, Drawer } from '@mui/material';
+import { Box, Typography, Stack, Drawer, IconButton } from '@mui/material';
 import PlayCircleFilledIcon from '@mui/icons-material/PlayCircleFilled';
 
 const contentSx = {
@@ -51,17 +51,7 @@ export default function Home() {
           paddingLeft: 6,
           width: "100%",
           borderRadius: "32px 0px 0px 32px",
-          background: "rgba(100,255,255,0.2)",
-          "&::after": {
-            content: '" "',
-            position: "absolute",
-            width: "50px",
-            height: "50px",
-            opacity: "100%",
-            top: "calc(50% - 7px)",
-            left: "calc(240px - 25px)",
-            borderRadius: "50%",
-          }
+          backgroundImage: "radial-gradient(circle 30px at 0px 53%, transparent 30px, rgba(100,255,255,0.4) 0)",
         }}>
           <Box sx={{ display: "flex", paddingBottom: 2, justifyContent: "flex-end" }}>
             <Typography sx={{ paddingRight: 4 }}> Item 1 </Typography>
@@ -74,12 +64,19 @@ export default function Home() {
             <Typography sx={contentSx}> content 3 </Typography>
           </Box>
         </Box>
-        <PlayCircleFilledIcon sx={{
-          position: "absolute",
-          top: "calc(50% - 1px)",
-          left: "calc(240px - 20px)",
-          fontSize: 40,
-        }} />
+        <IconButton
+          onClick={() => setOpen(!open)}
+          color="primary"
+          sx={{
+            position: "absolute",
+            top: "calc(50% - 8px)",
+            left: "calc(240px - 27px)",
+          }}
+        >
+          <PlayCircleFilledIcon
+            sx={{ fontSize: 40 }}
+          />
+        </IconButton>
       </Box>
     </div>
   )
