@@ -3,6 +3,11 @@ import { IconButtonProps, Box, Typography, Stack, Drawer, IconButton as MuiIconB
 import PlayCircleFilledIcon from '@mui/icons-material/PlayCircleFilled';
 import { styled } from '@mui/material/styles';
 
+const drawerWidth = 240;
+const drawerButtonSize = 48;
+const closedDrawerWidth = 24;
+const cutOutSize = 30;
+
 const contentSx = {
   padding: 3,
   marginBottom: 3,
@@ -20,13 +25,13 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })<{
     easing: theme.transitions.easing.sharp,
     duration: theme.transitions.duration.leavingScreen,
   }),
-  marginLeft: 24,
+  marginLeft: closedDrawerWidth,
   ...(open && {
     transition: theme.transitions.create('margin', {
       easing: theme.transitions.easing.easeOut,
       duration: theme.transitions.duration.enteringScreen,
     }),
-    marginLeft: "240px",
+    marginLeft: `${drawerWidth}px`,
   }),
 }));
 
@@ -42,7 +47,6 @@ const IconButton = styled(MuiIconButton, {
       easing: theme.transitions.easing.easeOut,
       duration: theme.transitions.duration.enteringScreen,
     }),
-    marginLeft: "-25px",
     transform: "rotate(180deg)",
   }),
 }));
@@ -54,14 +58,14 @@ export default function Home() {
       <Box sx={{ display: "table", width: "100%" }}>
         <Drawer
           sx={{
-            width: "240px",
+            width: `${drawerWidth}px`,
             height: "0px",
             backgroundColor: "red",
             borderWidth: "10px",
             flexShrink: 0,
             '& .MuiDrawer-paper': {
               backgroundColor: "transparent",
-              width: "240px",
+              width: `${drawerWidth}px`,
               boxSizing: 'border-box',
               padding: 1,
               paddingLeft: 5,
@@ -86,7 +90,7 @@ export default function Home() {
           <Box sx={{
             paddingLeft: 6,
             borderRadius: "32px 0px 0px 32px",
-            backgroundImage: "radial-gradient(circle 30px at 0px 53%, transparent 30px, rgba(100,255,255,0.4) 0)",
+            backgroundImage: `radial-gradient(circle ${cutOutSize}px at left center, transparent ${cutOutSize}px, rgba(100,255,255,0.4) 0)`,
           }}>
             <Box sx={{ display: "flex", paddingBottom: 2, justifyContent: "flex-end" }}>
               <Typography sx={{ paddingRight: 4 }}> Item 1 </Typography>
@@ -100,17 +104,19 @@ export default function Home() {
             </Box>
           </Box>
           <IconButton
-            onClick={() => setOpen(!open)}
-            color="primary"
+            color="error"
             sx={{
               position: "absolute",
-              top: "calc(50% - 8px)",
-              marginLeft: "-25px",
+              top: `calc(50vh - ${drawerButtonSize / 2}px)`,
+              padding: 0,
+              marginLeft: `-${drawerButtonSize / 2}px`,
+              zIndex: 1250, // upper than drawer
             }}
             open={open}
+            onClick={() => setOpen(!open)}
           >
             <PlayCircleFilledIcon
-              sx={{ fontSize: 40 }}
+              sx={{ fontSize: drawerButtonSize }}
             />
           </IconButton>
         </Main>
