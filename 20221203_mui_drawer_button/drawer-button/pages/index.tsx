@@ -1,12 +1,49 @@
 import { useState } from "react";
-import { IconButtonProps, Box, Typography, Stack, Drawer, IconButton as MuiIconButton } from '@mui/material';
+import { styled, Theme, CSSObject } from '@mui/material/styles';
+import { IconButtonProps, Box, Typography, Stack, Drawer as MuiDrawer, IconButton as MuiIconButton } from '@mui/material';
 import PlayCircleFilledIcon from '@mui/icons-material/PlayCircleFilled';
-import { styled } from '@mui/material/styles';
 
 const drawerWidth = 240;
 const drawerButtonSize = 48;
 const closedDrawerWidth = 24;
 const cutOutSize = 30;
+
+const openedMixin = (theme: Theme): CSSObject => ({
+  transition: theme.transitions.create('transform', {
+    easing: theme.transitions.easing.easeOut,
+    duration: theme.transitions.duration.enteringScreen,
+  }),
+  transform: "none",
+});
+
+const closedMixin = (theme: Theme): CSSObject => ({
+  transition: theme.transitions.create('transform', {
+    easing: theme.transitions.easing.sharp,
+    duration: theme.transitions.duration.leavingScreen,
+  }),
+  transform: `translateX(-${drawerWidth - closedDrawerWidth}px)`,
+});
+
+const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' })(
+  ({ theme, open }) => ({
+    width: `${drawerWidth}px`,
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+    // ...(open ? openedMixin(theme) : closedMixin(theme)),
+    '& .MuiDrawer-paper': {
+      background: "rgba(255,255,255,0.4)",
+      width: `${drawerWidth}px`,
+      boxSizing: 'border-box',
+      padding: 1,
+      paddingLeft: 5,
+      border: "none",
+      overflowX: 'hidden',
+      display: "flex",
+      flexDirection: "column",
+      ...(open ? openedMixin(theme) : closedMixin(theme)),
+    },
+  }),
+);
 
 const contentSx = {
   padding: 3,
@@ -56,6 +93,7 @@ export default function Home() {
   return (
     <div>
       <Box sx={{ display: "table", width: "100%" }}>
+        {/*
         <Drawer
           sx={{
             width: `${drawerWidth}px`,
@@ -76,6 +114,8 @@ export default function Home() {
           anchor="left"
           open={open}
         >
+        */}
+        <Drawer variant="permanent" open={open}>
           <Typography> Hello App </Typography>
           <Stack spacing={2.5}>
             <Typography> Menu 1 </Typography>
