@@ -87,34 +87,23 @@ const IconButton = styled(MuiIconButton, {
     transform: "rotate(180deg)",
   }),
 }));
+function BorderRadius(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns='http://www.w3.org/2000/svg' width={32} height={32} {...props}>
+      <mask id='m' fill='#fff'>
+        <rect id='r' x="0" y="0" width='32' height='32' />
+        <circle id='c' r='32' fill='#000' />
+      </mask>
+      <use xlinkHref='#r' fill='#FFF' mask='url(#m)' fillOpacity="0.4" />
+    </svg>
+  )
+}
 
 export default function Home() {
   const [open, setOpen] = useState<boolean>(true);
   return (
     <div>
       <Box sx={{ display: "table", width: "100%" }}>
-        {/*
-        <Drawer
-          sx={{
-            width: `${drawerWidth}px`,
-            height: "0px",
-            backgroundColor: "red",
-            borderWidth: "10px",
-            flexShrink: 0,
-            '& .MuiDrawer-paper': {
-              backgroundColor: "transparent",
-              width: `${drawerWidth}px`,
-              boxSizing: 'border-box',
-              padding: 1,
-              paddingLeft: 5,
-              border: "none",
-            },
-          }}
-          variant="persistent"
-          anchor="left"
-          open={open}
-        >
-        */}
         <Drawer variant="permanent" open={open}>
           <Typography> Hello App </Typography>
           <Stack spacing={2.5}>
@@ -130,7 +119,7 @@ export default function Home() {
           <Box sx={{
             paddingLeft: 6,
             borderRadius: "32px 0px 0px 32px",
-            backgroundImage: `radial-gradient(circle ${cutOutSize}px at left center, transparent ${cutOutSize}px, rgba(100,255,255,0.4) 0)`,
+            backgroundImage: `radial-gradient(circle ${cutOutSize}px at left center, rgba(255,255,255,0.4) ${cutOutSize}px, transparent 0)`,
           }}>
             <Box sx={{ display: "flex", paddingBottom: 2, justifyContent: "flex-end" }}>
               <Typography sx={{ paddingRight: 4 }}> Item 1 </Typography>
@@ -143,6 +132,24 @@ export default function Home() {
               <Typography sx={contentSx}> content 3 </Typography>
             </Box>
           </Box>
+          <div style={{
+            position: "absolute",
+            bottom: 0,
+            transform: "rotate(90deg)",
+            height: "32px",
+            width: "32px",
+          }}>
+            <BorderRadius />
+          </div>
+          <div style={{
+            position: "absolute",
+            top: 0,
+            transform: "rotate(180deg)",
+            height: "32px",
+            width: "32px",
+          }}>
+            <BorderRadius />
+          </div>
           <IconButton
             color="error"
             sx={{
@@ -160,7 +167,7 @@ export default function Home() {
             />
           </IconButton>
         </Main>
-      </Box>
+      </Box >
     </div >
   )
 }
