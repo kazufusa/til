@@ -75,18 +75,19 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })<{
 const IconButton = styled(MuiIconButton, {
   shouldForwardProp: (prop) => prop !== 'open',
 })<IconButtonProps & { open: boolean }>(({ theme, open }) => ({
-  transition: theme.transitions.create(['margin', 'width'], {
+  transition: theme.transitions.create('transform', {
     easing: theme.transitions.easing.sharp,
     duration: theme.transitions.duration.leavingScreen,
   }),
   ...(open && {
-    transition: theme.transitions.create(['margin', 'width'], {
+    transition: theme.transitions.create('transform', {
       easing: theme.transitions.easing.easeOut,
       duration: theme.transitions.duration.enteringScreen,
     }),
     transform: "rotate(180deg)",
   }),
 }));
+
 function BorderRadius(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns='http://www.w3.org/2000/svg' width={32} height={32} {...props}>
