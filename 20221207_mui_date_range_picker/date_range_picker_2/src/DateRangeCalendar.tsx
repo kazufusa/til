@@ -1,6 +1,6 @@
 import { Box } from "@mui/material";
 import { CalendarPicker, PickersDayProps } from "@mui/x-date-pickers";
-import { subMonths, addMonths, max, min } from "date-fns";
+import { subMonths, addMonths, max, min, startOfMonth, startOfDay } from "date-fns";
 import { useState } from "react";
 
 interface DateRange<TDate> {
@@ -16,102 +16,45 @@ interface DateRangeCalendarProps<TDate> {
   renderDay: (day: TDate, selectedDays: TDate[], pickersDayProps: PickersDayProps<TDate>) => JSX.Element;
 }
 
-interface IDateRangeCalendarModel<TDate> {
-  readonly dateRange: DateRange<TDate>;
-  readonly onChange: (dateRange: DateRange<TDate> | null) => void;
-  readonly minDate: TDate;
-  readonly maxDate: TDate;
-  handleOnChange(date: TDate | null): IDateRangeCalendarModel<TDate>;
-  handleOnMonthChange1(date: TDate | null): IDateRangeCalendarModel<TDate>;
-  handleOnMonthChange2(date: TDate | null): IDateRangeCalendarModel<TDate>;
-  getRange(): DateRange<TDate>;
-  getDefaultMonth1(): TDate;
-  getDefaultMonth2(): TDate;
-  getMinDate(): TDate;
-  getMaxDate(): TDate;
+
+function normalizeDateRange(dateRange: DateRange<Date>): DateRange<Date> {
+  if (dateRange.start && dateRange.end) {
+    const [start, end] = [startOfDay(dateRange.start), startOfDay(dateRange.end)];
+    return { start: min([start, end]), end: max([start, end]) }
+  } else if (dateRange.start) {
+    return { start: startOfDay(dateRange.start), end: null }
+  } else if (dateRange.end) {
+    return { start: startOfDay(dateRange.end), end: null }
+  } else {
+    return { start: null, end: null }
+  }
 }
 
-class DateRangeCalendarModel implements IDateRangeCalendarModel<Date> {
-  static initialDefaultMonth(dateRange: DateRange<Date>): Date {
-    if (dateRange.start) {
-      return dateRange.start
-    } else {
-      return new Date()
-    }
+function initialDefaultMonth(dateRange: DateRange<Date>): Date {
+  if (dateRange.start) {
+    return dateRange.start
+  } else {
+    return startOfMonth(new Date())
   }
-  readonly defaultMonth: Date;
-  constructor(
-    readonly dateRange: DateRange<Date>,
-    readonly onChange: (dateRange: DateRange<Date> | null) => void,
-    readonly minDate: Date,
-    readonly maxDate: Date,
-    defaultMonth?: Date,
-  ) {
-    this.defaultMonth = defaultMonth ?? DateRangeCalendarModel.initialDefaultMonth(dateRange);
-  }
-
-  copy({ dateRange, onChange, minDate, maxDate, defaultMonth }: {
-    dateRange?: DateRange<Date>,
-    onChange?: (dateRange: DateRange<Date> | null) => void,
-    minDate?: Date,
-    maxDate?: Date,
-    defaultMonth?: Date,
-  }) {
-    return new DateRangeCalendarModel(
-      dateRange ?? { ...this.dateRange },
-      onChange ?? this.onChange,
-      minDate ?? this.minDate,
-      maxDate ?? this.maxDate,
-      defaultMonth ?? this.defaultMonth,
-    )
-  }
-  getRange() {
-    return this.dateRange;
-  }
-
-  handleOnChange(date: Date | null): DateRangeCalendarModel {
-    if (!date) return this.copy({});
-    if (this.dateRange.start && !this.dateRange.end) {
-      return this.copy({ dateRange: { start: min([this.dateRange.start, date]), end: max([this.dateRange.start, date]) } });
-    } else {
-      return this.copy({ dateRange: { start: date, end: null } });
-    }
-  }
-
-  handleOnMonthChange1(date: Date | null): DateRangeCalendarModel {
-    return this.copy(date ? { defaultMonth: date } : {})
-  };
-
-  handleOnMonthChange2(date: Date | null): DateRangeCalendarModel {
-    return this.copy(date ? { defaultMonth: subMonths(date, 1) } : {})
-  };
-
-  getDefaultMonth1(): Date { return this.defaultMonth };
-
-  getDefaultMonth2(): Date { return addMonths(this.defaultMonth, 1) };
-
-  getMinDate(): Date { return this.minDate };
-  getMaxDate(): Date { return this.maxDate };
 }
 
-function newDateRangeFn(current: DateRange<Date>) {
-  return (date: Date | null) => {
-    if (!date) return { ...current }
-    if (current.start && !current.end) {
-      return { start: min([current.start, date]), end: max([current.start, date]) };
-    } else {
-      return { start: date, end: null };
-    }
+function updateDateRange(current: DateRange<Date>, date: Date | null) {
+  if (!date) return { ...current }
+  if (current.start && !current.end) {
+    return { start: min([current.start, date]), end: max([current.start, date]) };
+  } else {
+    return { start: date, end: null };
   }
 }
 
 export function DateRangeCalendar(props: DateRangeCalendarProps<Date>) {
-  const [defaultMonth, setDefaultMonth] = useState<Date>(() => {
-    return DateRangeCalendarModel.initialDefaultMonth(props.dateRange)
-  })
-  const [dateRange, setDateRange] = useState<DateRange<Date>>(props.dateRange);
+  const [defaultMonth, setDefaultMonth] = useState<Date>(initialDefaultMonth(props.dateRange))
+  const [dateRange, setDateRange] = useState<DateRange<Date>>(normalizeDateRange(props.dateRange))
   const onChange = (v: Date | null) => {
-    setDateRange((newDateRangeFn(dateRange))(v));
+    if (!v) return
+    const newDateRange = updateDateRange(dateRange, startOfDay(v));
+    setDateRange(newDateRange);
+    props.onChange(newDateRange);
   };
   return (
     <Box display="flex" justifyContent="center">
@@ -180,7 +123,7 @@ export function DateRangeCalendar(props: DateRangeCalendarProps<Date>) {
           onChange={onChange}
           minDate={props.minDate}
           maxDate={props.maxDate}
-          onMonthChange={ (v) => v && setDefaultMonth(subMonths(v, 1)) }
+          onMonthChange={(v) => v && setDefaultMonth(subMonths(v, 1))}
         />
       </Box>
     </Box>
