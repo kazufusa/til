@@ -1,4 +1,4 @@
-import { Box } from "@mui/material";
+import { Box, SvgIcon } from "@mui/material";
 import { CalendarPicker, PickersDayProps } from "@mui/x-date-pickers";
 import { subMonths, addMonths, max, min, startOfMonth, startOfDay } from "date-fns";
 import { useState } from "react";
@@ -62,7 +62,7 @@ export function DateRangeCalendar(props: DateRangeCalendarProps<Date>) {
         sx={
           {
             "& .MuiPickersCalendarHeader-root": {
-              padding: "0 24px 0 24px",
+              padding: "0",
               position: "relative",
               "& >:first-child": {
                 position: "absolute",

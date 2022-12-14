@@ -37,44 +37,38 @@ function isEndOfMonth(date: Date) {
 
 function makeSx(date: Date, dateRange: DateRange): SxProps {
   if (isInRange(date, dateRange)) {
-    if (isSunday(date) || isStartOfMonth(date)) {
-      return {
-        backgroundColor: "#AAFFFF",
-        "&::after": {
-          content: "''",
-          position: "absolute",
-          height: "36px",
-          backgroundColor: "#AAFFFF",
-          zIndex: -1,
-          width: "40px",
-          transform: "translateX(50%)",
-        }
-      }
-    }
-    if (isSaturday(date) || isEndOfMonth(date)) {
-      return {
-        backgroundColor: "#AAFFFF",
-        "&::after": {
-          content: "''",
-          position: "absolute",
-          height: "36px",
-          backgroundColor: "#AAFFFF",
-          zIndex: -1,
-          width: "40px",
-          transform: "translateX(-50%)",
-        }
-      }
-    }
     return {
       backgroundColor: "#AAFFFF",
       "&::after": {
         borderRadius: 0,
         content: "''",
         position: "absolute",
-        width: "80px",
-        height: "36px",
+        width: "60px",
+        height: "24px",
         backgroundColor: "#AAFFFF",
         zIndex: -1,
+        ...(
+          (isSunday(date) || isStartOfMonth(date)) ? {
+            width: "30px",
+            transform: "translateX(50%)",
+          } : {}
+        ),
+        ...(
+          (isSaturday(date) || isEndOfMonth(date)) ? {
+            width: "30px",
+            transform: "translateX(-50%)",
+          } : {}
+        ),
+        ...(
+          (isSaturday(date) && isStartOfMonth(date)) ? {
+            width: "0px",
+          } : {}
+        ),
+        ...(
+          (isSunday(date) && isEndOfMonth(date)) ? {
+            width: "0px",
+          } : {}
+        ),
       }
     }
   }
@@ -96,11 +90,55 @@ function PickersDayFn({ dateRange }: Props) {
 }
 const theme = createTheme({
   components: {
+    PrivatePickersSlideTransition: {
+      styleOverrides: {
+        root: {
+          minHeight: "160px!important",
+        }
+      }
+    },
+    MuiPickersCalendarHeader: {
+      styleOverrides: {
+        root: {
+          "& .MuiPickersCalendarHeader-label": {
+            fontSize: "13px!important",
+            margin: "0 3px 0 3px",
+          }
+        },
+      },
+    },
+    MuiCalendarPicker: {
+      styleOverrides: {
+        root: {
+          width: "220px",
+          maxHeight: "250px",
+          overflow: "hidden",
+          "& span": {
+            width: "24px",
+            height: "24px",
+            margin: "0 3px 0 3px",
+          },
+        },
+      },
+    },
     MuiPickersDay: {
       styleOverrides: {
         root: {
+          width: "24px",
+          height: "24px",
+          margin: "0 3px 0 3px",
+          lineHeight: "0",
           "&:hover": {
             backgroundColor: "#EEEEEE",
+          },
+          "&.Mui-selected": {
+            backgroundColor: "#1976D2",
+          },
+          "&.Mui-selected:hover": {
+            backgroundColor: "#1976D2",
+          },
+          "&:focus.Mui-selected": {
+            backgroundColor: "#1976D2",
           }
         },
       },
