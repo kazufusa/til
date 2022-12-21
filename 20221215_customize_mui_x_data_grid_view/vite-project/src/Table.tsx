@@ -4,9 +4,9 @@ import CustomPagination from "./CustomPagenation";
 
 export default function Table() {
   const { data } = useDemoData({
-    dataSet: 'Commodity',
-    rowLength: 300,
-    maxColumns: 8,
+    dataSet: 'Employee',
+    rowLength: 30,
+    maxColumns: 3,
   });
 
   return (
