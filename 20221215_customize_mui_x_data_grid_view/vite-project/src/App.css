@@ -4,3 +4,8 @@
   padding: 2rem;
   text-align: center;
 }
+
+::-webkit-scrollbar {
+    width: 10px;
+    display: none;
+}
