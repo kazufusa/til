@@ -18,7 +18,7 @@ export default function CustomPagination() {
 
   return (
     <>
-      top: {apiRef.current?.getScrollPosition().top} / left:{" "}
+      top: {apiRef.current?.getScrollPosition().top} / left:
       {apiRef.current?.getScrollPosition().left}
       <Pagination
         color="primary"
@@ -30,7 +30,6 @@ export default function CustomPagination() {
       />
       {pageCount !== 0 && `${page + 1} / ${pageCount}`}
       <Button onClick={() => apiRef?.current?.scroll({ left: 100 })}>
-        {" "}
         move to pos
       </Button>
       <Button
@@ -38,7 +37,6 @@ export default function CustomPagination() {
           apiRef?.current?.scrollToIndexes({ colIndex: 6 });
         }}
       >
-        {" "}
         move to column
       </Button>
     </>
