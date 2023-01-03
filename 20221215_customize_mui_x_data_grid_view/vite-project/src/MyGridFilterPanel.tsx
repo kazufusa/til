@@ -1,34 +1,33 @@
 import { GridFilterPanel, GridFilterPanelProps } from "@mui/x-data-grid";
 import { styled, Theme } from "@mui/material";
 
-export const MyGridFilterPanel = styled((props: GridFilterPanelProps) => <GridFilterPanel
-  filterFormProps={
-    {
+export const MyGridFilterPanel = styled((props: GridFilterPanelProps) => (
+  <GridFilterPanel
+    filterFormProps={{
       linkOperatorInputProps: {
-        variant: 'outlined',
-        size: 'small',
+        variant: "outlined",
+        size: "small",
       },
       columnInputProps: {
-        variant: 'outlined',
-        size: 'small',
+        variant: "outlined",
+        size: "small",
       },
       operatorInputProps: {
-        variant: 'outlined',
-        size: 'small',
+        variant: "outlined",
+        size: "small",
       },
       valueInputProps: {
         InputComponentProps: {
           label: "",
-          variant: 'outlined',
-          size: 'small',
+          variant: "outlined",
+          size: "small",
         },
       },
-      deleteIconProps: {
-      },
-    }
-  }
-  {...props}
-/>)`
+      deleteIconProps: {},
+    }}
+    {...props}
+  />
+))`
 background-color: white;
 border-radius: 5px;
 border: 1px solid;
@@ -39,7 +38,8 @@ border: 1px solid;
     width: 500px;
 
     &:nth-of-type(odd) {
-      /* background-color: ${(theme: Theme) => theme?.palette?.mode === 'dark' ? '#444' : '#f5f5f5'}; */
+      /* background-color: ${(theme: Theme) =>
+        theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
     }
 
     & .MuiDataGrid-filterFormDeleteIcon {
@@ -80,4 +80,4 @@ border: 1px solid;
       }
     }
 }
-`
+` as typeof GridFilterPanel;
