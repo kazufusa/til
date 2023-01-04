@@ -6,6 +6,6 @@ interface RowModel extends GridValidRowModel {
   lastName: string;
   firstName: string;
   age: Age;
-};
+}
 
 export default RowModel;

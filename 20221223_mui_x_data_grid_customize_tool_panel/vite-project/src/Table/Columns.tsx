@@ -1,5 +1,9 @@
 import { ageComparator, ageOperators } from "./Age";
-import { GridColDef, GridValueGetterParams, GridColumns } from "@mui/x-data-grid";
+import {
+  GridColDef,
+  GridValueGetterParams,
+  GridColumns,
+} from "@mui/x-data-grid";
 import RowModel from "./RowModel";
 
 const Columns: GridColDef<RowModel>[] = [

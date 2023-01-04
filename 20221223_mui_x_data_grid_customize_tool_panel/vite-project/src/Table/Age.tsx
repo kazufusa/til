@@ -3,8 +3,19 @@ import {
   GridFilterOperator,
   GridFilterItem,
   GridFilterInputValue,
+  getGridNumericOperators,
 } from "@mui/x-data-grid";
 import { RequireOne } from "../typeUtil";
+
+const parseNumericValue = (
+  value: string | number | null | undefined
+): number | null => {
+  if (value == null) {
+    return null;
+  }
+
+  return Number(value);
+};
 
 export type Age = RequireOne<{
   value?: number;
@@ -22,36 +33,25 @@ export const ageComparator: GridComparatorFn<number | string> = (v1, v2) => {
     return v1 > v2 ? 1 : -1;
   }
 };
-
 export const ageOperators: GridFilterOperator[] = [
+  ...getGridNumericOperators().filter(
+    (v) => !["isEmpty", "isNotEmpty", "isAnyOf"].includes(v.value)
+  ),
   {
-    label: "Above",
-    value: "above",
-    getApplyFilterFn: (filterItem: GridFilterItem) => {
-      if (
-        !filterItem.columnField ||
-        !filterItem.value ||
-        !filterItem.operatorValue
-      ) {
-        return null;
-      }
-      return (params): boolean => {
-        return Number(params.value) >= Number(filterItem.value);
-      };
-    },
-    InputComponent: GridFilterInputValue,
-    InputComponentProps: { type: "number" },
-  },
-  {
-    label: "Is empty",
-    value: "is empty",
-    getApplyFilterFn: (filterItem: GridFilterItem) => {
-      if (!filterItem.columnField || !filterItem.operatorValue) {
-        return null;
-      }
-
+    value: "isEmpty",
+    requiresFilterValue: false,
+    getApplyFilterFn: (_: GridFilterItem) => {
       return (params): boolean => {
         return typeof params.value === "string";
+      };
+    },
+  },
+  {
+    value: "isNotEmpty",
+    requiresFilterValue: false,
+    getApplyFilterFn: (_: GridFilterItem) => {
+      return (params): boolean => {
+        return typeof params.value !== "string";
       };
     },
   },

@@ -1,4 +1,4 @@
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid, jaJP } from "@mui/x-data-grid";
 import Box from "@mui/material/Box";
 import RowModel from "./Table/RowModel";
 import Columns from "./Table/Columns";
@@ -22,13 +22,13 @@ const rows: RowModel[] = [
   },
 ];
 
-const MyDataGrid = styled(DataGrid)`
-` as typeof DataGrid;
+const MyDataGrid = styled(DataGrid)`` as typeof DataGrid;
 
 export default function Table() {
   return (
     <Box sx={{ height: 400, width: "100%" }}>
       <MyDataGrid
+        localeText={jaJP.components.MuiDataGrid.defaultProps.localeText}
         rows={rows}
         columns={Columns}
         pageSize={5}
