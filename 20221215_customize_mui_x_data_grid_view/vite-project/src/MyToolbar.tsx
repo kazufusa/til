@@ -5,6 +5,7 @@ import {
   GridToolbarContainerProps,
   GridToolbarFilterButton,
 } from "@mui/x-data-grid";
+import MyToolbarColumnsButton from "./MyToolbarColumnsButton";
 import MyToolbarFilterButton from "./MyToolbarFilterButton";
 
 function CustomToolbar(props: GridToolbarContainerProps) {
@@ -12,6 +13,7 @@ function CustomToolbar(props: GridToolbarContainerProps) {
     <GridToolbarContainer {...props}>
       <GridToolbarColumnsButton />
       <GridToolbarFilterButton />
+      <MyToolbarColumnsButton />
       <MyToolbarFilterButton className="grid-toolbar-filter-button" />
     </GridToolbarContainer>
   );
