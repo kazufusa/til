@@ -1,33 +1,38 @@
-import { GridFilterPanel, GridFilterPanelProps } from "@mui/x-data-grid";
+import { GridFilterPanel } from "@mui/x-data-grid";
 import { styled, Theme } from "@mui/material";
+import React from "react";
 
-export const MyGridFilterPanel = styled((props: GridFilterPanelProps) => (
-  <GridFilterPanel
-    filterFormProps={{
-      linkOperatorInputProps: {
-        variant: "outlined",
-        size: "small",
-      },
-      columnInputProps: {
-        variant: "outlined",
-        size: "small",
-      },
-      operatorInputProps: {
-        variant: "outlined",
-        size: "small",
-      },
-      valueInputProps: {
-        InputComponentProps: {
-          label: "",
+export const MyGridFilterPanel = styled(({ className }: { className?: string }) => (
+  <div
+    className={className}
+  >
+    <GridFilterPanel
+      filterFormProps={{
+        linkOperatorInputProps: {
           variant: "outlined",
           size: "small",
         },
-      },
-      deleteIconProps: {},
-    }}
-    {...props}
-  />
+        columnInputProps: {
+          variant: "outlined",
+          size: "small",
+        },
+        operatorInputProps: {
+          variant: "outlined",
+          size: "small",
+        },
+        valueInputProps: {
+          InputComponentProps: {
+            label: "",
+            variant: "outlined",
+            size: "small",
+          },
+        },
+        deleteIconProps: {},
+      }}
+    />
+  </div>
 ))`
+margin-top: 8px;
 background-color: white;
 border-radius: 5px;
 border: 1px solid;
@@ -39,7 +44,7 @@ border: 1px solid;
 
     &:nth-of-type(odd) {
       /* background-color: ${(theme: Theme) =>
-        theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
+    theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
     }
 
     & .MuiDataGrid-filterFormDeleteIcon {
@@ -80,4 +85,4 @@ border: 1px solid;
       }
     }
 }
-` as typeof GridFilterPanel;
+` as React.ElementType;

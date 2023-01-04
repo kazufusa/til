@@ -14,7 +14,7 @@ export default function MyToolbarFilterButton({ className }: Props) {
   const open = Boolean(anchorEl);
   return (
     <>
-      <Button className={className} onClick={handleClick}>
+      <Button className={className} onClick={handleClick} variant="contained">
         FILTER
       </Button>
       {open && (
