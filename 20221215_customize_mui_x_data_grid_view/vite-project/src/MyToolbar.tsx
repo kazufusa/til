@@ -1,10 +1,12 @@
-import { styled } from "@mui/material";
+import { styled, TablePagination } from "@mui/material";
 import {
   GridToolbarColumnsButton,
   GridToolbarContainer,
   GridToolbarContainerProps,
   GridToolbarFilterButton,
 } from "@mui/x-data-grid";
+import { MyPager } from "./MyPager";
+import { MyPageSize } from "./MyPageSize";
 import MyToolbarColumnsButton from "./MyToolbarColumnsButton";
 import MyToolbarFilterButton from "./MyToolbarFilterButton";
 
@@ -14,6 +16,8 @@ function CustomToolbar(props: GridToolbarContainerProps) {
       <GridToolbarColumnsButton />
       <GridToolbarFilterButton />
       <MyToolbarColumnsButton />
+      <MyPageSize />
+      <MyPager />
       <MyToolbarFilterButton className="grid-toolbar-filter-button" />
     </GridToolbarContainer>
   );
@@ -24,6 +28,7 @@ export default styled((props: GridToolbarContainerProps) => (
 ))`
   height: 100px;
   background-color: lightgray;
+  align-items: flex-end;
 
   & .grid-toolbar-filter-button {
     position: absolute;

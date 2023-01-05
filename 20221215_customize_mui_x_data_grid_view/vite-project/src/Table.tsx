@@ -2,8 +2,7 @@ import { useDemoData } from "@mui/x-data-grid-generator";
 // import CustomPagination from "./CustomPagenation";
 import PageView from "./PageView";
 import { DataGrid } from "@mui/x-data-grid";
-import { styled } from "@mui/material";
-import { MyGridFilterPanel } from "./MyGridFilterPanel";
+import { styled, Typography } from "@mui/material";
 import MyToolbar from "./MyToolbar";
 
 const MyDataGrid = styled(DataGrid)`` as typeof DataGrid;
@@ -17,6 +16,19 @@ export default function Table() {
 
   return (
     <div style={{ height: 400, width: "100%" }}>
+      <div>
+        <Typography
+          variant="h4"
+          align="left"
+          sx={{
+            position: "absolute",
+            zIndex: 1,
+          }}
+        >
+          {" "}
+          Hello MUI X Data Grid{" "}
+        </Typography>
+      </div>
       <MyDataGrid
         localeText={{
           filterPanelOperators: "",
@@ -25,13 +37,6 @@ export default function Table() {
         scrollbarSize={100}
         components={{
           Toolbar: MyToolbar,
-          // FilterPanel: MyGridFilterPanel,
-          // Header: (props) => (
-          //   <Box {...props}>
-          //     <h1>Title</h1>
-          //     <CustomPagination />
-          //   </Box>
-          // ),
           Footer: () => (
             <>
               <p>Footer</p>
