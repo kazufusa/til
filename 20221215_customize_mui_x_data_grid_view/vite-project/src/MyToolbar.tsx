@@ -1,10 +1,10 @@
 import { styled, TablePagination } from "@mui/material";
 import {
-  GridToolbarColumnsButton,
   GridToolbarContainer,
   GridToolbarContainerProps,
-  GridToolbarFilterButton,
 } from "@mui/x-data-grid";
+import { MyCsvDownloadButton } from "./MyCsvDownloadButton";
+import { MyDensityButton } from "./MyDensityButton";
 import { MyPager } from "./MyPager";
 import { MyPageSize } from "./MyPageSize";
 import MyToolbarColumnsButton from "./MyToolbarColumnsButton";
@@ -13,8 +13,8 @@ import MyToolbarFilterButton from "./MyToolbarFilterButton";
 function CustomToolbar(props: GridToolbarContainerProps) {
   return (
     <GridToolbarContainer {...props}>
-      <GridToolbarColumnsButton />
-      <GridToolbarFilterButton />
+      <MyDensityButton />
+      <MyCsvDownloadButton />
       <MyToolbarColumnsButton />
       <MyPageSize />
       <MyPager />
