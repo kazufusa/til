@@ -1,11 +1,15 @@
 import { useDemoData } from "@mui/x-data-grid-generator";
 // import CustomPagination from "./CustomPagenation";
-import PageView from "./PageView";
 import { DataGrid } from "@mui/x-data-grid";
 import { styled, Typography } from "@mui/material";
 import MyToolbar from "./MyToolbar";
+import MyScrollBar from "./MyScrollBar";
 
-const MyDataGrid = styled(DataGrid)`` as typeof DataGrid;
+const MyDataGrid = styled(DataGrid)`
+  & .MuiDataGrid-virtualScroller {
+    background: red;
+  }
+` as typeof DataGrid;
 
 export default function Table() {
   const { data } = useDemoData({
@@ -15,7 +19,7 @@ export default function Table() {
   });
 
   return (
-    <div style={{ height: 400, width: "100%" }}>
+    <div style={{ height: 500, width: "100%" }}>
       <div>
         <Typography
           variant="h4"
@@ -25,7 +29,6 @@ export default function Table() {
             zIndex: 1,
           }}
         >
-          {" "}
           Hello MUI X Data Grid{" "}
         </Typography>
       </div>
@@ -39,8 +42,7 @@ export default function Table() {
           Toolbar: MyToolbar,
           Footer: () => (
             <>
-              <p>Footer</p>
-              <PageView />
+              <MyScrollBar />
             </>
           ),
         }}
