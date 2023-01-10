@@ -1,35 +1,40 @@
 import { GridFilterPanel } from "@mui/x-data-grid";
-import { styled, Theme } from "@mui/material";
+import { styled, Theme, ThemeProvider } from "@mui/material";
 import React from "react";
+import appTheme from "./AppTheme";
+
+const theme = { ...appTheme, ...{ components: { MuiAutocomplete: undefined } } }
 
 export const MyGridFilterPanel = styled(
   ({ className }: { className?: string }) => (
-    <div className={className}>
-      <GridFilterPanel
-        filterFormProps={{
-          linkOperatorInputProps: {
-            variant: "outlined",
-            size: "small",
-          },
-          columnInputProps: {
-            variant: "outlined",
-            size: "small",
-          },
-          operatorInputProps: {
-            variant: "outlined",
-            size: "small",
-          },
-          valueInputProps: {
-            InputComponentProps: {
-              label: "",
+    <ThemeProvider theme={theme}>
+      <div className={className}>
+        <GridFilterPanel
+          filterFormProps={{
+            linkOperatorInputProps: {
               variant: "outlined",
               size: "small",
             },
-          },
-          deleteIconProps: {},
-        }}
-      />
-    </div>
+            columnInputProps: {
+              variant: "outlined",
+              size: "small",
+            },
+            operatorInputProps: {
+              variant: "outlined",
+              size: "small",
+            },
+            valueInputProps: {
+              InputComponentProps: {
+                label: "",
+                variant: "outlined",
+                size: "small",
+              },
+            },
+            deleteIconProps: {},
+          }}
+        />
+      </div>
+    </ThemeProvider>
   )
 )`
 margin-top: 8px;
@@ -44,7 +49,7 @@ border: 1px solid;
 
     &:nth-of-type(odd) {
       /* background-color: ${(theme: Theme) =>
-        theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
+    theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
     }
 
     & .MuiDataGrid-filterFormDeleteIcon {
@@ -73,6 +78,12 @@ border: 1px solid;
       margin-top: 10px;
       margin-left: 64px;
       width: 100%;
+      & .MuiOutlinedInput-root {
+        border: 1px solid;
+      }
+      & .MuiFormLabel-root {
+        display: none;
+      }
       &::after {
         position: absolute;
         height: 100%;

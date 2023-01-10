@@ -1,13 +1,12 @@
-import { useState } from "react";
 import "./App.css";
 import Table from "./Table";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+import { ThemeProvider } from "@mui/material/styles";
+import appThemeeme from "./AppTheme";
 
 function App() {
-  const theme = createTheme();
   return (
     <div className="App">
-      <ThemeProvider theme={theme}>
+      <ThemeProvider theme={appThemeeme}>
         <Table />
       </ThemeProvider>
     </div>
