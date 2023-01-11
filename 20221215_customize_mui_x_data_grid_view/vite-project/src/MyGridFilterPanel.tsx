@@ -3,7 +3,10 @@ import { styled, Theme, ThemeProvider } from "@mui/material";
 import React from "react";
 import appTheme from "./AppTheme";
 
-const theme = { ...appTheme, ...{ components: { MuiAutocomplete: undefined } } }
+const theme = {
+  ...appTheme,
+  ...{ components: { MuiAutocomplete: undefined } },
+};
 
 export const MyGridFilterPanel = styled(
   ({ className }: { className?: string }) => (
@@ -49,7 +52,7 @@ border: 1px solid;
 
     &:nth-of-type(odd) {
       /* background-color: ${(theme: Theme) =>
-    theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
+        theme?.palette?.mode === "dark" ? "#444" : "#f5f5f5"}; */
     }
 
     & .MuiDataGrid-filterFormDeleteIcon {
