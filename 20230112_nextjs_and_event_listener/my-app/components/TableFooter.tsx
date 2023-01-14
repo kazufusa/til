@@ -2,12 +2,20 @@ import { Box, Stack } from "@mui/material";
 import {
   gridColumnsTotalWidthSelector,
   useGridApiContext,
+  useGridApiEventHandler,
 } from "@mui/x-data-grid";
 import React from "react";
 import Slider from "./Slider";
 
 export default function TableFooter() {
   const apiRef = useGridApiContext();
+
+  useGridApiEventHandler(apiRef, "rowsScroll", ({ left }, event) => {
+    if (left !== undefined && isFinite(left)) {
+      setValue((left / valueLimit) * 100);
+    }
+  });
+
   const [value, setValue] = React.useState<number>(0);
   const thumbWidth =
     Math.min(
@@ -19,20 +27,6 @@ export default function TableFooter() {
   const valueLimit =
     gridColumnsTotalWidthSelector(apiRef) -
     (apiRef.current?.getRootDimensions()?.viewportOuterSize?.width ?? 0);
-
-  const handleScroll = React.useCallback(() => {
-    const left = apiRef.current?.getScrollPosition().left;
-    if (left !== undefined && isFinite(left)) {
-      setValue((left / valueLimit) * 100);
-    }
-  }, [setValue, apiRef, valueLimit]);
-
-  React.useEffect(() => {
-    const ref = apiRef.current?.windowRef?.current;
-    if (!ref) return;
-    ref.addEventListener("scroll", handleScroll, { passive: true });
-    return () => ref.removeEventListener("scroll", handleScroll);
-  }, [apiRef, handleScroll]);
 
   const handleChange = React.useCallback(
     (_: Event, newValue: number | number[]) => {
