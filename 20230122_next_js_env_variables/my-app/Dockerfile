@@ -17,10 +17,8 @@ COPY public ./public
 COPY styles ./styles
 COPY --from=deps /app/node_modules ./node_modules
 
-
 RUN --mount=type=secret,id=NEXT_PUBLIC_SECRET_KEY \
-  export NEXT_PUBLIC_SECRET_KEY=$(cat /run/secrets/NEXT_PUBLIC_SECRET_KEY) && \
-  echo NEXT_PUBLIC_SECRET_KEY=${NEXT_PUBLIC_SECRET_KEY} >> .env
+  echo NEXT_PUBLIC_SECRET_KEY=$(cat /run/secrets/NEXT_PUBLIC_SECRET_KEY) >> .env
 
 RUN pnpm build
 
