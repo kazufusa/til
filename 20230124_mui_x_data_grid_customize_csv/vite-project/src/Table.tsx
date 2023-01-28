@@ -1,4 +1,3 @@
-import { Button } from "@mui/material";
 import {
   DataGrid,
   GridColumns,
@@ -6,15 +5,7 @@ import {
   GridRowsProp,
   GridToolbarContainer,
   GridToolbarExport,
-  gridVisibleSortedRowIdsSelector,
-  useGridApiContext,
 } from "@mui/x-data-grid";
-import { GridApiCommunity } from "@mui/x-data-grid/models/api/gridApiCommunity";
-
-interface OtherRowModel {
-  id: number;
-  name: string;
-}
 
 interface BaseRowModel {
   id: number;
@@ -144,102 +135,23 @@ const columns: GridColumns = [
     width: 150,
     renderCell: (params) => <p>!<strong>{params.value}</strong>!</p>
   },
+  {
+    field: "test",
+    headerName: "Test",
+    filterable: false,
+    hide: true,
+    hideable: false,
+  },
 ];
 
 const csvOptions: GridCsvExportOptions = {
-  delimiter: "aaa",
+  allColumns: true,
 };
-
-export function exportFile(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 0);
-}
-
-
-function getDataAsCsv(apiRef: React.MutableRefObject<GridApiCommunity>): string {
-  const rowIds = gridVisibleSortedRowIdsSelector(apiRef)
-  const rows = rowIds.map((id) => apiRef.current.getRow(id) ?? []).flat()
-  // console.log(rows);
-  // console.log(apiRef.current.getCellValue(rowIds[1], "jobTitle"))
-  // console.log(apiRef.current.getCellParams(rowIds[0], "jobTitle").formattedValue)
-  console.log(apiRef.current.getRowModels())
-
-  return "aaa,bbb,ccc\nddd,eee,fff"
-}
-
-const serializeCellValue = (value: string, delimiterCharacter: string) => {
-  if (typeof value === 'string') {
-    const formattedValue = value.replace(/"/g, '""');
-    if ([delimiterCharacter, '\n', '\r'].some((delimiter) => formattedValue.includes(delimiter))) {
-      return `"${formattedValue}"`;
-    }
-    return formattedValue;
-  }
-  return value;
-};
-
-
-const serializeRow = (
-  id: GridRowId,
-  columns: GridStateColDef[],
-  getCellParams: (id: GridRowId, field: string) => GridCellParams,
-  delimiterCharacter: string,
-) =>
-  columns.map((column) => {
-    const cellParams = getCellParams(id, column.field);
-    if (process.env.NODE_ENV !== 'production') {
-      if (String(cellParams.formattedValue) === '[object Object]') {
-        objectFormattedValueWarning();
-      }
-    }
-    return serializeCellValue(cellParams.formattedValue, delimiterCharacter);
-  });
-
-export function buildCSV(options: BuildCSVOptions): string {
-  const { columns, rowIds, getCellParams, delimiterCharacter, includeHeaders } = options;
-
-  const CSVBody = rowIds
-    .reduce<string>(
-      (acc, id) =>
-        `${acc}${serializeRow(id, columns, getCellParams, delimiterCharacter).join(
-          delimiterCharacter,
-        )}\r\n`,
-      '',
-    )
-    .trim();
-
-  if (!includeHeaders) {
-    return CSVBody;
-  }
-
-  const CSVHead = `${columns
-    .filter((column) => column.field !== GRID_CHECKBOX_SELECTION_COL_DEF.field)
-    .map((column) => serializeCellValue(column.headerName || column.field, delimiterCharacter))
-    .join(delimiterCharacter)}\r\n`;
-
-  return `${CSVHead}${CSVBody}`.trim();
-}
-
 
 function CustomToolbar() {
-  const apiRef = useGridApiContext();
-
-  const handleClick = () => {
-    const csv = getDataAsCsv(apiRef)
-    const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csv], { type: 'text/csv' });
-    exportFile(blob, "a.csv")
-  }
-
   return (
     <GridToolbarContainer>
       <GridToolbarExport csvOptions={csvOptions} />
-      <Button onClick={handleClick}> ORIGINAL CSV </Button>
     </GridToolbarContainer>
   );
 }
@@ -251,10 +163,14 @@ export default function Table() {
         rows={rows}
         columns={columns}
         pageSize={1}
-        components={{
-          Toolbar: CustomToolbar,
+        components={{ Toolbar: CustomToolbar, }}
+        componentsProps={{
+          toolbar: {
+            csvOptions: {
+              allColumns: true
+            }
+          }
         }}
-        componentsProps={{ toolbar: { csvOptions } }}
       />
     </div>
   );
