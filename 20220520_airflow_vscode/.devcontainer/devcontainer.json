@@ -1,0 +1,24 @@
+{
+    "name": "easi-mypage-composer-wf",
+    "dockerFile": "Dockerfile",
+    "context": "..",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/opt/airflow,type=bind,consistency=cached"
+    ],
+    "workspaceFolder": "/opt/airflow",
+    "settings": {
+        "python.pythonPath": "/usr/local/bin/python",
+        "python.linting.pylintEnabled": false,
+        "python.linting.flake8Enabled": true,
+        "python.linting.flake8Args": [
+            "--ignore=E402,E501"
+        ],
+        "python.formatting.provider": "black",
+        "[python]": {
+            "editor.formatOnSave": false
+        }
+    },
+    "extensions": [
+        "ms-python.python"
+    ]
+}

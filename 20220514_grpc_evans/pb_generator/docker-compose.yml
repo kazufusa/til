@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  gen-pb-go:
+    build:
+      context: ../
+      dockerfile: ./pb_generator/Dockerfile
+    volumes:
+      - ../protobuf:/input
+      - ../pb:/output

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "grpc_evans/pb;pb";
+
+message HelloRequest {
+    int64 id = 1;
+    string name = 2;
+}
+
+message HelloResponse {
+    int64 id = 1;
+    string name = 2;
+}
