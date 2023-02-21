@@ -1,0 +1,116 @@
+type Comment {
+  id: ID!
+  post_id: ID!
+  body: String!
+  date: Date!
+  Post: Post
+}
+
+input CommentFilter {
+  q: String
+  ids: [ID]
+  id: ID
+  post_id: ID
+  body: String
+  date: Date
+  id_neq: ID
+  post_id_neq: ID
+  body_neq: String
+  date_lt: Date
+  date_lte: Date
+  date_gt: Date
+  date_gte: Date
+  date_neq: Date
+}
+
+input CommentInput {
+  post_id: ID!
+  body: String!
+  date: Date!
+}
+
+"""Date type"""
+scalar Date
+
+type ListMetadata {
+  count: Int
+}
+
+type Mutation {
+  createPost(title: String!, views: Int!, user_id: ID!): Post
+  createManyPost(data: [PostInput]): [Post]
+  updatePost(id: ID!, title: String, views: Int, user_id: ID): Post
+  removePost(id: ID!): Post
+  createUser(name: String!): User
+  createManyUser(data: [UserInput]): [User]
+  updateUser(id: ID!, name: String): User
+  removeUser(id: ID!): User
+  createComment(post_id: ID!, body: String!, date: Date!): Comment
+  createManyComment(data: [CommentInput]): [Comment]
+  updateComment(id: ID!, post_id: ID, body: String, date: Date): Comment
+  removeComment(id: ID!): Comment
+}
+
+type Post {
+  id: ID!
+  title: String!
+  views: Int!
+  user_id: ID!
+  User: User
+  Comments: [Comment]
+}
+
+input PostFilter {
+  q: String
+  ids: [ID]
+  id: ID
+  title: String
+  views: Int
+  user_id: ID
+  id_neq: ID
+  title_neq: String
+  views_lt: Int
+  views_lte: Int
+  views_gt: Int
+  views_gte: Int
+  views_neq: Int
+  user_id_neq: ID
+}
+
+input PostInput {
+  title: String!
+  views: Int!
+  user_id: ID!
+}
+
+type Query {
+  Post(id: ID!): Post
+  allPosts(page: Int, perPage: Int, sortField: String, sortOrder: String, filter: PostFilter): [Post]
+  _allPostsMeta(page: Int, perPage: Int, filter: PostFilter): ListMetadata
+  User(id: ID!): User
+  allUsers(page: Int, perPage: Int, sortField: String, sortOrder: String, filter: UserFilter): [User]
+  _allUsersMeta(page: Int, perPage: Int, filter: UserFilter): ListMetadata
+  Comment(id: ID!): Comment
+  allComments(page: Int, perPage: Int, sortField: String, sortOrder: String, filter: CommentFilter): [Comment]
+  _allCommentsMeta(page: Int, perPage: Int, filter: CommentFilter): ListMetadata
+}
+
+type User {
+  id: ID!
+  name: String!
+  Posts: [Post]
+}
+
+input UserFilter {
+  q: String
+  ids: [ID]
+  id: ID
+  name: String
+  id_neq: ID
+  name_neq: String
+}
+
+input UserInput {
+  name: String!
+}
+

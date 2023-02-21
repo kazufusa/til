@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "g": "relay-compiler --src ./src --schema ./graphql/schema.graphql",
+    "relay": "relay-compiler graphql/relay.config.json"
   },
   "dependencies": {
     "react": "^18.2.0",
