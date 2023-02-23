@@ -7,7 +7,9 @@
 - [ ] Mutation
     - [ ] star
     - [ ] remove star
-- [ ] typed data
+- [x] typed data
+- [ ] What is usePreloadedQuery
+- [ ] What is loadQuery
 
 ## setup
 
