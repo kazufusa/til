@@ -9,8 +9,11 @@
     - [ ] remove star
 - [x] typed data
 - [x] variables
-- [ ] What is usePreloadedQuery
-- [ ] What is loadQuery
+- [ ] What is usePreloadedQuery?
+- [ ] What is loadQuery?
+- [ ] What is useFragment?
+- [ ] What is useLazyLoadQuery?
+- [ ] What is useQueryLoader?
 
 ## setup
 
