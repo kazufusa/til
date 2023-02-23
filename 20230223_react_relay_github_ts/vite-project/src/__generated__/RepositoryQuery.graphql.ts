@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<759495992d90a0bc9b84317a0ed55721>>
+ * @generated SignedSource<<b3e05cd72d09d0120931f2d92b001b41>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -9,7 +9,10 @@
 // @ts-nocheck
 
 import { ConcreteRequest, Query } from 'relay-runtime';
-export type RepositoryQuery$variables = {};
+export type RepositoryQuery$variables = {
+  name: string;
+  owner: string;
+};
 export type RepositoryQuery$data = {
   readonly repository: {
     readonly isPrivate: boolean;
@@ -24,40 +27,50 @@ export type RepositoryQuery = {
 };
 
 const node: ConcreteRequest = (function(){
-var v0 = [
+var v0 = {
+  "defaultValue": null,
+  "kind": "LocalArgument",
+  "name": "name"
+},
+v1 = {
+  "defaultValue": null,
+  "kind": "LocalArgument",
+  "name": "owner"
+},
+v2 = [
   {
-    "kind": "Literal",
+    "kind": "Variable",
     "name": "name",
-    "value": "relay"
+    "variableName": "name"
   },
   {
-    "kind": "Literal",
+    "kind": "Variable",
     "name": "owner",
-    "value": "facebook"
+    "variableName": "owner"
   }
 ],
-v1 = {
+v3 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
   "name": "name",
   "storageKey": null
 },
-v2 = {
+v4 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
   "name": "isPrivate",
   "storageKey": null
 },
-v3 = {
+v5 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
   "name": "nameWithOwner",
   "storageKey": null
 },
-v4 = {
+v6 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
@@ -66,25 +79,28 @@ v4 = {
 };
 return {
   "fragment": {
-    "argumentDefinitions": [],
+    "argumentDefinitions": [
+      (v0/*: any*/),
+      (v1/*: any*/)
+    ],
     "kind": "Fragment",
     "metadata": null,
     "name": "RepositoryQuery",
     "selections": [
       {
         "alias": null,
-        "args": (v0/*: any*/),
+        "args": (v2/*: any*/),
         "concreteType": "Repository",
         "kind": "LinkedField",
         "name": "repository",
         "plural": false,
         "selections": [
-          (v1/*: any*/),
-          (v2/*: any*/),
           (v3/*: any*/),
-          (v4/*: any*/)
+          (v4/*: any*/),
+          (v5/*: any*/),
+          (v6/*: any*/)
         ],
-        "storageKey": "repository(name:\"relay\",owner:\"facebook\")"
+        "storageKey": null
       }
     ],
     "type": "Query",
@@ -92,22 +108,25 @@ return {
   },
   "kind": "Request",
   "operation": {
-    "argumentDefinitions": [],
+    "argumentDefinitions": [
+      (v1/*: any*/),
+      (v0/*: any*/)
+    ],
     "kind": "Operation",
     "name": "RepositoryQuery",
     "selections": [
       {
         "alias": null,
-        "args": (v0/*: any*/),
+        "args": (v2/*: any*/),
         "concreteType": "Repository",
         "kind": "LinkedField",
         "name": "repository",
         "plural": false,
         "selections": [
-          (v1/*: any*/),
-          (v2/*: any*/),
           (v3/*: any*/),
           (v4/*: any*/),
+          (v5/*: any*/),
+          (v6/*: any*/),
           {
             "alias": null,
             "args": null,
@@ -116,21 +135,21 @@ return {
             "storageKey": null
           }
         ],
-        "storageKey": "repository(name:\"relay\",owner:\"facebook\")"
+        "storageKey": null
       }
     ]
   },
   "params": {
-    "cacheID": "942f0a684859cc9ca094bfdb35cca0a0",
+    "cacheID": "af486a2ac3c6445fb20c1ebfe0fe0f34",
     "id": null,
     "metadata": {},
     "name": "RepositoryQuery",
     "operationKind": "query",
-    "text": "query RepositoryQuery {\n  repository(owner: \"facebook\", name: \"relay\") {\n    name\n    isPrivate\n    nameWithOwner\n    viewerHasStarred\n    id\n  }\n}\n"
+    "text": "query RepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    name\n    isPrivate\n    nameWithOwner\n    viewerHasStarred\n    id\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "6a9cd9e2f889de3086b2a6f6341afa43";
+(node as any).hash = "a9bd475ce64788012ab591c3853cb91b";
 
 export default node;

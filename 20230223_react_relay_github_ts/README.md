@@ -8,6 +8,7 @@
     - [ ] star
     - [ ] remove star
 - [x] typed data
+- [x] variables
 - [ ] What is usePreloadedQuery
 - [ ] What is loadQuery
 
