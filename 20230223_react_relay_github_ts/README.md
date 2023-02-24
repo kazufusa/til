@@ -2,14 +2,14 @@
 
 ## TODO
 
-- [ ] Query
-    - star
-- [ ] Mutation
-    - [ ] star
-    - [ ] remove star
+- [x] Query
+- [x] Mutation
+    - [x] star
+    - [x] remove star
 - [x] typed data
 - [x] variables
 - [ ] What is usePreloadedQuery?
+- [x] What is useMutation?
 - [ ] What is loadQuery?
 - [ ] What is useFragment?
 - [ ] What is useLazyLoadQuery?

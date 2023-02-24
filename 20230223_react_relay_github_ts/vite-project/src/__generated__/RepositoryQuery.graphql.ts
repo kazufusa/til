@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<b3e05cd72d09d0120931f2d92b001b41>>
+ * @generated SignedSource<<28cf2b2a24ddd86dbc5990bb7d1837a4>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -15,6 +15,7 @@ export type RepositoryQuery$variables = {
 };
 export type RepositoryQuery$data = {
   readonly repository: {
+    readonly id: string;
     readonly isPrivate: boolean;
     readonly name: string;
     readonly nameWithOwner: string;
@@ -39,44 +40,63 @@ v1 = {
 },
 v2 = [
   {
-    "kind": "Variable",
-    "name": "name",
-    "variableName": "name"
-  },
-  {
-    "kind": "Variable",
-    "name": "owner",
-    "variableName": "owner"
+    "alias": null,
+    "args": [
+      {
+        "kind": "Variable",
+        "name": "name",
+        "variableName": "name"
+      },
+      {
+        "kind": "Variable",
+        "name": "owner",
+        "variableName": "owner"
+      }
+    ],
+    "concreteType": "Repository",
+    "kind": "LinkedField",
+    "name": "repository",
+    "plural": false,
+    "selections": [
+      {
+        "alias": null,
+        "args": null,
+        "kind": "ScalarField",
+        "name": "id",
+        "storageKey": null
+      },
+      {
+        "alias": null,
+        "args": null,
+        "kind": "ScalarField",
+        "name": "name",
+        "storageKey": null
+      },
+      {
+        "alias": null,
+        "args": null,
+        "kind": "ScalarField",
+        "name": "isPrivate",
+        "storageKey": null
+      },
+      {
+        "alias": null,
+        "args": null,
+        "kind": "ScalarField",
+        "name": "nameWithOwner",
+        "storageKey": null
+      },
+      {
+        "alias": null,
+        "args": null,
+        "kind": "ScalarField",
+        "name": "viewerHasStarred",
+        "storageKey": null
+      }
+    ],
+    "storageKey": null
   }
-],
-v3 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
-  "name": "name",
-  "storageKey": null
-},
-v4 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
-  "name": "isPrivate",
-  "storageKey": null
-},
-v5 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
-  "name": "nameWithOwner",
-  "storageKey": null
-},
-v6 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
-  "name": "viewerHasStarred",
-  "storageKey": null
-};
+];
 return {
   "fragment": {
     "argumentDefinitions": [
@@ -86,23 +106,7 @@ return {
     "kind": "Fragment",
     "metadata": null,
     "name": "RepositoryQuery",
-    "selections": [
-      {
-        "alias": null,
-        "args": (v2/*: any*/),
-        "concreteType": "Repository",
-        "kind": "LinkedField",
-        "name": "repository",
-        "plural": false,
-        "selections": [
-          (v3/*: any*/),
-          (v4/*: any*/),
-          (v5/*: any*/),
-          (v6/*: any*/)
-        ],
-        "storageKey": null
-      }
-    ],
+    "selections": (v2/*: any*/),
     "type": "Query",
     "abstractKey": null
   },
@@ -114,42 +118,19 @@ return {
     ],
     "kind": "Operation",
     "name": "RepositoryQuery",
-    "selections": [
-      {
-        "alias": null,
-        "args": (v2/*: any*/),
-        "concreteType": "Repository",
-        "kind": "LinkedField",
-        "name": "repository",
-        "plural": false,
-        "selections": [
-          (v3/*: any*/),
-          (v4/*: any*/),
-          (v5/*: any*/),
-          (v6/*: any*/),
-          {
-            "alias": null,
-            "args": null,
-            "kind": "ScalarField",
-            "name": "id",
-            "storageKey": null
-          }
-        ],
-        "storageKey": null
-      }
-    ]
+    "selections": (v2/*: any*/)
   },
   "params": {
-    "cacheID": "af486a2ac3c6445fb20c1ebfe0fe0f34",
+    "cacheID": "0ffda08f33f890cf7898542bd6d84eec",
     "id": null,
     "metadata": {},
     "name": "RepositoryQuery",
     "operationKind": "query",
-    "text": "query RepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    name\n    isPrivate\n    nameWithOwner\n    viewerHasStarred\n    id\n  }\n}\n"
+    "text": "query RepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    id\n    name\n    isPrivate\n    nameWithOwner\n    viewerHasStarred\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "a9bd475ce64788012ab591c3853cb91b";
+(node as any).hash = "61eb5dd5a62408a9b77f6cefe7b5fdcc";
 
 export default node;
