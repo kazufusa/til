@@ -6,7 +6,6 @@ import { RepositoryQuery } from "./__generated__/RepositoryQuery.graphql";
 const RepositoryQuery = graphql`
   query RepositoryQuery($owner: String!, $name: String!) {
     repository(owner: $owner, name: $name) {
-      name
       isPrivate
       nameWithOwner
       ...StarComponent_star
@@ -23,7 +22,6 @@ export function Repository() {
   const data = usePreloadedQuery(RepositoryQuery, preloadedQuery);
   return (
     <>
-      <p>name: {data.repository?.name}</p>
       <p>isPrivate: {`${data.repository?.isPrivate}`}</p>
       <p>nameWithOwner: {data.repository?.nameWithOwner}</p>
       {data.repository && <StarComponent repository={data.repository} />}

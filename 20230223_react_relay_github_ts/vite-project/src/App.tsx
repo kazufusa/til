@@ -3,6 +3,7 @@ import "./App.css";
 import { relayEnv } from "./relayEnv";
 import { RelayEnvironmentProvider } from "react-relay";
 import { Repository } from "./Repository";
+import { Search } from "./Search";
 
 function App() {
   return (
@@ -10,6 +11,7 @@ function App() {
       <RelayEnvironmentProvider environment={relayEnv}>
         <Suspense fallback={"Loading..."}>
           <Repository />
+          <Search />
         </Suspense>
       </RelayEnvironmentProvider>
     </div>

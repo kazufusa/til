@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<9b4555e72914615a4f1d5a5cd1ab6d1f>>
+ * @generated SignedSource<<a0210aded460cf1bb0ca5ea7705df525>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -17,7 +17,6 @@ export type RepositoryQuery$variables = {
 export type RepositoryQuery$data = {
   readonly repository: {
     readonly isPrivate: boolean;
-    readonly name: string;
     readonly nameWithOwner: string;
     readonly " $fragmentSpreads": FragmentRefs<"StarComponent_star">;
   } | null;
@@ -54,17 +53,10 @@ v3 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
-  "name": "name",
-  "storageKey": null
-},
-v4 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
   "name": "isPrivate",
   "storageKey": null
 },
-v5 = {
+v4 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
@@ -91,7 +83,6 @@ return {
         "selections": [
           (v3/*: any*/),
           (v4/*: any*/),
-          (v5/*: any*/),
           {
             "args": null,
             "kind": "FragmentSpread",
@@ -123,7 +114,6 @@ return {
         "selections": [
           (v3/*: any*/),
           (v4/*: any*/),
-          (v5/*: any*/),
           {
             "alias": null,
             "args": null,
@@ -162,16 +152,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "8fe7513d032144cb9d713b979dc110f8",
+    "cacheID": "48389052b30b330ac7f195d9e5800668",
     "id": null,
     "metadata": {},
     "name": "RepositoryQuery",
     "operationKind": "query",
-    "text": "query RepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    name\n    isPrivate\n    nameWithOwner\n    ...StarComponent_star\n    id\n  }\n}\n\nfragment StarComponent_star on Repository {\n  id\n  viewerHasStarred\n  stargazers {\n    totalCount\n  }\n}\n"
+    "text": "query RepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    isPrivate\n    nameWithOwner\n    ...StarComponent_star\n    id\n  }\n}\n\nfragment StarComponent_star on Repository {\n  id\n  viewerHasStarred\n  stargazers {\n    totalCount\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "a3584a0d8dd66d25b4106e5515d445a3";
+(node as any).hash = "d40f42475aeb30d3b1ef17a61434c583";
 
 export default node;

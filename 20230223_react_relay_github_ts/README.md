@@ -8,10 +8,11 @@
     - [x] remove star
 - [x] typed data
 - [x] variables
-- [ ] What is usePreloadedQuery?
+- [ ] How to use Suspense?
+- [x] What is usePreloadedQuery?
 - [x] What is useMutation?
-- [ ] What is loadQuery?
-- [ ] What is useFragment?
+- [x] What is loadQuery?
+- [x] What is useFragment?
 - [ ] What is useLazyLoadQuery?
 - [ ] What is useQueryLoader?
 - [ ] Testing
