@@ -9,8 +9,7 @@ const addStarButtonMutation = graphql`
   mutation AddStarButtonMutation($input: AddStarInput!) {
     addStar(input: $input) {
       starrable {
-        id
-        viewerHasStarred
+        ...StarComponent_star
       }
     }
   }

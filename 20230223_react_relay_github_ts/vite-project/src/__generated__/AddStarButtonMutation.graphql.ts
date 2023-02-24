@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<bdaaa75b9ddba2483a0a5323ed29ed93>>
+ * @generated SignedSource<<1e87e80755b8bdc9c6b8e00d0af75794>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -9,6 +9,7 @@
 // @ts-nocheck
 
 import { ConcreteRequest, Mutation } from 'relay-runtime';
+import { FragmentRefs } from "relay-runtime";
 export type AddStarInput = {
   clientMutationId?: string | null;
   starrableId: string;
@@ -19,8 +20,7 @@ export type AddStarButtonMutation$variables = {
 export type AddStarButtonMutation$data = {
   readonly addStar: {
     readonly starrable: {
-      readonly id: string;
-      readonly viewerHasStarred: boolean;
+      readonly " $fragmentSpreads": FragmentRefs<"StarComponent_star">;
     } | null;
   } | null;
 };
@@ -43,21 +43,7 @@ v1 = [
     "name": "input",
     "variableName": "input"
   }
-],
-v2 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
-  "name": "id",
-  "storageKey": null
-},
-v3 = {
-  "alias": null,
-  "args": null,
-  "kind": "ScalarField",
-  "name": "viewerHasStarred",
-  "storageKey": null
-};
+];
 return {
   "fragment": {
     "argumentDefinitions": (v0/*: any*/),
@@ -81,8 +67,11 @@ return {
             "name": "starrable",
             "plural": false,
             "selections": [
-              (v2/*: any*/),
-              (v3/*: any*/)
+              {
+                "args": null,
+                "kind": "FragmentSpread",
+                "name": "StarComponent_star"
+              }
             ],
             "storageKey": null
           }
@@ -122,8 +111,45 @@ return {
                 "name": "__typename",
                 "storageKey": null
               },
-              (v2/*: any*/),
-              (v3/*: any*/)
+              {
+                "alias": null,
+                "args": null,
+                "kind": "ScalarField",
+                "name": "id",
+                "storageKey": null
+              },
+              {
+                "kind": "InlineFragment",
+                "selections": [
+                  {
+                    "alias": null,
+                    "args": null,
+                    "kind": "ScalarField",
+                    "name": "viewerHasStarred",
+                    "storageKey": null
+                  },
+                  {
+                    "alias": null,
+                    "args": null,
+                    "concreteType": "StargazerConnection",
+                    "kind": "LinkedField",
+                    "name": "stargazers",
+                    "plural": false,
+                    "selections": [
+                      {
+                        "alias": null,
+                        "args": null,
+                        "kind": "ScalarField",
+                        "name": "totalCount",
+                        "storageKey": null
+                      }
+                    ],
+                    "storageKey": null
+                  }
+                ],
+                "type": "Repository",
+                "abstractKey": null
+              }
             ],
             "storageKey": null
           }
@@ -133,16 +159,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "e9d11a5e901ae64cb6445b857c6a90b7",
+    "cacheID": "6acad7f5212aa317bf413deffedb81b6",
     "id": null,
     "metadata": {},
     "name": "AddStarButtonMutation",
     "operationKind": "mutation",
-    "text": "mutation AddStarButtonMutation(\n  $input: AddStarInput!\n) {\n  addStar(input: $input) {\n    starrable {\n      __typename\n      id\n      viewerHasStarred\n    }\n  }\n}\n"
+    "text": "mutation AddStarButtonMutation(\n  $input: AddStarInput!\n) {\n  addStar(input: $input) {\n    starrable {\n      __typename\n      ...StarComponent_star\n      id\n    }\n  }\n}\n\nfragment StarComponent_star on Repository {\n  id\n  viewerHasStarred\n  stargazers {\n    totalCount\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "93c7c4fb7a9b01b822256c6bbeb737a9";
+(node as any).hash = "5465adc65df94c5c983b1250cf84981a";
 
 export default node;

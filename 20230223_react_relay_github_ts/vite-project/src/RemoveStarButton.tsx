@@ -9,8 +9,7 @@ const removeStarButtonMutation = graphql`
   mutation RemoveStarButtonMutation($input: RemoveStarInput!) {
     removeStar(input: $input) {
       starrable {
-        id
-        viewerHasStarred
+        ...StarComponent_star
       }
     }
   }
