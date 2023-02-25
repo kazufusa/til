@@ -14,8 +14,11 @@
 - [x] What is loadQuery?
 - [x] What is useFragment?
 - [ ] What is useLazyLoadQuery?
-- [ ] What is useQueryLoader?
+- [x] What is useQueryLoader?
+- [x] Click and fetch
 - [ ] Testing
+- [ ] Error & ErrorBoundary
+- [ ] Why use useEffect?
 
 ## setup
 

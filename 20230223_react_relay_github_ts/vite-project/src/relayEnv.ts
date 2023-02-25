@@ -17,14 +17,13 @@ async function fetchQuery(operation: any, variables: any) {
       query: operation.text,
       variables,
     }),
-  })
-    .then((r) => {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve(r)
-        }, 5000)
-      })
+  }).then((r) => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(r);
+      }, 1000);
     });
+  });
 
   // Get the response as JSON
   return await response.json();
