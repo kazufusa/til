@@ -1,34 +1,20 @@
-import { graphql, loadQuery, usePreloadedQuery } from "react-relay";
-import { relayEnv } from "./relayEnv";
+import { PreloadedQuery, usePreloadedQuery } from "react-relay";
 import { StarComponent } from "./StarComponent";
 import { type RepositoryQuery as RepositoryQueryType } from "./__generated__/RepositoryQuery.graphql";
+import { RepositoryQuery } from "./SingleRepository";
 
-export const RepositoryQuery = graphql`
-  query RepositoryQuery($owner: String!, $name: String!) {
-    repository(owner: $owner, name: $name) {
-      isPrivate
-      nameWithOwner
-      ...StarComponent_star
-    }
-  }
-`;
+export function Repository({
+  queryRef,
+}: {
+  queryRef: PreloadedQuery<RepositoryQueryType>;
+}) {
+  const data = usePreloadedQuery<RepositoryQueryType>(
+    RepositoryQuery,
+    queryRef
+  );
 
-const preloadedQuery = loadQuery<RepositoryQueryType>(
-  relayEnv,
-  RepositoryQuery,
-  {
-    owner: "facebook",
-    name: "relay",
-  }
-);
-
-export function Repository() {
-  const data = usePreloadedQuery(RepositoryQuery, preloadedQuery);
   return (
     <>
-      <h2>
-        Basic <code>usePreloadedQuery</code>
-      </h2>
       <p>isPrivate: {`${data.repository?.isPrivate}`}</p>
       <p>nameWithOwner: {data.repository?.nameWithOwner}</p>
       {data.repository && <StarComponent repository={data.repository} />}

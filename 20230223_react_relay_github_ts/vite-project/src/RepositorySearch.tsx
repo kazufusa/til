@@ -3,9 +3,9 @@ import { PreloadedQuery, usePreloadedQuery, useQueryLoader } from "react-relay";
 import { StarComponent } from "./StarComponent";
 import { type RepositoryQuery as RepositoryQueryType } from "./__generated__/RepositoryQuery.graphql";
 import { Suspense } from "react";
-import { RepositoryQuery } from "./Repository";
+import { RepositoryQuery } from "./SingleRepository";
 
-function Repository({
+export function Repository({
   queryRef,
 }: {
   queryRef: PreloadedQuery<RepositoryQueryType>;
