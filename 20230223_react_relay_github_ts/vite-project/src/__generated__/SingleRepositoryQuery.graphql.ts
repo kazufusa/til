@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<a0210aded460cf1bb0ca5ea7705df525>>
+ * @generated SignedSource<<81c6cf76a45bf755710fc890c784cf51>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -10,20 +10,20 @@
 
 import { ConcreteRequest, Query } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
-export type RepositoryQuery$variables = {
+export type SingleRepositoryQuery$variables = {
   name: string;
   owner: string;
 };
-export type RepositoryQuery$data = {
+export type SingleRepositoryQuery$data = {
   readonly repository: {
     readonly isPrivate: boolean;
     readonly nameWithOwner: string;
     readonly " $fragmentSpreads": FragmentRefs<"StarComponent_star">;
   } | null;
 };
-export type RepositoryQuery = {
-  response: RepositoryQuery$data;
-  variables: RepositoryQuery$variables;
+export type SingleRepositoryQuery = {
+  response: SingleRepositoryQuery$data;
+  variables: SingleRepositoryQuery$variables;
 };
 
 const node: ConcreteRequest = (function(){
@@ -71,7 +71,7 @@ return {
     ],
     "kind": "Fragment",
     "metadata": null,
-    "name": "RepositoryQuery",
+    "name": "SingleRepositoryQuery",
     "selections": [
       {
         "alias": null,
@@ -102,7 +102,7 @@ return {
       (v0/*: any*/)
     ],
     "kind": "Operation",
-    "name": "RepositoryQuery",
+    "name": "SingleRepositoryQuery",
     "selections": [
       {
         "alias": null,
@@ -152,16 +152,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "48389052b30b330ac7f195d9e5800668",
+    "cacheID": "104939d304bb8543cd693a3207515921",
     "id": null,
     "metadata": {},
-    "name": "RepositoryQuery",
+    "name": "SingleRepositoryQuery",
     "operationKind": "query",
-    "text": "query RepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    isPrivate\n    nameWithOwner\n    ...StarComponent_star\n    id\n  }\n}\n\nfragment StarComponent_star on Repository {\n  id\n  viewerHasStarred\n  stargazers {\n    totalCount\n  }\n}\n"
+    "text": "query SingleRepositoryQuery(\n  $owner: String!\n  $name: String!\n) {\n  repository(owner: $owner, name: $name) {\n    isPrivate\n    nameWithOwner\n    ...StarComponent_star\n    id\n  }\n}\n\nfragment StarComponent_star on Repository {\n  id\n  viewerHasStarred\n  stargazers {\n    totalCount\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "d40f42475aeb30d3b1ef17a61434c583";
+(node as any).hash = "9e4e3e68cc4979360a44e21ee22aeb82";
 
 export default node;

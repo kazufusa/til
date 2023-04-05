@@ -1,10 +1,10 @@
 import { graphql, loadQuery } from "react-relay";
 import { relayEnv } from "./relayEnv";
 import { Repository } from "./Repository";
-import { type RepositoryQuery as RepositoryQueryType } from "./__generated__/RepositoryQuery.graphql";
+import { type SingleRepositoryQuery as QueryType } from "./__generated__/SingleRepositoryQuery.graphql";
 
-export const RepositoryQuery = graphql`
-  query RepositoryQuery($owner: String!, $name: String!) {
+export const SingleRepositoryQuery = graphql`
+  query SingleRepositoryQuery($owner: String!, $name: String!) {
     repository(owner: $owner, name: $name) {
       isPrivate
       nameWithOwner
@@ -13,9 +13,9 @@ export const RepositoryQuery = graphql`
   }
 `;
 
-const preloadedQuery = loadQuery<RepositoryQueryType>(
+const preloadedQuery = loadQuery<QueryType>(
   relayEnv,
-  RepositoryQuery,
+  SingleRepositoryQuery,
   {
     owner: "facebook",
     name: "relay",
