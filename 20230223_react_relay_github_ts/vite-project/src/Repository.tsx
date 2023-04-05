@@ -1,6 +1,6 @@
 import { PreloadedQuery, usePreloadedQuery } from "react-relay";
 import { StarComponent } from "./StarComponent";
-import { type RepositoryQuery as RepositoryQueryType } from "./__generated__/RepositoryQuery.graphql";
+import { type SingleRepositoryQuery as RepositoryQueryType } from "./__generated__/SingleRepositoryQuery.graphql";
 import { SingleRepositoryQuery } from "./SingleRepository";
 
 export function Repository({

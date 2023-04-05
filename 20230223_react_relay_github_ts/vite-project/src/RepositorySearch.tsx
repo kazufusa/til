@@ -1,16 +1,16 @@
 import React from "react";
 import { PreloadedQuery, usePreloadedQuery, useQueryLoader } from "react-relay";
 import { StarComponent } from "./StarComponent";
-import { type RepositoryQuery as RepositoryQueryType } from "./__generated__/RepositoryQuery.graphql";
+import { type SingleRepositoryQuery as QueryType } from "./__generated__/SingleRepositoryQuery.graphql";
 import { Suspense } from "react";
 import { SingleRepositoryQuery } from "./SingleRepository";
 
 export function Repository({
   queryRef,
 }: {
-  queryRef: PreloadedQuery<RepositoryQueryType>;
+  queryRef: PreloadedQuery<QueryType>;
 }) {
-  const data = usePreloadedQuery<RepositoryQueryType>(
+  const data = usePreloadedQuery<QueryType>(
     SingleRepositoryQuery,
     queryRef
   );
@@ -26,7 +26,7 @@ export function Repository({
 
 export function RepositorySearch() {
   const [queryRef, loadQuery] =
-    useQueryLoader<RepositoryQueryType>(SingleRepositoryQuery);
+    useQueryLoader<QueryType>(SingleRepositoryQuery);
   const [owner, setOwner] = React.useState<string>("facebook");
   const [name, setName] = React.useState<string>("relay");
 
