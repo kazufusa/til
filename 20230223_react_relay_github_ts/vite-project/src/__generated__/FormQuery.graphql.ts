@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<7505fedd53e8049b0c083b2d6148c712>>
+ * @generated SignedSource<<5751314fda1f2c8a7fa0457c5d7e49fc>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -15,6 +15,7 @@ export type FormQuery$data = {
   readonly search: {
     readonly " $fragmentSpreads": FragmentRefs<"RepositoriesFragment">;
   };
+  readonly " $fragmentSpreads": FragmentRefs<"RepositoryFragment">;
 };
 export type FormQuery = {
   response: FormQuery$data;
@@ -75,6 +76,11 @@ return {
           }
         ],
         "storageKey": "search(first:10,query:\"relay\",type:\"REPOSITORY\")"
+      },
+      {
+        "args": null,
+        "kind": "FragmentSpread",
+        "name": "RepositoryFragment"
       }
     ],
     "type": "Query",
@@ -122,6 +128,13 @@ return {
                     "plural": false,
                     "selections": [
                       (v1/*: any*/),
+                      {
+                        "alias": null,
+                        "args": null,
+                        "kind": "ScalarField",
+                        "name": "login",
+                        "storageKey": null
+                      },
                       (v2/*: any*/)
                     ],
                     "storageKey": null
@@ -154,16 +167,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "75d12957d890417b0c2da16bef0e0ac6",
+    "cacheID": "c32fd1fdf150dc0584ce3d388bf2f398",
     "id": null,
     "metadata": {},
     "name": "FormQuery",
     "operationKind": "query",
-    "text": "query FormQuery {\n  search(query: \"relay\", type: REPOSITORY, first: 10) {\n    ...RepositoriesFragment\n  }\n}\n\nfragment RepositoriesFragment on SearchResultItemConnection {\n  nodes {\n    __typename\n    ... on Repository {\n      name\n      owner {\n        __typename\n        id\n      }\n      nameWithOwner\n    }\n    ... on Node {\n      __isNode: __typename\n      id\n    }\n  }\n}\n"
+    "text": "query FormQuery {\n  search(query: \"relay\", type: REPOSITORY, first: 10) {\n    ...RepositoriesFragment\n  }\n}\n\nfragment RepositoriesFragment on SearchResultItemConnection {\n  nodes {\n    __typename\n    ... on Repository {\n      name\n      owner {\n        __typename\n        login\n        id\n      }\n      nameWithOwner\n    }\n    ... on Node {\n      __isNode: __typename\n      id\n    }\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "f24b1269994461cd98e08ef2d1fbfd9e";
+(node as any).hash = "369dfc64b08102c77eba9f5c6de83f6f";
 
 export default node;

@@ -1,4 +1,10 @@
-import { FormControl, InputLabel, MenuItem, Select, SelectChangeEvent } from "@mui/material";
+import {
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  SelectChangeEvent,
+} from "@mui/material";
 import { useFragment } from "react-relay";
 import { graphql } from "relay-runtime";
 import { type RepositoriesFragment$key } from "./__generated__/RepositoriesFragment.graphql";
@@ -9,7 +15,7 @@ const RepositoriesFragment = graphql`
       ... on Repository {
         name
         owner {
-          id
+          login
         }
         nameWithOwner
       }
@@ -19,9 +25,11 @@ const RepositoriesFragment = graphql`
 
 interface Props {
   query: RepositoriesFragment$key;
+  setName: (name: string) => void;
+  setOwner: (owner: string) => void;
 }
 
-export function Repositories({ query }: Props) {
+export function Repositories({ query, setName, setOwner }: Props) {
   const data = useFragment<RepositoriesFragment$key>(
     RepositoriesFragment,
     query
@@ -29,8 +37,10 @@ export function Repositories({ query }: Props) {
 
   function onChange(event: SelectChangeEvent) {
     const nameWithOwner: string = event.target.value;
-    console.log(nameWithOwner)
-  };
+    const repo = data.nodes?.find((v) => v?.nameWithOwner === nameWithOwner);
+    repo?.name && setName(repo?.name);
+    repo?.owner && setOwner(repo?.owner?.login);
+  }
 
   return (
     <FormControl>
@@ -43,11 +53,15 @@ export function Repositories({ query }: Props) {
         label="Age"
         onChange={onChange}
       >
-        {data.nodes?.map((v, i) =>
-          v &&
-          <MenuItem key={`${i}`} value={v.nameWithOwner}>{v.nameWithOwner}</MenuItem>
+        {data.nodes?.map(
+          (v, i) =>
+            v && (
+              <MenuItem key={`${i}`} value={v.nameWithOwner}>
+                {v.nameWithOwner}
+              </MenuItem>
+            )
         )}
       </Select>
     </FormControl>
-  )
+  );
 }

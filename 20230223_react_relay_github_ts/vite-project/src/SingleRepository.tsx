@@ -13,14 +13,10 @@ export const SingleRepositoryQuery = graphql`
   }
 `;
 
-const preloadedQuery = loadQuery<QueryType>(
-  relayEnv,
-  SingleRepositoryQuery,
-  {
-    owner: "facebook",
-    name: "relay",
-  }
-);
+const preloadedQuery = loadQuery<QueryType>(relayEnv, SingleRepositoryQuery, {
+  owner: "facebook",
+  name: "relay",
+});
 
 export function SingleRepository() {
   return (

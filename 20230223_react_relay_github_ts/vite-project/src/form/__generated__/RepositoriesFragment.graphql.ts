@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<66cc40b8b017cfd211b5258d1a9e7c7d>>
+ * @generated SignedSource<<69e0cfd8ee4faa049eaf17b2785bba66>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -15,7 +15,7 @@ export type RepositoriesFragment$data = {
     readonly name?: string;
     readonly nameWithOwner?: string;
     readonly owner?: {
-      readonly id: string;
+      readonly login: string;
     };
   } | null> | null;
   readonly " $fragmentType": "RepositoriesFragment";
@@ -61,7 +61,7 @@ const node: ReaderFragment = {
                   "alias": null,
                   "args": null,
                   "kind": "ScalarField",
-                  "name": "id",
+                  "name": "login",
                   "storageKey": null
                 }
               ],
@@ -86,6 +86,6 @@ const node: ReaderFragment = {
   "abstractKey": null
 };
 
-(node as any).hash = "e2f141152eb30aea679b7bd3ae617a0f";
+(node as any).hash = "717dca84fb616be0889452660e62e70b";
 
 export default node;

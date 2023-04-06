@@ -10,10 +10,7 @@ export function Repository({
 }: {
   queryRef: PreloadedQuery<QueryType>;
 }) {
-  const data = usePreloadedQuery<QueryType>(
-    SingleRepositoryQuery,
-    queryRef
-  );
+  const data = usePreloadedQuery<QueryType>(SingleRepositoryQuery, queryRef);
 
   return (
     <>
@@ -25,8 +22,9 @@ export function Repository({
 }
 
 export function RepositorySearch() {
-  const [queryRef, loadQuery] =
-    useQueryLoader<QueryType>(SingleRepositoryQuery);
+  const [queryRef, loadQuery] = useQueryLoader<QueryType>(
+    SingleRepositoryQuery
+  );
   const [owner, setOwner] = React.useState<string>("facebook");
   const [name, setName] = React.useState<string>("relay");
 
