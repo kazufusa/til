@@ -18,6 +18,7 @@ const FormQuery = graphql`
 function Form({ className }: { className?: string }) {
   const [name, setName] = useState<string | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   const data = useLazyLoadQuery<QueryType>(FormQuery, {});
   return (
     <div className={className}>
@@ -29,7 +30,14 @@ function Form({ className }: { className?: string }) {
           setOwner={(owner: string) => setOwner(owner)}
         />
       )}
-      {data && <Repository query={data} name={name} owner={owner} />}
+      {data && (
+        <Repository
+          query={data}
+          name={name}
+          owner={owner}
+          setUserName={(name: string) => setUserName(name)}
+        />
+      )}
     </div>
   );
 }

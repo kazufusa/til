@@ -50,7 +50,7 @@ export function Repositories({ query, setName, setOwner }: Props) {
         variant="standard"
         labelId="demo-simple-select-label"
         id="demo-simple-select"
-        label="Age"
+        label="Repository"
         onChange={onChange}
       >
         {data.nodes?.map(
