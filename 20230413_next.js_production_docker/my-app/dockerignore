@@ -1,0 +1,8 @@
+# Ignore everything
+**
+
+# Allowed files
+!/.next/standalone/**
+!/.next/static/**
+!/public/**
+!/next.config.js
