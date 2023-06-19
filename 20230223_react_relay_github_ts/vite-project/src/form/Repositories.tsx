@@ -24,7 +24,7 @@ const RepositoriesFragment = graphql`
 `;
 
 interface Props {
-  query: RepositoriesFragment$key;
+  query: RepositoriesFragment$key | null;
   setName: (name: string) => void;
   setOwner: (owner: string) => void;
 }
@@ -37,7 +37,7 @@ export function Repositories({ query, setName, setOwner }: Props) {
 
   function onChange(event: SelectChangeEvent) {
     const nameWithOwner: string = event.target.value;
-    const repo = data.nodes?.find((v) => v?.nameWithOwner === nameWithOwner);
+    const repo = data?.nodes?.find((v) => v?.nameWithOwner === nameWithOwner);
     repo?.name && setName(repo?.name);
     repo?.owner && setOwner(repo?.owner?.login);
   }
@@ -53,7 +53,7 @@ export function Repositories({ query, setName, setOwner }: Props) {
         label="Repository"
         onChange={onChange}
       >
-        {data.nodes?.map(
+        {data?.nodes?.map(
           (v, i) =>
             v && (
               <MenuItem key={`${i}`} value={v.nameWithOwner}>
