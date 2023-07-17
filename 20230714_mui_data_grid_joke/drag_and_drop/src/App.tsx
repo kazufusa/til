@@ -7,7 +7,7 @@ import {
   useGridApiEventHandler,
 } from "@mui/x-data-grid";
 import "./App.css";
-import { useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 
 function App() {
@@ -114,27 +114,27 @@ function DelayedDragScroller() {
   );
 
   const handleFinish = useCallback(() => {
-    virtualScrollerRef.current?.removeEventListener("mousemove", handleMouseMove);
-    virtualScrollerRef.current?.removeEventListener("mouseup", handleFinish);
-    virtualScrollerRef.current?.removeEventListener("dragstart", handleFinish);
-    virtualScrollerRef.current?.removeEventListener("selectstart", handleFinish);
-    virtualScrollerRef.current?.style.removeProperty("cursor");
-    virtualScrollerRef.current?.style.removeProperty("user-select");
-    // document.body.style.removeProperty("cursor");
-    // document.body.style.removeProperty("user-select");
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleFinish);
+    document.removeEventListener("dragstart", handleFinish);
+    document.removeEventListener("selectstart", handleFinish);
+    document.body.style.removeProperty("cursor");
+    document.body.style.removeProperty("user-select");
+    // virtualScrollerRef.current?.style.removeProperty("cursor");
+    // virtualScrollerRef.current?.style.removeProperty("user-select");
   }, [handleMouseMove]);
 
   const handleLongCellMouseDown = useCallback(() => {
     if (apiRef.current && virtualScrollerRef.current) {
       virtualScrollerRef.current.removeEventListener("mousemove", handleCancellableMouseMove);
-      virtualScrollerRef.current.addEventListener("mousemove", handleMouseMove);
-      virtualScrollerRef.current.addEventListener("mouseup", handleFinish);
-      virtualScrollerRef.current.addEventListener("dragstart", handleFinish);
-      virtualScrollerRef.current.addEventListener("selectstart", handleFinish);
-      virtualScrollerRef.current.style.cursor = "grabbing";
-      virtualScrollerRef.current.style.userSelect = "none";
-      // document.body.style.cursor = "grabbing";
-      // document.body.style.userSelect = "none";
+      document.addEventListener("mouseup", handleFinish);
+      document.addEventListener("dragstart", handleFinish);
+      document.addEventListener("selectstart", handleFinish);
+      document.addEventListener("mousemove", handleMouseMove);
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      // virtualScrollerRef.current.style.cursor = "grabbing";
+      // virtualScrollerRef.current.style.userSelect = "none";
     }
   }, [apiRef])
 
@@ -152,10 +152,10 @@ function DelayedDragScroller() {
     }
   }, [])
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = useCallback((e) => {
     clearTimeout(timeoutRef.current)
     virtualScrollerRef.current?.removeEventListener("mousemove", handleCancellableMouseMove);
-    virtualScrollerRef.current?.removeEventListener("selectstart", handleCancel);
+    // virtualScrollerRef.current?.removeEventListener("selectstart", handleCancel);
     virtualScrollerRef.current?.removeEventListener("dragstart", handleCancel);
   }, [])
 
@@ -166,14 +166,24 @@ function DelayedDragScroller() {
           origin: { x: e.clientX, y: e.clientY },
           initialGridScrollParams: apiRef.current.getScrollPosition(),
         };
+
         timeoutRef.current = setTimeout(handleLongCellMouseDown, 1000)
         virtualScrollerRef.current?.addEventListener("mousemove", handleCancellableMouseMove);
+        // virtualScrollerRef.current?.addEventListener("selectstart", handleCancel);
+        virtualScrollerRef.current?.addEventListener("dragstart", handleCancel);
       }
     },
     [apiRef, handleMouseMove, handleFinish]
   );
 
-  virtualScrollerRef.current?.addEventListener("mousedown", handleMouseDown)
+  useEffect(() => {
+    virtualScrollerRef.current?.addEventListener("mousedown", handleMouseDown)
+    virtualScrollerRef.current?.addEventListener("dblclick", handleCancel)
+    return () => {
+      virtualScrollerRef.current?.removeEventListener("mousedown", handleMouseDown)
+      virtualScrollerRef.current?.removeEventListener("dblclick", handleCancel)
+    }
+  }, [virtualScrollerRef.current])
 
   return <div></div>;
 }
