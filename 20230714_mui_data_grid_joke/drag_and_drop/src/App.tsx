@@ -5,10 +5,10 @@ import {
   GridScrollParams,
   useGridApiContext,
   useGridApiEventHandler,
-  useGridNativeEventListener,
 } from "@mui/x-data-grid";
 import "./App.css";
 import { useRef, useCallback } from "react";
+
 
 function App() {
   return (
@@ -92,82 +92,88 @@ function DragScroller() {
 
 function DelayedDragScroller() {
   const apiRef = useGridApiContext();
+  const virtualScrollerRef = useRef<HTMLElement | undefined>(undefined)
+  const virtualScroller = apiRef.current?.rootElementRef?.current?.getElementsByClassName('MuiDataGrid-virtualScrollerContent')?.[0]! as HTMLElement | undefined;
+  if (virtualScroller) virtualScrollerRef.current = virtualScroller;
   const scrollInfoRef = useRef<ScrollInfo | null>(null);
   const timeoutRef = useRef<number | undefined>(undefined);
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (scrollInfoRef?.current) {
-        const pos = { x: e.clientX, y: e.clientY };
-        const dx = pos.x - scrollInfoRef.current.origin.x;
-        const dy = pos.y - scrollInfoRef.current.origin.y;
-        apiRef.current?.scroll({
-          left: scrollInfoRef.current.initialGridScrollParams.left - dx,
-          top: scrollInfoRef.current.initialGridScrollParams.top - dy,
-        });
-      }
-    },
+  const handleMouseMove = useCallback((e: Event) => {
+    if (!(e instanceof MouseEvent)) return
+    if (scrollInfoRef?.current) {
+      const pos = { x: e.clientX, y: e.clientY };
+      const dx = pos.x - scrollInfoRef.current.origin.x;
+      const dy = pos.y - scrollInfoRef.current.origin.y;
+      apiRef.current?.scroll({
+        left: scrollInfoRef.current.initialGridScrollParams.left - dx,
+        top: scrollInfoRef.current.initialGridScrollParams.top - dy,
+      });
+    }
+  },
     [apiRef]
   );
 
   const handleFinish = useCallback(() => {
-    document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", handleFinish);
-    document.removeEventListener("dragstart", handleFinish);
-    document.removeEventListener("selectstart", handleFinish);
-    document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
+    virtualScrollerRef.current?.removeEventListener("mousemove", handleMouseMove);
+    virtualScrollerRef.current?.removeEventListener("mouseup", handleFinish);
+    virtualScrollerRef.current?.removeEventListener("dragstart", handleFinish);
+    virtualScrollerRef.current?.removeEventListener("selectstart", handleFinish);
+    virtualScrollerRef.current?.style.removeProperty("cursor");
+    virtualScrollerRef.current?.style.removeProperty("user-select");
+    // document.body.style.removeProperty("cursor");
+    // document.body.style.removeProperty("user-select");
   }, [handleMouseMove]);
 
-  const handleLongeCellMouseDown = useCallback(() => {
-    if (apiRef.current) {
-      document.removeEventListener("mousemove", handleCancellableMouseMove);
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleFinish);
-      document.addEventListener("dragstart", handleFinish);
-      document.addEventListener("selectstart", handleFinish);
-      document.body.style.cursor = "grabbing";
-      document.body.style.userSelect = "none";
+  const handleLongCellMouseDown = useCallback(() => {
+    if (apiRef.current && virtualScrollerRef.current) {
+      virtualScrollerRef.current.removeEventListener("mousemove", handleCancellableMouseMove);
+      virtualScrollerRef.current.addEventListener("mousemove", handleMouseMove);
+      virtualScrollerRef.current.addEventListener("mouseup", handleFinish);
+      virtualScrollerRef.current.addEventListener("dragstart", handleFinish);
+      virtualScrollerRef.current.addEventListener("selectstart", handleFinish);
+      virtualScrollerRef.current.style.cursor = "grabbing";
+      virtualScrollerRef.current.style.userSelect = "none";
+      // document.body.style.cursor = "grabbing";
+      // document.body.style.userSelect = "none";
     }
   }, [apiRef])
 
-  const handleCancellableMouseMove = useCallback((e: MouseEvent) => {
+  const handleCancellableMouseMove = useCallback((e: Event) => {
+    if (!(e instanceof MouseEvent)) return
     if (scrollInfoRef.current && timeoutRef.current) {
       const dx = e.clientX - scrollInfoRef.current.origin.x;
       const dy = e.clientY - scrollInfoRef.current.origin.y;
       if (Math.pow(dx, 2) + Math.pow(dy, 2) >= 100) {
         clearTimeout(timeoutRef.current)
-        document.removeEventListener("mousemove", handleCancellableMouseMove);
-        document.removeEventListener("selectstart", handleCancel);
-        document.removeEventListener("dragstart", handleCancel);
+        virtualScrollerRef.current?.removeEventListener("mousemove", handleCancellableMouseMove);
+        virtualScrollerRef.current?.removeEventListener("selectstart", handleCancel);
+        virtualScrollerRef.current?.removeEventListener("dragstart", handleCancel);
       }
     }
   }, [])
 
   const handleCancel = useCallback(() => {
-    console.log("cancel")
     clearTimeout(timeoutRef.current)
-    document.removeEventListener("mousemove", handleCancellableMouseMove);
-    document.removeEventListener("selectstart", handleCancel);
-    document.removeEventListener("dragstart", handleCancel);
+    virtualScrollerRef.current?.removeEventListener("mousemove", handleCancellableMouseMove);
+    virtualScrollerRef.current?.removeEventListener("selectstart", handleCancel);
+    virtualScrollerRef.current?.removeEventListener("dragstart", handleCancel);
   }, [])
 
-  const handleCellMouseDown: GridEventListener<"cellMouseDown"> = useCallback(
-    (_, e) => {
-      if (apiRef.current) {
+  const handleMouseDown = useCallback(
+    (e: Event) => {
+      if (apiRef.current && e instanceof MouseEvent) {
         scrollInfoRef.current = {
           origin: { x: e.clientX, y: e.clientY },
           initialGridScrollParams: apiRef.current.getScrollPosition(),
         };
-        timeoutRef.current = setTimeout(handleLongeCellMouseDown, 1000)
-        document.addEventListener("mousemove", handleCancellableMouseMove);
+        timeoutRef.current = setTimeout(handleLongCellMouseDown, 1000)
+        virtualScrollerRef.current?.addEventListener("mousemove", handleCancellableMouseMove);
       }
     },
     [apiRef, handleMouseMove, handleFinish]
   );
 
-  useGridApiEventHandler(apiRef, "cellMouseDown", handleCellMouseDown);
-  // console.log(apiRef.current?.rootElementRef)
+  virtualScrollerRef.current?.addEventListener("mousedown", handleMouseDown)
 
   return <div></div>;
 }
