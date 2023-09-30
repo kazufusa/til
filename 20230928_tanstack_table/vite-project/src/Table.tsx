@@ -58,10 +58,12 @@ export const columns = [
   columnHelper.accessor("id", {
     header: "id",
     cell: (props) => props.getValue(),
+    size: 50,
   }),
   columnHelper.accessor("enumValue", {
     header: "enumValue",
     cell: (props) => props.getValue(),
+    size: 200,
   }),
   columnHelper.accessor("nullableRatio", {
     header: "nullableRatio",
@@ -69,10 +71,12 @@ export const columns = [
       const value = props.getValue();
       return value !== undefined ? ratioFormatter.format(value) : "-";
     },
+    size: 200,
   }),
   columnHelper.accessor("valueWithMemo", {
     header: "valueWithMemo",
     cell: (props) => props.getValue().value ?? props.getValue().memo,
+    size: 200,
   }),
 ];
 
@@ -81,36 +85,61 @@ export function Table() {
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    columnResizeMode: "onChange",
+    debugTable: true,
+    debugHeaders: true,
+    debugColumns: true,
   });
   return (
     <>
-      <table>
-        <thead>
+      <div className="table" style={{ width: table.getCenterTotalSize() }}>
+        <div className="thead">
           {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
+            <div className="tr" key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <th key={header.id}>
+                <div
+                  key={header.id}
+                  className="th"
+                  style={{
+                    width: header.getSize(),
+                  }}
+                >
                   {flexRender(
                     header.column.columnDef.header,
                     header.getContext(),
                   )}
-                </th>
+                  <div
+                    {...{
+                      onMouseDown: header.getResizeHandler(),
+                      onTouchStart: header.getResizeHandler(),
+                      className: `resizer ${
+                        header.column.getIsResizing() ? "isResizing" : ""
+                      }`,
+                    }}
+                  />
+                </div>
               ))}
-            </tr>
+            </div>
           ))}
-        </thead>
-        <tbody>
+        </div>
+        <div className="tbody">
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
+            <div className="tr" key={row.id}>
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>
+                <div
+                  className="td"
+                  key={cell.id}
+                  style={{
+                    width: cell.column.getSize(),
+                  }}
+                >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
+                </div>
               ))}
-            </tr>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </>
   );
 }
