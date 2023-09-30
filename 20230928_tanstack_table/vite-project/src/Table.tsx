@@ -1,9 +1,15 @@
+import { ConnectableElement, useDrop, useDrag } from "react-dnd";
 import {
+  Column,
+  Header,
+  Table,
   useReactTable,
   getCoreRowModel,
+  ColumnOrderState,
   flexRender,
   createColumnHelper,
 } from "@tanstack/react-table";
+import React from "react";
 
 type ValueWithMemo = {
   value?: number;
@@ -80,16 +86,87 @@ export const columns = [
   }),
 ];
 
+function reorderColumn(
+  draggedColumnId: string,
+  targetColumnId: string,
+  columnOrder: string[],
+): ColumnOrderState {
+  columnOrder.splice(
+    columnOrder.indexOf(targetColumnId),
+    0,
+    columnOrder.splice(columnOrder.indexOf(draggedColumnId), 1)[0] as string,
+  );
+  return [...columnOrder];
+}
+
+function MyTh({
+  header,
+  table,
+  children,
+}: {
+  header: Header<Data, unknown>;
+  table: Table<Data>;
+  children: React.ReactNode;
+}) {
+  const { getState, setColumnOrder } = table;
+  const { columnOrder } = getState();
+  const { column } = header;
+
+  const [, dropRef] = useDrop({
+    accept: "column", // unique key in app
+    drop: (draggedColumn: Column<Data>) => {
+      const newColumnOrder = reorderColumn(
+        draggedColumn.id,
+        column.id,
+        columnOrder,
+      );
+      setColumnOrder(newColumnOrder);
+    },
+  });
+
+  const [{ isDragging }, dragRef] = useDrag({
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+    item: () => column,
+    type: "column",
+  });
+
+  function attachRef(el: ConnectableElement) {
+    dragRef(el);
+    dropRef(el);
+  }
+
+  return (
+    <div
+      className="th"
+      ref={attachRef}
+      style={{ opacity: isDragging ? 0.5 : 1, width: header.getSize() }}
+      draggable={!table.getState().columnSizingInfo.isResizingColumn}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function Table() {
+  const [columnOrder, setColumnOrder] = React.useState<ColumnOrderState>(
+    columns.map((column) => column.header as string),
+  );
   const table = useReactTable({
     data,
     columns,
+    state: {
+      columnOrder,
+    },
+    onColumnOrderChange: setColumnOrder,
     getCoreRowModel: getCoreRowModel(),
     columnResizeMode: "onChange",
     debugTable: true,
     debugHeaders: true,
     debugColumns: true,
   });
+
   return (
     <>
       <div className="table" style={{ width: table.getCenterTotalSize() }}>
@@ -97,27 +174,27 @@ export function Table() {
           {table.getHeaderGroups().map((headerGroup) => (
             <div className="tr" key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <div
-                  key={header.id}
-                  className="th"
-                  style={{
-                    width: header.getSize(),
-                  }}
-                >
+                <MyTh key={header.id} header={header} table={table}>
                   {flexRender(
                     header.column.columnDef.header,
                     header.getContext(),
                   )}
                   <div
                     {...{
-                      onMouseDown: header.getResizeHandler(),
-                      onTouchStart: header.getResizeHandler(),
+                      onMouseDown: (e) => {
+                        e.preventDefault();
+                        header.getResizeHandler()(e);
+                      },
+                      onTouchStart: (e) => {
+                        e.preventDefault();
+                        header.getResizeHandler()(e);
+                      },
                       className: `resizer ${
                         header.column.getIsResizing() ? "isResizing" : ""
                       }`,
                     }}
                   />
-                </div>
+                </MyTh>
               ))}
             </div>
           ))}
