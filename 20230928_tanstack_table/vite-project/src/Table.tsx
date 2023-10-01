@@ -6,6 +6,7 @@ import {
   useReactTable,
   getCoreRowModel,
   ColumnOrderState,
+  ColumnPinningState,
   flexRender,
   createColumnHelper,
 } from "@tanstack/react-table";
@@ -64,7 +65,7 @@ export const columns = [
   columnHelper.accessor("id", {
     header: "id",
     cell: (props) => props.getValue(),
-    size: 50,
+    size: 100,
   }),
   columnHelper.accessor("enumValue", {
     header: "enumValue",
@@ -139,9 +140,20 @@ function MyTh({
 
   return (
     <div
-      className="th"
-      ref={attachRef}
-      style={{ opacity: isDragging ? 0.5 : 1, width: header.getSize() }}
+      className={`th ${header.column.getIsPinned() && "pinned"}`}
+      ref={header.column.getIsPinned() ? null : attachRef}
+      style={{
+        opacity: isDragging ? 0.5 : 1,
+        width: header.getSize(),
+        left:
+          column.getIsPinned() === "left"
+            ? `${column.getStart("left")}px`
+            : undefined,
+        right:
+          column.getIsPinned() === "right"
+            ? `${getTotalRight<Data>(table, column)}px`
+            : undefined,
+      }}
       draggable={!table.getState().columnSizingInfo.isResizingColumn}
     >
       {children}
@@ -149,17 +161,32 @@ function MyTh({
   );
 }
 
+function getTotalRight<TData extends Record<string, any>>(
+  table: Table<TData>,
+  column: Column<TData, unknown>,
+) {
+  return table
+    .getRightLeafHeaders()
+    .slice(column.getPinnedIndex() + 1)
+    .reduce((acc, col) => acc + col.getSize(), 0);
+}
+
 export function Table() {
   const [columnOrder, setColumnOrder] = React.useState<ColumnOrderState>(
     columns.map((column) => column.header as string),
   );
+  const [columnPinning, setColumnPinning] = React.useState<ColumnPinningState>({
+    left: ["id"],
+  });
   const table = useReactTable({
     data,
     columns,
     state: {
       columnOrder,
+      columnPinning,
     },
     onColumnOrderChange: setColumnOrder,
+    onColumnPinningChange: setColumnPinning,
     getCoreRowModel: getCoreRowModel(),
     columnResizeMode: "onChange",
     debugTable: true,
@@ -169,7 +196,7 @@ export function Table() {
 
   return (
     <>
-      <div className="table" style={{ width: table.getCenterTotalSize() }}>
+      <div className="table">
         <div className="thead">
           {table.getHeaderGroups().map((headerGroup) => (
             <div className="tr" key={headerGroup.id}>
@@ -179,6 +206,28 @@ export function Table() {
                     header.column.columnDef.header,
                     header.getContext(),
                   )}
+                  <button
+                    className="pin"
+                    onClick={() =>
+                      header.column.pin(
+                        header.column.getIsPinned() === "left" ? false : "left",
+                      )
+                    }
+                  >
+                    {header.column.getIsPinned() === "left" ? "x" : "<<"}
+                  </button>
+                  <button
+                    className="pin"
+                    onClick={() =>
+                      header.column.pin(
+                        header.column.getIsPinned() === "right"
+                          ? false
+                          : "right",
+                      )
+                    }
+                  >
+                    {header.column.getIsPinned() === "right" ? "x" : ">>"}
+                  </button>
                   <div
                     {...{
                       onMouseDown: (e) => {
@@ -204,10 +253,18 @@ export function Table() {
             <div className="tr" key={row.id}>
               {row.getVisibleCells().map((cell) => (
                 <div
-                  className="td"
+                  className={`td ${cell.column.getIsPinned() && "pinned"}`}
                   key={cell.id}
                   style={{
                     width: cell.column.getSize(),
+                    left:
+                      cell.column.getIsPinned() === "left"
+                        ? `${cell.column.getStart("left")}px`
+                        : undefined,
+                    right:
+                      cell.column.getIsPinned() === "right"
+                        ? `${getTotalRight<Data>(table, cell.column)}px`
+                        : undefined,
                   }}
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -7,9 +7,13 @@ html {
   font-size: 14px;
 }
 
+body {
+  margin: 0;
+}
+
 .table {
-  border: 1px solid lightgray;
-  width: fit-content;
+  width: 100%;
+  overflow-x: scroll;
 }
 
 .tr {
@@ -34,6 +38,10 @@ html {
   font-weight: bold;
   text-align: center;
   height: 30px;
+  display: flex;
+  .pin {
+    height: 20px;
+  }
 }
 
 .td {
@@ -54,7 +62,7 @@ html {
 }
 
 .resizer.isResizing {
-  background: blue;
+  background: black;
   opacity: 1;
 }
 
@@ -66,4 +74,19 @@ html {
   *:hover > .resizer {
     opacity: 1;
   }
+}
+
+.pinned {
+  background: gainsboro;
+  position: sticky;
+  z-index: 1;
+}
+
+button {
+  border-radius: 0.25rem;
+  border-width: 1px;
+  padding: 0.25rem;
+  margin-left: 2px;
+  line-height: 0.5;
+  background-color: transparent;
 }
