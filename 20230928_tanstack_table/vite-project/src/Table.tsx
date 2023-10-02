@@ -4,10 +4,12 @@ import {
   Header,
   Table,
   getPaginationRowModel,
+  getSortedRowModel,
   useReactTable,
   getCoreRowModel,
   ColumnOrderState,
   ColumnPinningState,
+  SortingState,
   flexRender,
   createColumnHelper,
 } from "@tanstack/react-table";
@@ -80,11 +82,25 @@ export const columns = [
       return value !== undefined ? ratioFormatter.format(value) : "-";
     },
     size: 200,
+    sortUndefined: -1,
   }),
   columnHelper.accessor("valueWithMemo", {
     header: "valueWithMemo",
     cell: (props) => props.getValue().value ?? props.getValue().memo,
     size: 200,
+    sortingFn: (rowA, rowB, columnId: string) => {
+      const { value: va, memo: ma } = rowA.getValue(
+        "valueWithMemo",
+      ) as Data["valueWithMemo"];
+      const { value: vb, memo: mb } = rowB.getValue(
+        "valueWithMemo",
+      ) as Data["valueWithMemo"];
+      if (va !== undefined && vb === undefined) return -1;
+      else if (va === undefined && vb !== undefined) return -1;
+      else if (va !== undefined && vb !== undefined)
+        return va < vb ? 1 : va > vb ? -1 : 0;
+      else return ma < mb ? 1 : ma > mb ? -1 : 0;
+    },
   }),
 ];
 
@@ -179,17 +195,21 @@ export function Table() {
   const [columnPinning, setColumnPinning] = React.useState<ColumnPinningState>({
     left: ["id"],
   });
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const table = useReactTable({
     data,
     columns,
     state: {
       columnOrder,
       columnPinning,
+      sorting,
     },
     onColumnOrderChange: setColumnOrder,
     onColumnPinningChange: setColumnPinning,
+    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     columnResizeMode: "onChange",
     debugTable: true,
     debugHeaders: true,
@@ -245,6 +265,16 @@ export function Table() {
                       }`,
                     }}
                   />
+                  <button
+                    className="pin"
+                    onClick={header.column.getToggleSortingHandler()}
+                  >
+                    {header.column.getIsSorted() === "asc"
+                      ? "↑"
+                      : header.column.getIsSorted() === "desc"
+                      ? "↓"
+                      : "⇅"}
+                  </button>
                 </MyTh>
               ))}
             </div>

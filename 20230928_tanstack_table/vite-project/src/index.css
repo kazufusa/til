@@ -39,9 +39,6 @@ body {
   text-align: center;
   height: 30px;
   display: flex;
-  .pin {
-    height: 20px;
-  }
 }
 
 .td {
@@ -83,12 +80,10 @@ body {
 }
 
 button {
-  border-radius: 0.25rem;
-  border-width: 1px;
   padding: 0.25rem;
   margin-left: 2px;
   line-height: 0.5;
-  background-color: transparent;
+  height: 20px;
 }
 
 .pagination {

@@ -6,7 +6,7 @@
 - [x] easy to design
 - [x] pagination
 - [ ] select row
-- [ ] sort
+- [x] sort
 - [ ] multiple filters
 - [x] resize columns
 - [x] pin columns
