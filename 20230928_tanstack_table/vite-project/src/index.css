@@ -90,3 +90,9 @@ button {
   line-height: 0.5;
   background-color: transparent;
 }
+
+.pagination {
+  display: flex;
+  height: 20px;
+  gap: 0.25rem;
+}

@@ -4,7 +4,7 @@
 
 - [x] show original type
 - [x] easy to design
-- [ ] pagination
+- [x] pagination
 - [ ] select row
 - [ ] sort
 - [ ] multiple filters
