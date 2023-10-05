@@ -3,14 +3,18 @@
 ## TODOs
 
 - [x] show original type
-- [ ] pagination
+- [x] easy to design
+- [x] pagination
 - [ ] select row
-- [ ] sort
+- [x] sort
 - [ ] multiple filters
-- [ ] resize columns
-- [ ] pin columns
-- [ ] reorder columns
+- [x] resize columns
+- [x] pin columns
+  - https://www.mantine-react-table.com/docs/guides/column-pinning
+  - sticky
+- [x] reorder columns
 - [ ] hide columns
 - [ ] save and restore state(column size, column order, column visibility)
 - [ ] resize rows
+- [ ] virtual scroll
 - [ ] export filtered rows to CSV
