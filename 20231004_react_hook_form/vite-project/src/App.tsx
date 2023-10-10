@@ -69,8 +69,30 @@ function App() {
 
 export default App;
 
+const Candidates = ["a", "b", "c", "d"] as const;
+
+type Candidate = (typeof Candidates)[number];
+
+const multiSelections: {
+  label: string;
+  candidates: readonly Candidate[];
+}[] = [
+    {
+      label: "a b",
+      candidates: ["a", "b"],
+    },
+    {
+      label: "c d",
+      candidates: ["c", "d"],
+    },
+    {
+      label: "all",
+      candidates: Candidates,
+    },
+  ];
+
 type Input2 = {
-  checks: string[];
+  checks: Candidate[];
 };
 
 function Form() {
@@ -82,65 +104,65 @@ function Form() {
     formState: { errors, isValid, isSubmitted, isSubmitting },
     setValue,
     trigger,
-  } = useForm<Input2>({ defaultValues: { checks: ["a", "b", "c", "d"] }, mode: "onChange" });
+  } = useForm<Input2>({
+    defaultValues: { checks: Candidates.map((v) => v) },
+    mode: "onChange",
+  });
+
+  React.useEffect(() => {
+    trigger();
+  }, [trigger]);
+
   const onSubmit: SubmitHandler<Input2> = (data) => {
     setFormData(JSON.stringify(data));
   };
-  React.useEffect(() => {
-    trigger();
-  }, []);
-  const checks = watch("checks");
-  const checksProps = {
-    ...register("checks", {
-      validate: {
-        atLeastOneRequired: (value: string[]) => {
-          return value.length >= 1 || "1つ以上選択してください";
+
+  const watchChecks = watch("checks");
+
+  const checksProps = React.useMemo(
+    () => ({
+      ...register("checks", {
+        validate: {
+          atLeastOneRequired: (value: string[]) => {
+            return value.length >= 1 || "1つ以上選択してください";
+          },
         },
-      },
+      }),
     }),
-  };
+    [register],
+  );
+
   return (
     <>
       <form onSubmit={handleSubmit(onSubmit)}>
-        a <input value="a" type="checkbox" {...checksProps} />
-        b <input value="b" type="checkbox" {...checksProps} />
-        c <input value="c" type="checkbox" {...checksProps} />
-        d <input value="d" type="checkbox" {...checksProps} />
-        <br />
-        check a b
-        <input
-          type="checkbox"
-          checked={checks.some((v) => ["a", "b"].includes(v))}
-          onChange={(e) => {
-            if (e.target.checked) {
-              setValue("checks", ["a", "b", ...checks], {
-                shouldValidate: true,
-              });
-            } else {
-              setValue(
-                "checks",
-                checks.filter((v) => !["a", "b"].includes(v)),
-                { shouldValidate: true },
-              );
-            }
-          }}
-        />
-        <br />
-        check all
-        <input
-          type="checkbox"
-          checked={checks.length > 0}
-          onChange={(e) => {
-            if (e.target.checked) {
-              setValue("checks", ["a", "b", "c", "d"], {
-                shouldValidate: true,
-              });
-            } else {
-              setValue("checks", [], { shouldValidate: true });
-            }
-          }}
-        />
-        <br />
+        <div>
+          {Candidates.map((v) => (
+            <div key={v}>
+              <input key={v} value={v} type="checkbox" {...checksProps} />
+              <label htmlFor={v}>{v}</label>
+            </div>
+          ))}
+          <br />
+          {multiSelections.map((ms) => (
+            <div key={ms.label}>
+              <input
+                type="checkbox"
+                id={ms.label}
+                checked={watchChecks.some((v) => ms.candidates.includes(v))}
+                onChange={(e) =>
+                  setValue(
+                    "checks",
+                    e.target.checked
+                      ? Array.from(new Set([...ms.candidates, ...watchChecks]))
+                      : watchChecks.filter((v) => !ms.candidates.includes(v)),
+                    { shouldValidate: true },
+                  )
+                }
+              />
+              <label htmlFor={ms.label}> {ms.label}</label>
+            </div>
+          ))}
+        </div>
         {errors.checks && (
           <p>
             {errors.checks.type}:{errors.checks.message}
