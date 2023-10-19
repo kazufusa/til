@@ -77,31 +77,45 @@ const multiSelections: {
   label: string;
   candidates: readonly Candidate[];
 }[] = [
-    {
-      label: "a b",
-      candidates: ["a", "b"],
-    },
-    {
-      label: "c d",
-      candidates: ["c", "d"],
-    },
-    {
-      label: "all",
-      candidates: Candidates,
-    },
-  ];
+  {
+    label: "a b",
+    candidates: ["a", "b"],
+  },
+  {
+    label: "c d",
+    candidates: ["c", "d"],
+  },
+  {
+    label: "all",
+    candidates: Candidates,
+  },
+];
 
 type Input2 = {
   checks: Candidate[];
+  text: string;
+  select: string;
 };
 
 function Form() {
   const [formData, setFormData] = React.useState<string>("");
+  const [selectable, setSelectable] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    const clear = setTimeout(() => setSelectable(["a", "b", "c", "d"]), 10000);
+    return () => clearTimeout(clear);
+  }, []);
   const {
     register,
     handleSubmit,
     watch,
-    formState: { errors, isValid, isSubmitted, isSubmitting },
+    formState: {
+      errors,
+      isValid,
+      touchedFields,
+      isDirty,
+      isSubmitted,
+      isSubmitting,
+    },
     setValue,
     trigger,
   } = useForm<Input2>({
@@ -135,6 +149,33 @@ function Form() {
   return (
     <>
       <form onSubmit={handleSubmit(onSubmit)}>
+        <div>
+          <select
+            {...register("select", { required: "入力は必須です" })}
+            style={{ width: 150 }}
+          >
+            {selectable.length === 0 ? (
+              <option value="">loading...</option>
+            ) : (
+              <option value="">選択してください</option>
+            )}
+            {selectable.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {touchedFields?.select && errors.select && (
+            <p>{errors.select.message}</p>
+          )}
+        </div>
+        <div>
+          <input
+            type="text"
+            {...register("text", { required: "入力は必須です" })}
+          />
+          {touchedFields?.text && errors.text && <p>{errors.text.message}</p>}
+        </div>
         <div>
           {Candidates.map((v) => (
             <div key={v}>
