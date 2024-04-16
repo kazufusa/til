@@ -146,7 +146,7 @@ function MyTh({
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
-    item: () => column,
+    item: () => ({column: column, size:header.getSize()}),
     type: "column",
   });
 

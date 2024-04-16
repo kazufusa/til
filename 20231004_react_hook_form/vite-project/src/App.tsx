@@ -1,4 +1,4 @@
-import { useForm, SubmitHandler } from "react-hook-form";
+import { useFormContext, useForm, SubmitHandler, Controller, Control, useWatch } from "react-hook-form";
 import "./App.css";
 import React from "react";
 
@@ -77,24 +77,45 @@ const multiSelections: {
   label: string;
   candidates: readonly Candidate[];
 }[] = [
-  {
-    label: "a b",
-    candidates: ["a", "b"],
-  },
-  {
-    label: "c d",
-    candidates: ["c", "d"],
-  },
-  {
-    label: "all",
-    candidates: Candidates,
-  },
-];
+    {
+      label: "a b",
+      candidates: ["a", "b"],
+    },
+    {
+      label: "c d",
+      candidates: ["c", "d"],
+    },
+    {
+      label: "all",
+      candidates: Candidates,
+    },
+  ];
 
 type Input2 = {
   checks: Candidate[];
   text: string;
   select: string;
+  num?: number;
+};
+
+
+const MyInput = ({ control, name, disabled }: {control: Control<Input2>, name: keyof Input2, disabled: boolean}) => {
+  const value = useWatch({ control, name });
+  const { setValue } = useFormContext();
+  React.useEffect(() => {
+    if (!disabled) {
+      setValue(name, value || '');
+    }
+  }, [disabled, name, value, control]);
+
+  return (
+    <Controller
+      control={control}
+      name={name}
+      disabled={disabled}
+      render={({ field }) => <input {...field} />}
+    />
+  );
 };
 
 function Form() {
@@ -105,6 +126,7 @@ function Form() {
     return () => clearTimeout(clear);
   }, []);
   const {
+    control,
     register,
     handleSubmit,
     watch,
@@ -127,7 +149,9 @@ function Form() {
     trigger();
   }, [trigger]);
 
+  const [disabled, setDisabled] = React.useState<boolean>(false);
   const onSubmit: SubmitHandler<Input2> = (data) => {
+    console.info(data)
     setFormData(JSON.stringify(data));
   };
 
@@ -146,9 +170,14 @@ function Form() {
     [register],
   );
 
+
+
   return (
     <>
       <form onSubmit={handleSubmit(onSubmit)}>
+        <div>
+          <MyInput control={control} name="num" disabled={disabled} />
+        </div>
         <div>
           <select
             {...register("select", { required: "入力は必須です" })}
@@ -169,13 +198,15 @@ function Form() {
             <p>{errors.select.message}</p>
           )}
         </div>
+        {Object.keys(register("text", { disabled })).join(", ")}
         <div>
           <input
             type="text"
-            {...register("text", { required: "入力は必須です" })}
+            {...register("text", { disabled })}
           />
           {touchedFields?.text && errors.text && <p>{errors.text.message}</p>}
         </div>
+        <input checked={disabled} type="checkbox" onClick={() => setDisabled(!disabled)} />
         <div>
           {Candidates.map((v) => (
             <div key={v}>
