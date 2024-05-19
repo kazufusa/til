@@ -1,15 +1,14 @@
 import { Storage } from "@google-cloud-storage";
 import { chunk } from "./chunk.ts";
 
-const combineLimit = 32;
+const COMBINE_LIMIT = 32;
 
-function ensureTrailingSlash(i: string): string {
-  return i.endsWith("/") ? i : `${i}/`;
+function ensureTrailingSlash(path: string): string {
+  return path.endsWith("/") ? path : `${path}/`;
 }
 
 async function listFiles(
   storage: Storage,
-  projectId: string,
   bucketName: string,
   prefix: string,
 ): Promise<string[]> {
@@ -19,7 +18,6 @@ async function listFiles(
 
 async function combineRecursive(
   storage: Storage,
-  projectId: string,
   bucketName: string,
   prefix: string,
   files: string[],
@@ -29,12 +27,11 @@ async function combineRecursive(
   if (files.length === 1) return files[0];
   const bucket = storage.bucket(bucketName);
   const destinationFileName = `${prefix}_combined${combinedFileSuffix}`;
-  const sources: string[] = files.length > combineLimit
+  const sources: string[] = files.length > COMBINE_LIMIT
     ? await Promise.all(
-      chunk(files, combineLimit).map(async (v, i) =>
+      chunk(files, COMBINE_LIMIT).map(async (v, i) =>
         combineRecursive(
           storage,
-          projectId,
           bucketName,
           prefix,
           v,
@@ -52,8 +49,8 @@ export async function combine(
   bucketName: string,
   _prefix: string,
 ): string {
-  const prefix = ensureTrailingSlash(_prefix)
+  const prefix = ensureTrailingSlash(_prefix);
   const storage: Storage = new Storage({ projectId });
-  const files = await listFiles(storage, projectId, bucketName, prefix);
-  return await combineRecursive(storage, projectId, bucketName, prefix, files);
+  const files = await listFiles(storage, bucketName, prefix);
+  return await combineRecursive(storage, bucketName, prefix, files);
 }
