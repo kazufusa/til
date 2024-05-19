@@ -1,0 +1,8 @@
+{
+  "tasks": {
+    "dev": "deno run --watch main.ts"
+  },
+  "imports": {
+    "@google-cloud-storage": "https://esm.sh/@google-cloud/storage@7.11.0"
+  }
+}
