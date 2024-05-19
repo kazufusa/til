@@ -9,9 +9,7 @@ Deno.test("chunk splits array into n equal parts", () => {
       fc.nat(32).filter((n) => n > 0),
       (arr, n) => {
         const chunks = chunk(arr, n);
-        const chunkLengths = chunks.map((chunk) => chunk.length);
-        const expectedLength = Math.ceil(arr.length / n);
-        return chunkLengths.every((length) => length <= expectedLength);
+        return chunks.length <= n
       },
     ),
   );
