@@ -1,6 +1,6 @@
 import { chunk } from "./chunk.ts";
-import { assertEquals } from "https://deno.land/std@0.140.0/testing/asserts.ts";
-import fc from "https://esm.sh/fast-check@3.0.0";
+import { assertEquals } from "asserts";
+import fc from "fast-check";
 
 Deno.test("chunk splits array into n equal parts", () => {
   fc.assert(
