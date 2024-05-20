@@ -1,0 +1,8 @@
+{
+  "main": "dist/index.js",
+  "devDependencies": {
+    "@google-cloud/functions-framework": "^3.4.0",
+    "@google-cloud/storage": "^7.11.0",
+    "typescript": "^5.4.5"
+  }
+}
