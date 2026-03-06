@@ -21,7 +21,7 @@ const task: Effect.Effect<number, KnownError | UnknownError, never> =
 // tap: 正常系副作用, tapError: 異常系副作用, catchTags: 特定エラーを握りつぶす
 const program = task.pipe(
   Effect.tap(Effect.logInfo),
-  Effect.tapError((e) => Effect.logError(e)), // eは KnownError | UnknownErrorと解決される
+  Effect.tapError((e) => Effect.logError(e)), // eは KnownError | UnknownError
   Effect.catchTags({ KnownError: () => Effect.succeed(0) }),
 );
 
