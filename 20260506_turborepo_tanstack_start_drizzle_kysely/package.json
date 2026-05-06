@@ -1,0 +1,22 @@
+{
+  "name": "turborepo-tanstack-start-drizzle-kysely",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.12",
+  "workspaces": [
+    "modules/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "turbo run db:migrate"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.6.3"
+  }
+}
