@@ -1,5 +1,20 @@
-// Search Agent: 低レベルツールを使って evidence を集める.
-// 最終的に SearchKnowledgeOutput の JSON を返す.
+// ============================================================================
+// search-agent.ts — Chat Agent の searchKnowledge ツール内部で動く検索エージェント.
+//
+// 役割:
+// - listDocuments / searchDocuments / grepBlocks / readBlocks を駆使して
+//   ユーザー質問に関する原文確認済み evidence を集める.
+// - 最終回答は書かない. 構造化された SearchKnowledgeOutput JSON を返すだけ.
+// - 最大 12 ステップまでツール呼び出しを繰り返す (stepCountIs).
+//
+// 設計のポイント:
+// - LLM の最終出力 (テキスト) から JSON を抽出するために手動 parser を持つ.
+//   structured output (generateObject) はツール併用との相性が AI SDK 6 でやや弱く、
+//   テキスト出力 → JSON 抽出 → zod で寛容パース、が最も安定する.
+// - LLM がスキーマからわずかにズレた JSON を返しても拾えるよう寛容処理 (normalizeOutput).
+//   実例: relevance="High" / "中" / status="partial found" 等を吸収.
+// - CDCS_VERBOSE=0 でなければ stderr に [search] ログを流す. Chat の挙動を観察するため.
+// ============================================================================
 
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -11,6 +26,11 @@ import type {
   SearchKnowledgeOutput,
 } from "./types";
 
+/**
+ * evidence 1 件の zod スキーマ.
+ * default() を多用して、LLM が欠損フィールドを返しても通るようにしている.
+ * (relevance や reason は LLM が省略しがちなので default を入れている)
+ */
 const evidenceSchema = z.object({
   path: z.string(),
   title: z.string().optional(),
@@ -23,7 +43,10 @@ const evidenceSchema = z.object({
   reason: z.string().default(""),
 });
 
-// 寛容スキーマ: 欠損フィールドはデフォルト値で補う
+/**
+ * 全体出力スキーマ. 全フィールド default 付きの寛容版.
+ * LLM が "evidences" を omit しても [] とみなして通す等の挙動.
+ */
 const outputSchema = z.object({
   status: z.enum(["found", "partial", "not_found"]).default("not_found"),
   searchedQueries: z.array(z.string()).default([]),
@@ -31,10 +54,24 @@ const outputSchema = z.object({
   notes: z.string().optional(),
 });
 
+/**
+ * 検索エージェント本体. Chat Agent の searchKnowledge ツール内から呼ばれる.
+ *
+ * @param input    質問 + 優先 docType
+ * @param options  modelSpec で実行モデルを差し替え可能 (CLI の --search-model 由来)
+ * @returns        evidence 配列を含む SearchKnowledgeOutput
+ *
+ * 流れ:
+ * 1. system prompt (探索戦略) + user prompt (質問 + JSON フォーマット要求) を渡す
+ * 2. generateText に tools と stopWhen を渡してエージェントループを走らせる
+ * 3. LLM が最終的に出力するテキストから JSON を抽出 → 寛容パース
+ * 4. パース失敗時は status="not_found" として notes に原文を入れて返す
+ */
 export async function runSearchAgent(
   input: SearchKnowledgeInput,
   options?: { modelSpec?: string }
 ): Promise<SearchKnowledgeOutput> {
+  // user prompt. JSON フォーマットを毎回明示するのは、LLM が独自フォーマットに走るのを防ぐため.
   const userMessage = [
     `# 質問`,
     input.question,
@@ -50,6 +87,9 @@ export async function runSearchAgent(
     `}`,
   ].join("\n");
 
+  // 内部挙動のログ. CDCS_VERBOSE=0 なら無音.
+  // 終端制御 \x1b[2m...\x1b[0m は dim (灰色) で chat の本文と視覚的に区別する.
+  // stderr に出して、Chat Agent の出力 (stdout) とは別系統にしている.
   const verbose = process.env.CDCS_VERBOSE !== "0";
   const log = (s: string) => {
     if (verbose) process.stderr.write(`\x1b[2m  [search] ${s}\x1b[0m\n`);
@@ -61,8 +101,11 @@ export async function runSearchAgent(
     system: searchAgentSystemPrompt,
     prompt: userMessage,
     tools: searchAgentTools,
+    // 探索が長引いても 12 step で必ず止める. 多段検索の上限.
     stopWhen: stepCountIs(12),
+    // ツール選択を安定させたいので低めの温度.
     temperature: 0.2,
+    // ステップ毎にツール呼び出し/結果を [search] ログに流す.
     onStepFinish: ({ toolCalls, toolResults }) => {
       for (const call of toolCalls) {
         const args = JSON.stringify(call.input);
@@ -74,13 +117,15 @@ export async function runSearchAgent(
     },
   });
 
+  // LLM 最終応答テキスト → JSON 抽出 → 寛容スキーマで検証
   const text = res.text.trim();
   const parsed = tryParseJSON(text);
   if (parsed && typeof parsed === "object") {
-    // 寛容処理: evidences が配列でない場合は強制的に []
+    // evidences が配列でない / status が変な文字列、等を吸収
     const fixed = normalizeOutput(parsed);
     const v = outputSchema.safeParse(fixed);
     if (v.success) return v.data;
+    // スキーマ違反: 失敗理由を notes に入れて Chat Agent に伝える
     return {
       status: "not_found",
       searchedQueries: [],
@@ -88,6 +133,7 @@ export async function runSearchAgent(
       notes: `evidence JSON のスキーマ検証失敗: ${v.error.message.slice(0, 400)}`,
     };
   }
+  // JSON すら抽出できなかった: LLM 応答全体を notes に入れて返す
   return {
     status: "not_found",
     searchedQueries: [],
@@ -96,6 +142,11 @@ export async function runSearchAgent(
   };
 }
 
+/**
+ * ツール結果を 1 行に要約する.
+ * フル JSON だと長すぎる/読みにくいので、ツール毎に「何件取れたか」「サンプル数件」を抜粋.
+ * これで stderr ログが流れても全体像が一目で追える.
+ */
 function summarizeToolResult(name: string, out: unknown): string {
   if (!out || typeof out !== "object") return String(out);
   const o = out as Record<string, unknown>;
@@ -128,6 +179,13 @@ function summarizeToolResult(name: string, out: unknown): string {
   return JSON.stringify(out).slice(0, 120);
 }
 
+/**
+ * LLM 出力 JSON の「揺れ」を吸収する正規化.
+ * - evidences が配列でない → []
+ * - searchedQueries が配列でない → []
+ * - status 欠損 → evidences の有無で found/not_found を推定
+ * - 各 evidence は normalizeEvidence で個別に整形 & 不正なものは drop
+ */
 function normalizeOutput(o: unknown): unknown {
   if (!o || typeof o !== "object") return { status: "not_found" };
   const r = o as Record<string, unknown>;
@@ -143,6 +201,10 @@ function normalizeOutput(o: unknown): unknown {
   return r;
 }
 
+/**
+ * status の表記揺れを吸収.
+ * 例: "Found", "FOUND", "partial found", "no info" → enum 値にマップ.
+ */
 function normalizeStatus(v: unknown): "found" | "partial" | "not_found" {
   if (typeof v !== "string") return "not_found";
   const s = v.toLowerCase().trim();
@@ -151,6 +213,11 @@ function normalizeStatus(v: unknown): "found" | "partial" | "not_found" {
   return "not_found";
 }
 
+/**
+ * relevance の表記揺れを吸収.
+ * "High" "高" "強" → high, "Low" "低" "弱" → low, それ以外は medium.
+ * LLM が日本語や首字大文字で返してきても拾えるようにする.
+ */
 function normalizeRelevance(v: unknown): "high" | "medium" | "low" {
   if (typeof v !== "string") return "medium";
   const s = v.toLowerCase().trim();
@@ -159,6 +226,13 @@ function normalizeRelevance(v: unknown): "high" | "medium" | "low" {
   return "medium";
 }
 
+/**
+ * evidence 1 件の正規化.
+ * - path が無い/空 → null (drop)
+ * - headingPath が配列でない / 非文字列が混入 → 文字列配列に強制
+ * - blockStartIndex/blockEndIndex が文字列 "12" 等で来ても Number() で吸収
+ * - relevance は normalizeRelevance で吸収
+ */
 function normalizeEvidence(e: unknown): Record<string, unknown> | null {
   if (!e || typeof e !== "object") return null;
   const o = { ...(e as Record<string, unknown>) };
@@ -177,11 +251,17 @@ function normalizeEvidence(e: unknown): Record<string, unknown> | null {
   return o;
 }
 
+/**
+ * LLM 応答テキストから JSON を抽出してパースする.
+ *
+ * - ```json ... ``` のコードフェンスがあれば中身を取る
+ * - 無ければ全文に対して、最初の `{` から最後の `}` までを切り出す
+ *   (LLM が前後に説明文を付けて返すケースを救済)
+ * - 失敗したら null. 呼び出し側が status=not_found に倒す.
+ */
 function tryParseJSON(text: string): unknown {
-  // ```json ... ``` で囲まれている場合の抽出
   const fence = text.match(/```(?:json)?\s*([\s\S]+?)```/);
   const candidate = fence ? fence[1]! : text;
-  // 最初の `{` から最後の `}` までを抽出
   const start = candidate.indexOf("{");
   const end = candidate.lastIndexOf("}");
   if (start < 0 || end <= start) return null;

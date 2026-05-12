@@ -1,4 +1,16 @@
-"""documents.csv をパースして url + file_name のペアを TSV で出力する."""
+"""documents.csv をパースして url + file_name + domain のペアを TSV で出力する.
+
+Hugging Face の allganize/RAG-Evaluation-Dataset-JA に同梱されている
+documents.csv (65 PDF の URL/タイトル/出典の一覧) を、後段の download.sh が
+扱いやすい TSV に整形する.
+
+usage:
+    curl -sL <documents.csv の URL> -o /tmp/documents.csv
+    python scripts/extract_urls.py /tmp/documents.csv urls.tsv
+
+出力フォーマット (TSV、ヘッダ無し):
+    <url>\t<file_name>\t<domain>
+"""
 from __future__ import annotations
 
 import csv

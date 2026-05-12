@@ -1,10 +1,17 @@
-"""rag_evaluation_result.csv から評価質問を抽出.
+"""rag_evaluation_result.csv から評価質問を抽出して queries.json に保存する.
 
-allganize/RAG-Evaluation-Dataset-JA の評価データ300件のうち、
-docs/ に取り込み済みのファイルに紐づく質問だけを残して JSON で出力.
+allganize/RAG-Evaluation-Dataset-JA に含まれる 300 件の評価質問のうち、
+**本リポジトリの docs/ に取り込み済みの PDF に紐づくもの** だけを残す.
+取得できなかった PDF (METI 系等) に紐づく質問は除外.
+
+各エントリは question / target_answer / target_md (期待される根拠ファイル) /
+target_page_no / domain / type (paragraph or image) を持つ.
+
+type="image" は元 PDF の図表からの抽出を要求する質問. RAG にとって難しい.
 
 usage:
-  python scripts/extract_queries.py /tmp/eval.csv queries.json
+    curl -sL <rag_evaluation_result.csv の URL> -o /tmp/eval.csv
+    python scripts/extract_queries.py /tmp/eval.csv queries.json
 """
 from __future__ import annotations
 

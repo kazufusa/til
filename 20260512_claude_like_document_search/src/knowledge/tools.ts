@@ -1,5 +1,19 @@
-// 低レベルツール (listDocuments / searchDocuments / grepBlocks / readBlocks)
-// Vercel AI SDK の tool() でラップする.
+// ============================================================================
+// tools.ts — Search Agent が使う 4 つの低レベルツール.
+//
+// 各ツールは「ロジック関数」+「AI SDK 用 tool() ラッパー」の 2 段構成:
+//   listDocuments(input)       <- 直接呼べる純粋関数
+//   listDocumentsTool          <- LLM ツールとして渡すラッパー (zod スキーマ付き)
+//
+// Search Agent の system prompt はこれらの description を読んでツール選択する.
+// description は plan.md の仕様にユーザー向けヒント (e.g. 「summary だけで答えるな」)
+// を足したもの. **prompt 改善のたびに description も同期させること**.
+//
+// 設計上の注意:
+// - SQL は全てパラメータバインド. ユーザー入力 (LLM 入力) を直接 SQL に埋めない.
+// - regex は事前に Postgres で構文チェックして、ダメなら例外を投げる (DoS 回避).
+// - limit は MAX_LIMIT で抑えて、悪意/暴走でも大量行を返さない.
+// ============================================================================
 
 import { tool } from "ai";
 import { z } from "zod";
@@ -15,13 +29,18 @@ import type {
   SearchDocumentsOutput,
 } from "./types";
 
+/** grepBlocks の snippet は 500 文字で切る. 全文を見たい時は readBlocks に切り替えさせる設計. */
 const SNIPPET_LEN = 500;
+
+/** 各ツールの limit の既定値. LLM が limit を省略した時に使う. */
 const DEFAULT_LIMIT = {
   list: 50,
   searchDoc: 20,
   grep: 30,
   read: 20,
 };
+
+/** 各ツールの limit の上限. LLM が暴走して 10000 とか指定しても抑える. */
 const MAX_LIMIT = {
   list: 200,
   searchDoc: 100,
@@ -29,15 +48,29 @@ const MAX_LIMIT = {
   read: 100,
 };
 
+/** limit を [1, max] にクランプ. 未指定なら default. */
 function clamp(n: number | undefined, def: number, max: number): number {
   if (n == null) return def;
   return Math.min(Math.max(1, Math.floor(n)), max);
 }
 
+/**
+ * listDocuments — 文書一覧を返す.
+ *
+ * Claude Code の `ls` 相当. 「まず何があるか」を把握する.
+ * `pathPrefix` は path 前方一致, `docType` は OR フィルタ.
+ *
+ * SQL イメージ:
+ *   select ... from documents
+ *   where (prefix is null or path like prefix||'%')
+ *     and (docTypes is null or doc_type = any(docTypes))
+ *   order by path limit ?
+ */
 export async function listDocuments(
   input: ListDocumentsInput
 ): Promise<ListDocumentsOutput> {
   const limit = clamp(input.limit, DEFAULT_LIMIT.list, MAX_LIMIT.list);
+  // 未指定は null で送る (SQL 側で is null チェック → 条件無視)
   const prefix = input.pathPrefix ?? null;
   const docTypes =
     input.docType && input.docType.length > 0 ? input.docType : null;
@@ -76,6 +109,21 @@ export async function listDocuments(
   };
 }
 
+/**
+ * searchDocuments — path / title / summary に対する曖昧検索.
+ *
+ * **本文 (blocks.text) は見ない**. これは「候補文書を絞る」ためのツール.
+ * 本文確認は必ず grepBlocks → readBlocks で行う (system prompt にも明記).
+ *
+ * 検索ロジック:
+ * - ILIKE で部分一致を取りつつ、pg_trgm の `%` で類似度マッチも取る
+ * - スコアは similarity() の最大値. 完全一致じゃなくても近いトピックを引っかける.
+ * - 表記揺れ・タイプミスにある程度強い.
+ *
+ * 限界:
+ * - summary は ingest 時の deriveSummary で「先頭付近の地の文 800 文字」を入れているだけ.
+ *   トピックが文書中央以降に出てくる場合はヒットしないので、その時は grepBlocks で本文を引く.
+ */
 export async function searchDocuments(
   input: SearchDocumentsInput
 ): Promise<SearchDocumentsOutput> {
@@ -150,29 +198,51 @@ export async function searchDocuments(
   };
 }
 
+/**
+ * grepBlocks — 本文ブロックを検索する.
+ *
+ * Claude Code の Grep 相当. 本プロジェクトの **主力検索ツール**.
+ *
+ * 2 つのモード:
+ * - `literal` (既定): ILIKE で部分一致 + pg_trgm の `%` で類似マッチ. メタ文字は文字通り.
+ * - `regex`         : Postgres 正規表現 (`~` / `~*`). ripgrep 完全互換ではない (POSIX ERE).
+ *
+ * 安全策:
+ * - pattern 長さ 500 文字超は弾く (悪意/暴走対策)
+ * - regex は事前に Postgres で空文字に対して match させて構文チェック.
+ *   これで不正パターン (e.g. 括弧の対応漏れ) が後段の本クエリで巨大スキャンになるのを防ぐ.
+ *
+ * snippet は SNIPPET_LEN (500) 文字で切る. 全文は readBlocks で取りに行く設計.
+ * これで LLM に渡るトークン数を抑えて、context を浪費しない.
+ */
 export async function grepBlocks(
   input: GrepBlocksInput
 ): Promise<GrepBlocksOutput> {
   const limit = clamp(input.limit, DEFAULT_LIMIT.grep, MAX_LIMIT.grep);
+  // 各種絞り込みフィルタ. 未指定は null にして SQL 側で「条件無視」させる.
   const docIds =
     input.documentIds && input.documentIds.length > 0
       ? input.documentIds
       : null;
   const docTypes =
     input.docType && input.docType.length > 0 ? input.docType : null;
+  // target 未指定 / 空配列 → heading も body も両方検索
   const target = input.target && input.target.length > 0 ? input.target : null;
   const wantHeading = target == null || target.includes("heading");
   const wantBody = target == null || target.includes("body");
   const pattern = input.pattern;
   if (!pattern || pattern.length === 0) return { hits: [] };
   if (pattern.length > 500) {
+    // LLM が壊れたパターンを延々生成するのを防止
     throw new Error("pattern too long (>500 chars)");
   }
   const mode = input.mode ?? "literal";
   const cs = input.caseSensitive ?? false;
 
   if (mode === "regex") {
-    // pre-check regex validity via postgres
+    // 正規表現の構文を Postgres 側で先にチェックする.
+    // 空文字に対して match させるだけ. invalid なら例外が起きる.
+    // これで本クエリで大量行 × 不正 regex の無駄スキャンを防ぐ.
     try {
       await sql`select ''::text ${cs ? sql`~` : sql`~*`} ${pattern}`;
     } catch (e) {
@@ -355,6 +425,17 @@ export async function grepBlocks(
   };
 }
 
+/**
+ * readBlocks — 指定文書の startBlockIndex から limit 個のブロックを順に読む.
+ *
+ * Claude Code の Read 相当. **最終回答の根拠は readBlocks の出力 (text 全文) を使う**.
+ * grepBlocks のヒット周辺を確認するのが基本フロー:
+ *   1. grepBlocks(pattern="外貨建保険") → block_index=96 がヒット
+ *   2. readBlocks(documentId="docs/01.pdf.md", startBlockIndex=94, limit=10)
+ *      → 前後数ブロック含めて文脈を取る
+ *
+ * 起点 (startBlockIndex) は 0 未満なら 0 にクランプ. 範囲外を渡しても空配列が返るだけ.
+ */
 export async function readBlocks(
   input: ReadBlocksInput
 ): Promise<ReadBlocksOutput> {
@@ -412,7 +493,11 @@ export async function readBlocks(
   };
 }
 
-// --- Vercel AI SDK tool wrappers ---
+// ===========================================================================
+// Vercel AI SDK の tool() ラッパー.
+// LLM はこの description を読んでツールを選択するので、文面は重要 (運用文書を兼ねる).
+// description を変えたら src/knowledge/prompts.ts の方針とも同期させること.
+// ===========================================================================
 
 export const listDocumentsTool = tool({
   description:

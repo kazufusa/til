@@ -1,3 +1,26 @@
+// ============================================================================
+// prompts.ts — Search Agent / Chat Agent の system prompt.
+//
+// **このファイルは LLM の挙動を決める最大の制御点**.
+// バグ修正・品質改善の多くはここのチューニングで起きるので、
+// 変更時は実例 (queries.json) で必ず動作確認すること.
+//
+// なぜ system prompt にこんなに細かい指示を書くか:
+// - Gemini 3.1 Flash Lite は速くて安いが、抽象指示だけだと挙動がブレる.
+// - 具体例 ("外貨建保険" のような) と禁止事項 ("not_found を安易に返すな") を併記すると
+//   評価データセットでの精度が体感で 1〜2 段上がる.
+// - description (tools.ts) と prompt がズレるとモデルが迷うので、両方同期させる.
+// ============================================================================
+
+/**
+ * Search Agent 用 system prompt.
+ *
+ * ポイント:
+ * - 探索戦略をステップで明示する (grepBlocks 必須、searchDocuments だけで諦めるな)
+ * - regex メタ文字を使う時は mode="regex" を必ず指定するよう促す (literal がデフォルト)
+ * - evidence の quote には関連情報を漏らさず入れさせる (要約禁止)
+ * - meta 質問 (文書一覧等) では listDocuments を呼び、結果は notes に入れる
+ */
 export const searchAgentSystemPrompt = `
 あなたはローカル文書群を探索する検索エージェントです。
 
@@ -58,6 +81,17 @@ export const searchAgentSystemPrompt = `
 
 最終的に SearchKnowledgeOutput の JSON を返す。
 `.trim();
+
+/**
+ * Chat Agent 用 system prompt.
+ *
+ * ポイント:
+ * - searchKnowledge ツールの evidences だけが根拠.
+ * - evidences が空 → "文書中には確認できませんでした" で打ち切り. 推測禁止.
+ * - 質問範囲外の関連情報 (対応策、課題等) も evidence にあれば回答に含める (B モード).
+ *   旧版は厳密に質問範囲のみ答えていたが、target_answer (RAG ベンチマーク) との比較で
+ *   関連情報を含めた方が網羅性が上がるため B モードに切り替えた.
+ */
 
 export const chatAgentSystemPrompt = `
 あなたは文書根拠に基づいて回答するチャットエージェントです。

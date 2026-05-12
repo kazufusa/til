@@ -1,16 +1,32 @@
-// 対話 CLI: ユーザー入力ループで Chat Agent を呼ぶ.
+// ============================================================================
+// chat.ts — 対話 CLI のエントリポイント.
+//
+// ユーザー入力ループで Chat Agent (streamChat) を呼び続ける.
+// 標準入力から 1 行ずつ読み、回答を stream して表示.
+// [tool: ...] / [tool-result: ...] 行で内部のツール呼び出しも可視化する.
+//
+// 設計上の工夫:
+// - エラーは大スタックトレースを抑えて、formatError で一行に整形する.
+// - ConnectionRefused / "does not support tools" 等の頻出エラーには
+//   親切なヒント文を出す (Ollama 起動忘れ、tool 非対応モデル、等).
+// - エラー時はユーザー入力を履歴から巻き戻す (汚染した履歴で次ターンが詰むのを避ける).
 //
 // usage:
 //   bun run chat                                          # 既定: vertex:gemini-3.1-flash-lite-preview
 //   bun run chat -- --model vertex:gemini-3.1-flash      # Chat + Search 両方を切り替え
 //   bun run chat -- --model ollama:gemma3:4b             # ローカル Ollama (要 ollama serve)
 //   bun run chat -- --chat-model vertex:gemini-3.1-pro --search-model ollama:gemma3:12b
+// ============================================================================
 
 import { streamChat, type ChatOptions } from "../knowledge/chat-agent";
 import { closeDb } from "../knowledge/db";
 import { describeSpec, DEFAULT_MODEL_SPEC } from "../knowledge/model";
 import type { ModelMessage } from "ai";
 
+/**
+ * 簡易引数パーサ. yargs/commander は使わず手書きで済ませている.
+ * --model は chat/search 両方を上書き、--chat-model / --search-model は個別.
+ */
 function parseArgs(argv: string[]): ChatOptions & { help?: boolean } {
   const opts: ChatOptions & { help?: boolean } = {};
   for (let i = 0; i < argv.length; i++) {
@@ -47,6 +63,11 @@ spec 書式: <provider>:<modelId>
 
 const messages: ModelMessage[] = [];
 
+/**
+ * Vercel AI SDK 由来のエラーを 1 行に整形する.
+ * cause / responseBody まで見て、Ollama の "does not support tools" 等の頻出エラーは
+ * 候補モデルを併記して親切にする.
+ */
 function formatError(e: unknown): string {
   if (!e) return "unknown error";
   const err = e as {
@@ -85,6 +106,11 @@ function formatError(e: unknown): string {
   return String(e).slice(0, 200);
 }
 
+/**
+ * 標準入力から 1 行読む (Bun の readline を使わずに最小実装).
+ * Buffer に蓄積していって LF (0x0a) を見つけたらそこで切る.
+ * stdin の pause/resume を毎回切り替えて、入力中だけ active にする.
+ */
 function read(prompt: string): Promise<string> {
   process.stdout.write(prompt);
   return new Promise((resolve) => {
@@ -104,6 +130,13 @@ function read(prompt: string): Promise<string> {
   });
 }
 
+/**
+ * メインループ:
+ *   read("you> ")             # ユーザー入力を 1 行待つ
+ *   /exit /quit               # 終了
+ *   /clear                    # 会話履歴クリア
+ *   それ以外                  # streamChat(messages) → fullStream を表示
+ */
 async function main(): Promise<void> {
   console.log(
     `cdcs chat. /exit で終了。\n  chat-model:   ${describeSpec(args.chatModelSpec)}\n  search-model: ${describeSpec(args.searchModelSpec ?? args.chatModelSpec ?? DEFAULT_MODEL_SPEC)}`

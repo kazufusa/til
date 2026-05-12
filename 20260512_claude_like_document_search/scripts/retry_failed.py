@@ -1,7 +1,18 @@
 """失敗した PDF を個別にリトライする.
 
-- "no pages" 系: 普通にリトライ (transient)
-- RECITATION 系: プロンプトを若干変更して再要求
+batch_convert.py の出力ファイルが存在しない / 空の PDF を対象に再変換する.
+
+戦略:
+- フェーズ 1: 通常プロンプト (PROMPT) で 2 回まで.
+              温度を 0.2 → 0.4 と段階的に上げる. 同じ出力が出にくくなる.
+              "no pages" のような transient なエラーはこれで解消することが多い.
+- フェーズ 2: ALT_PROMPT に切り替えて 3 回まで.
+              Gemini の RECITATION (公開情報の長文引用と判定して空応答) を回避するため、
+              「言い回しを変えて」と指示する.
+
+使い方:
+    python scripts/retry_failed.py                       # docs/ に欠けている全 PDF
+    python scripts/retry_failed.py pdfs/foo.pdf ...     # 個別指定
 """
 from __future__ import annotations
 
@@ -27,6 +38,11 @@ ALT_PROMPT = (
 
 
 def attempt(pdf: Path, md: Path, prompt: str, retries: int = 3) -> bool:
+    """1 PDF を `retries` 回まで変換試行する.
+
+    各試行で temperature を上げて (0.2 → 0.4 → 0.6) 出力の多様性を確保.
+    成功で True、全リトライ失敗で False.
+    """
     client = genai.Client(vertexai=True, project=PROJECT, location=LOCATION)
     pdf_bytes = pdf.read_bytes()
     for i in range(retries):
@@ -77,7 +93,7 @@ def main() -> int:
     pdfs = Path("pdfs")
     failed: list[str] = []
 
-    # 名前のリストを引数 or デフォルト
+    # 引数が与えられればそれを対象、無ければ「docs に対応する .md が無い PDF」を自動検出.
     if len(sys.argv) > 1:
         targets = [Path(p) for p in sys.argv[1:]]
     else:
