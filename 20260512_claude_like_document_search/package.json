@@ -1,0 +1,26 @@
+{
+  "name": "cdcs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ingest": "bun run src/cli/ingest.ts",
+    "chat": "bun run src/cli/chat.ts",
+    "db:migrate": "docker compose exec -T postgres psql -U cdcs -d cdcs -f /sqls/01_init.sql",
+    "db:reset": "docker compose exec -T postgres psql -U cdcs -d cdcs -c 'drop table if exists blocks; drop table if exists documents;' && bun run db:migrate",
+    "db:load": "docker compose exec -T postgres psql -U cdcs -d cdcs -f /sqls/02_data.sql",
+    "db:dump": "docker compose exec -T postgres pg_dump -U cdcs -d cdcs --data-only --no-owner --no-privileges -t documents -t blocks > sqls/02_data.sql"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.67",
+    "@ai-sdk/google-vertex": "^4.0.120",
+    "ai": "^6.0.175",
+    "ollama-ai-provider-v2": "^3.5.0",
+    "postgres": "^3.4.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
+  }
+}

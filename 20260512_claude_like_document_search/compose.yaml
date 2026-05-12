@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: cdcs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cdcs
+      POSTGRES_USER: cdcs
+      POSTGRES_PASSWORD: cdcs
+      TZ: Asia/Tokyo
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./sqls:/sqls:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdcs -d cdcs"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
