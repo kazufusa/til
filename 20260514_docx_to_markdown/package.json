@@ -1,0 +1,23 @@
+{
+  "name": "20260514_docx_to_markdown",
+  "module": "convert.ts",
+  "dependencies": {
+    "@google/genai": "^1.52.0",
+    "docx": "^9.6.1",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "officeparser": "^6.1.1",
+    "pandoc-wasm": "^1.0.1",
+    "pptxgenjs": "^4.0.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
+  "scripts": {
+    "make-fixture": "bun run scripts/make-fixture.ts",
+    "convert": "bun run convert.ts"
+  },
+  "type": "module"
+}

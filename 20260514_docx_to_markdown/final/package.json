@@ -1,0 +1,19 @@
+{
+  "name": "office-to-markdown",
+  "module": "convert.ts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "convert": "bun run convert.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@google/genai": "^1.52.0",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "pandoc-wasm": "^1.0.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
