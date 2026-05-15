@@ -26,7 +26,6 @@ import type { Image, Source } from "./types";
 
 type AnchoredImage = {
   sheet: string;
-  cell: string;
   col: number; // 1-based
   row: number; // 1-based
   filename: string;
@@ -35,7 +34,18 @@ type AnchoredImage = {
   anchorKind: "drawing" | "cell";
 };
 
-async function readAnchoredImages(source: Source): Promise<AnchoredImage[]> {
+const a1 = (col: number, row: number) => `${colCache.n2l(col)}${row}`;
+
+// Per-sheet top-left cell of the populated data range. Pandoc emits the GFM
+// table starting from this cell — so a sheet whose used range is B2:C3 has
+// its xlsx row 2 mapped to the markdown header line, and xlsx column B to the
+// markdown's first column. Defaults to (1, 1) when no <dimension> is present.
+type SheetOrigin = { row: number; col: number };
+const DEFAULT_ORIGIN: SheetOrigin = { row: 1, col: 1 };
+
+async function readAnchoredImages(
+  source: Source,
+): Promise<{ images: AnchoredImage[]; origins: Map<string, SheetOrigin> }> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(source.bytes);
   const out: AnchoredImage[] = [];
@@ -55,7 +65,6 @@ async function readAnchoredImages(source: Source): Promise<AnchoredImage[]> {
       const row = row0 + 1;
       out.push({
         sheet: ws.name,
-        cell: `${colCache.n2l(col)}${row}`,
         col,
         row,
         filename: `image${++counter}.${ext}`,
@@ -66,21 +75,88 @@ async function readAnchoredImages(source: Source): Promise<AnchoredImage[]> {
     }
   }
 
-  // (2) Rich-data cell images
-  out.push(
-    ...(await readRichDataCellImages(source, wb.worksheets.map((w) => w.name))),
-  );
+  // (2) + (3) Walk sheets in workbook order, reading each sheet xml exactly
+  //     once and extracting both the data-range origin and any rich-data
+  //     cell-image references in one pass.
+  const sheets = await readSheetXmls(source);
+  const origins = new Map<string, SheetOrigin>();
+  for (const s of sheets) origins.set(s.name, extractSheetOrigin(s.xml));
+  out.push(...(await readRichDataCellImages(source, sheets)));
+  return { images: out, origins };
+}
+
+// Walk `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` to enumerate sheets
+// in the workbook's intended order (NOT alphabetical filename order — Excel
+// can save workbooks where rId2 → sheet5.xml). Reads each sheet xml once.
+type SheetEntry = { name: string; path: string; xml: string };
+async function readSheetXmls(source: Source): Promise<SheetEntry[]> {
+  const text = (p: string) => source.zip.file(p)?.async("text");
+  const [wbXml, relsXml] = await Promise.all([
+    text("xl/workbook.xml"),
+    text("xl/_rels/workbook.xml.rels"),
+  ]);
+  if (!wbXml || !relsXml) return [];
+
+  const rels = new Map(parseRelationships(relsXml).map((r) => [r.rId, r.target]));
+  const out: SheetEntry[] = [];
+  for (const m of wbXml.matchAll(
+    /<sheet\b[^>]*\bname=['"]([^'"]+)['"][^>]*\br:id=['"]([^'"]+)['"]/g,
+  )) {
+    const name = m[1]!;
+    const target = rels.get(m[2]!);
+    if (!target) continue;
+    const path = resolveOoxmlPath("xl", target);
+    const xml = await text(path);
+    if (xml) out.push({ name, path, xml });
+  }
   return out;
+}
+
+type Relationship = { rId: string; type: string; target: string };
+
+function parseRelationships(relsXml: string): Relationship[] {
+  const out: Relationship[] = [];
+  // `[^>]*?` lazy-matches the attribute list up to `>`, leaving the optional
+  // self-closing `/` outside the capture so attribute values containing `/`
+  // (e.g. Type URIs) are preserved.
+  for (const m of relsXml.matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
+    const attrs = m[1]!;
+    const rId = attrs.match(/\bId=['"]([^'"]+)['"]/)?.[1];
+    const target = attrs.match(/\bTarget=['"]([^'"]+)['"]/)?.[1];
+    const type = attrs.match(/\bType=['"]([^'"]+)['"]/)?.[1] ?? "";
+    if (rId && target) out.push({ rId, type, target });
+  }
+  return out;
+}
+
+// Resolve an OOXML rels Target against the directory of the file that
+// contained the rels. Targets are either absolute ("/word/document.xml")
+// or relative ("../charts/chart1.xml" from "xl/drawings/_rels/").
+function resolveOoxmlPath(baseDir: string, target: string): string {
+  if (target.startsWith("/")) return target.slice(1);
+  const parts = `${baseDir}/${target}`.split("/");
+  const out: string[] = [];
+  for (const p of parts) {
+    if (p === "" || p === ".") continue;
+    if (p === "..") out.pop();
+    else out.push(p);
+  }
+  return out.join("/");
+}
+
+function extractSheetOrigin(sheetXml: string): SheetOrigin {
+  // Tolerate single quotes and attribute reordering: `<dimension … ref="A1"/>`.
+  const m = sheetXml.match(/<dimension\b[^>]*\bref=['"]([A-Z]+\d+)/);
+  if (!m) return DEFAULT_ORIGIN;
+  const tl = colCache.decodeAddress(m[1]!);
+  return { row: tl.row, col: tl.col };
 }
 
 async function readRichDataCellImages(
   source: Source,
-  sheetNames: string[],
+  sheets: SheetEntry[],
 ): Promise<AnchoredImage[]> {
-  const text = async (p: string) => {
-    const f = source.zip.file(p);
-    return f ? f.async("text") : null;
-  };
+  const text = (p: string) => source.zip.file(p)?.async("text");
   const [relsXml, richRelXml, rdXml, mdXml] = await Promise.all([
     text("xl/richData/_rels/richValueRel.xml.rels"),
     text("xl/richData/richValueRel.xml"),
@@ -89,15 +165,13 @@ async function readRichDataCellImages(
   ]);
   if (!relsXml || !richRelXml || !rdXml || !mdXml) return [];
 
-  const relMap = new Map<string, string>();
-  for (const m of relsXml.matchAll(
-    /<Relationship\s+Id="(rId\d+)"[^>]*Target="([^"]+)"/g,
-  )) {
-    if (!/image/i.test(m[0])) continue;
-    relMap.set(m[1]!, m[2]!.replace(/^\.\.\//, "xl/"));
-  }
+  const relMap = new Map(
+    parseRelationships(relsXml)
+      .filter((r) => /image/i.test(r.type))
+      .map((r) => [r.rId, resolveOoxmlPath("xl/richData", r.target)] as const),
+  );
   const richRelIdx: string[] = [];
-  for (const m of richRelXml.matchAll(/<rel\s+r:id="(rId\d+)"\/>/g)) {
+  for (const m of richRelXml.matchAll(/<rel\s+r:id=['"]([^'"]+)['"]\/>/g)) {
     richRelIdx.push(m[1]!);
   }
   const rdRichValue: number[] = [];
@@ -107,19 +181,14 @@ async function readRichDataCellImages(
   }
   const vmBlock = mdXml.match(/<valueMetadata\b[\s\S]*?<\/valueMetadata>/)?.[0] ?? "";
   const vmToRv: number[] = [];
-  for (const m of vmBlock.matchAll(/<rc\b[^>]*\sv="(\d+)"/g)) {
+  for (const m of vmBlock.matchAll(/<rc\b[^>]*\bv=['"](\d+)['"]/g)) {
     vmToRv.push(parseInt(m[1]!, 10));
   }
 
-  const sheetFiles = Object.keys(source.zip.files)
-    .filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
-    .sort();
   const out: AnchoredImage[] = [];
-  for (let i = 0; i < sheetFiles.length; i++) {
-    const sheetXml = await text(sheetFiles[i]!);
-    if (!sheetXml) continue;
-    for (const m of sheetXml.matchAll(
-      /<c\b[^>]*\br="([A-Z]+\d+)"[^>]*\bvm="(\d+)"[^>]*\/?>/g,
+  for (const sheet of sheets) {
+    for (const m of sheet.xml.matchAll(
+      /<c\b[^>]*\br=['"]([A-Z]+\d+)['"][^>]*\bvm=['"](\d+)['"][^>]*\/?>/g,
     )) {
       const cell = m[1]!;
       // OOXML: cell `vm` attr is a 1-based index into valueMetadata.
@@ -135,8 +204,7 @@ async function readRichDataCellImages(
       const filename = imgPath!.split("/").pop()!;
       const { col, row } = colCache.decodeAddress(cell);
       out.push({
-        sheet: sheetNames[i] ?? `Sheet${i + 1}`,
-        cell,
+        sheet: sheet.name,
         col,
         row,
         filename,
@@ -153,21 +221,17 @@ export async function spliceXlsxImages(
   markdown: string,
   source: Source,
 ): Promise<{ markdown: string; images: Image[] }> {
-  const anchored = await readAnchoredImages(source);
+  const { images: anchored, origins } = await readAnchoredImages(source);
   if (anchored.length === 0) return { markdown, images: [] };
 
-  const bySheet = new Map<string, AnchoredImage[]>();
-  for (const a of anchored) {
-    if (!bySheet.has(a.sheet)) bySheet.set(a.sheet, []);
-    bySheet.get(a.sheet)!.push(a);
-  }
+  const bySheet = Map.groupBy(anchored, (a) => a.sheet);
 
   const images: Image[] = [];
-  const phCounter = { n: 0 };
+  let phCounter = 0;
   const placeholderFor = (im: AnchoredImage): string => {
-    const placeholder = `<<IMG_XLSX_${phCounter.n++}>>`;
+    const placeholder = `<<IMG_XLSX_${phCounter++}>>`;
     images.push({
-      id: `${im.sheet}!${im.cell}!${im.filename}`,
+      id: `${im.sheet}!${a1(im.col, im.row)}!${im.filename}`,
       pattern: new RegExp(escapeRegex(placeholder), "g"),
       mimeType: im.mimeType,
       base64: im.base64,
@@ -190,11 +254,12 @@ export async function spliceXlsxImages(
     if (!imgs || imgs.length === 0) return sec;
 
     let section = sec;
+    const origin = origins.get(sheetName) ?? DEFAULT_ORIGIN;
     const drawingByRow = new Map<number, string[]>();
     for (const im of imgs) {
       const ph = placeholderFor(im);
       if (im.anchorKind === "cell") {
-        const replaced = setMarkdownTableCell(section, im.row, im.col, ph);
+        const replaced = setMarkdownTableCell(section, im.row, im.col, ph, origin);
         if (replaced !== null) section = replaced;
         else orphans.push(ph);
       } else {
@@ -202,7 +267,12 @@ export async function spliceXlsxImages(
         drawingByRow.get(im.row)!.push(ph);
       }
     }
-    return splitTableAtEmptyRows(section, drawingByRow);
+    // Skip the full table rewrite when there are no drawing-anchored
+    // placeholders to slot in — for sheets with only cell-anchored images
+    // (or none at all on that sheet) the table is already correct.
+    return drawingByRow.size === 0
+      ? section
+      : splitTableAtEmptyRows(section, drawingByRow, origin);
   });
 
   for (const [sheet, imgs] of bySheet) {
@@ -235,19 +305,25 @@ function setMarkdownTableCell(
   xlsxRow: number,
   xlsxCol: number,
   replacement: string,
+  origin: SheetOrigin,
 ): string | null {
   const lines = section.split("\n");
   const tableStart = findTableStart(lines);
   if (tableStart < 0) return null;
-  // Header is xlsx row 1. The first GFM data row sits at tableStart + 2 and
-  // represents xlsx row 2 → line index tableStart + 2 + (N - 2).
-  const target = tableStart + 2 + (xlsxRow - 2);
+  // pandoc renders the row at the sheet's data-range top (origin.row) as the
+  // markdown header line; subsequent xlsx rows are data lines after the
+  // separator. xlsx column `origin.col` is parts[1] in each pipe-split row.
+  const target =
+    xlsxRow === origin.row
+      ? tableStart
+      : tableStart + 2 + (xlsxRow - origin.row - 1);
   if (target < 0 || target >= lines.length) return null;
   const line = lines[target]!;
   if (!line.startsWith("|")) return null;
+  const partsIdx = xlsxCol - origin.col + 1;
   const parts = line.split("|");
-  if (xlsxCol < 1 || xlsxCol > parts.length - 2) return null;
-  parts[xlsxCol] = ` ${replacement} `;
+  if (partsIdx < 1 || partsIdx > parts.length - 2) return null;
+  parts[partsIdx] = ` ${replacement} `;
   lines[target] = parts.join("|");
   return lines.join("\n");
 }
@@ -255,6 +331,7 @@ function setMarkdownTableCell(
 function splitTableAtEmptyRows(
   section: string,
   injectAfterXlsxRow: Map<number, string[]>,
+  origin: SheetOrigin,
 ): string {
   const lines = section.split("\n");
   const tStart = findTableStart(lines);
@@ -269,7 +346,9 @@ function splitTableAtEmptyRows(
   const chunks: Chunk[] = [];
   let cursor: Chunk | null = null;
   data.forEach((row, idx) => {
-    const xlsxRow = idx + 2;
+    // Header line corresponds to xlsx row `origin.row`; data row N (0-based)
+    // is xlsx row origin.row + N + 1.
+    const xlsxRow = origin.row + idx + 1;
     if (isEmptyRow(row)) {
       if (cursor) {
         chunks.push(cursor);
@@ -284,28 +363,30 @@ function splitTableAtEmptyRows(
   if (cursor) chunks.push(cursor);
   if (chunks.length === 0) return section;
 
-  const consumed = new Set<number>();
+  const pending = new Map(injectAfterXlsxRow);
   const out: string[] = [];
   chunks.forEach((chunk, idx) => {
     const isFirst = idx === 0;
-    if (isFirst) out.push(...emitGfmTable(header, chunk.rows));
-    else out.push("", ...emitGfmTable(chunk.rows[0]!, chunk.rows.slice(1)));
-    for (const [row, phs] of injectAfterXlsxRow) {
-      if (consumed.has(row)) continue;
-      // Chunk 0 also absorbs anchors that sit at or above the data range.
-      const inRange = row >= chunk.fromRow && row <= chunk.toRow;
-      const beforeFirst = isFirst && row < chunk.fromRow;
-      if (inRange || beforeFirst) {
+    // Chunk 0 uses the original header; later chunks consume their own first
+    // row as the header. A blank line precedes every chunk except the first.
+    if (!isFirst) out.push("");
+    out.push(
+      ...(isFirst
+        ? emitGfmTable(header, chunk.rows)
+        : emitGfmTable(chunk.rows[0]!, chunk.rows.slice(1))),
+    );
+    // Chunk 0 also absorbs anchors that sit above the data range.
+    for (const [row, phs] of [...pending]) {
+      const above = isFirst && row < chunk.fromRow;
+      const within = row >= chunk.fromRow && row <= chunk.toRow;
+      if (above || within) {
         out.push("", ...phs);
-        consumed.add(row);
+        pending.delete(row);
       }
     }
   });
-  for (const [row, phs] of injectAfterXlsxRow) {
-    if (consumed.has(row)) continue;
-    out.push("", ...phs);
-    consumed.add(row);
-  }
+  // Anchors past the last chunk go after it.
+  for (const phs of pending.values()) out.push("", ...phs);
   return [...lines.slice(0, tStart), ...out, ...lines.slice(tEnd)].join("\n");
 }
 

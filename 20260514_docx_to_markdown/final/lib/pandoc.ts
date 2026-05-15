@@ -29,41 +29,61 @@ export async function runPandocWasm(
   if (result.stderr) console.warn(`[pandoc-wasm] ${result.stderr.trim()}`);
   const markdown = result.stdout ?? "";
 
+  if (source.format === "xlsx") return { markdown, images: [] };
+
+  // For docx/pptx, walk word/media/* or ppt/media/* and match each entry to
+  // the in-output `<img src="…">` / `![](…)` reference pandoc-wasm emitted.
+  const prefix = MEDIA_PREFIX[source.format];
+  const mediaEntries = Object.entries(source.zip.files).filter(
+    ([name, entry]) => name.startsWith(prefix) && !entry.dir,
+  );
   const images: Image[] = [];
-  if (source.format === "docx" || source.format === "pptx") {
-    const prefix = MEDIA_PREFIX[source.format];
-    const mediaEntries = Object.entries(source.zip.files).filter(
-      ([name, entry]) => name.startsWith(prefix) && !entry.dir,
-    );
-    for (const [name, entry] of mediaEntries) {
-      const filename = name.slice(prefix.length);
-      const ext = extname(filename);
-      // pptx refs match the zip entry name verbatim, so we can filter
-      // cheaply before paying for entry.async/sha1. For docx the ref is
-      // sha1(bytes) so we must decode first.
-      let refPath: string;
-      let buf: Uint8Array;
-      if (source.format === "pptx") {
-        refPath = `ppt/media/${filename}`;
-        if (!markdown.includes(refPath)) continue;
-        buf = await entry.async("uint8array");
-      } else {
-        buf = await entry.async("uint8array");
-        refPath = `media/${createHash("sha1").update(buf).digest("hex")}${ext}`;
-        if (!markdown.includes(refPath)) continue;
-      }
-      const escaped = escapeRegex(refPath);
-      images.push({
-        id: filename,
-        pattern: new RegExp(
-          `!\\[[^\\]]*\\]\\(${escaped}[^)]*\\)|<img\\b[^>]*\\bsrc="${escaped}"[^>]*/?>`,
-          "g",
-        ),
-        mimeType: mimeFromFilename(filename),
-        base64: Buffer.from(buf).toString("base64"),
-        filename,
-      });
-    }
+  for (const [name, entry] of mediaEntries) {
+    const filename = name.slice(prefix.length);
+    const resolved = await resolveMediaRef(source.format, filename, markdown, entry);
+    if (!resolved) continue;
+    const escaped = escapeRegex(resolved.refPath);
+    // Alt text may legitimately contain `\[` or `\]` (pandoc escapes literal
+    // brackets when the alt comes from a Word path like `…\\[1\\].png`). So
+    // the inner-alt class must skip backslash-escaped chars: `(?:\\.|[^\]])*`.
+    images.push({
+      id: filename,
+      pattern: new RegExp(
+        `!\\[(?:\\\\.|[^\\]])*\\]\\(${escaped}[^)]*\\)|<img\\b[^>]*\\bsrc="${escaped}"[^>]*/?>`,
+        "g",
+      ),
+      mimeType: mimeFromFilename(filename),
+      base64: Buffer.from(resolved.buf).toString("base64"),
+      filename,
+    });
   }
   return { markdown, images };
+}
+
+// Resolve one media zip entry to the path pandoc-wasm actually emitted in
+// the markdown:
+//   pptx → always `ppt/media/<filename>` (verbatim entry name).
+//   docx → pandoc-wasm preserves the entry filename when it's a normal name
+//          (`image1.png`) and substitutes a content sha1 when the filename
+//          already looks hash-like, so we try the literal first then sha1.
+// Returns null when neither candidate appears in the markdown.
+async function resolveMediaRef(
+  format: "docx" | "pptx",
+  filename: string,
+  markdown: string,
+  entry: { async: (kind: "uint8array") => Promise<Uint8Array> },
+): Promise<{ refPath: string; buf: Uint8Array } | null> {
+  if (format === "pptx") {
+    const refPath = `ppt/media/${filename}`;
+    return markdown.includes(refPath)
+      ? { refPath, buf: await entry.async("uint8array") }
+      : null;
+  }
+  const literal = `media/${filename}`;
+  if (markdown.includes(literal)) {
+    return { refPath: literal, buf: await entry.async("uint8array") };
+  }
+  const buf = await entry.async("uint8array");
+  const sha = `media/${createHash("sha1").update(buf).digest("hex")}${extname(filename)}`;
+  return markdown.includes(sha) ? { refPath: sha, buf } : null;
 }

@@ -1,53 +1,79 @@
 // office (.docx / .xlsx / .pptx) → markdown via pandoc-wasm + Gemini.
-// CLI: bun run convert.ts <input> [output.md]
+// CLI: bun run convert.ts [--no-llm] <input> [output.md]
 //
 // Image bytes are NOT written to disk. Each image is replaced with the
 // Gemini-generated caption inline in the markdown, so the .md output is a
 // single self-contained text file with no side-car directories.
+//
+// --no-llm: skip the Gemini call and substitute a fixed dummy caption.
+//           Useful for debugging parser-side issues without burning API quota.
 
-import { loadSource } from "./lib/common";
-import { runPandocWasm } from "./lib/pandoc";
-import { spliceXlsxImages } from "./lib/xlsx";
 import { describeImages } from "./lib/gemini";
-import { injectImageDescriptions } from "./lib/output";
+import { dummyDescribe, runPipeline } from "./lib/pipeline";
 
-const USAGE = `Usage: bun run convert.ts <input.{docx,xlsx,pptx}> [output.md]
+const USAGE = `Usage: bun run convert.ts [--no-llm] <input.{docx,xlsx,pptx}> [output.md]
 
 Converts an Office Open XML file to GitHub-Flavored Markdown. Each embedded
 image is replaced inline by a short Gemini-generated caption — the converter
 writes no files other than the output markdown.
 
-Requires the following env vars (.env is auto-loaded by Bun):
+Options:
+  --no-llm    Skip Gemini and use a dummy "(画像)" caption instead.
+              Use this when iterating on parser/splice logic to avoid
+              burning API quota.
+
+Requires the following env vars (unless --no-llm is set; .env is auto-loaded):
   GOOGLE_VERTEX_PROJECT   GCP project id with Vertex AI enabled
   GOOGLE_VERTEX_LOCATION  e.g. "global"
   GOOGLE_VERTEX_MODEL     Gemini model id`;
 
-async function main() {
-  const [input, output] = process.argv.slice(2);
-  if (!input || input === "-h" || input === "--help") {
-    console.log(USAGE);
-    process.exit(input ? 0 : 1);
+type Args = { input: string; output: string; noLLM: boolean };
+type ParseResult =
+  | { kind: "help" }
+  | { kind: "error"; message: string }
+  | { kind: "ok"; args: Args };
+
+function parseArgs(argv: string[]): ParseResult {
+  let noLLM = false;
+  const positional: string[] = [];
+  for (const a of argv) {
+    if (a === "-h" || a === "--help") return { kind: "help" };
+    if (a === "--no-llm") noLLM = true;
+    else if (a.startsWith("-"))
+      return { kind: "error", message: `unknown option: ${a}` };
+    else positional.push(a);
   }
+  const [input, output] = positional;
+  if (!input) return { kind: "error", message: "missing input file" };
+  return {
+    kind: "ok",
+    args: { input, output: output ?? `${input}.md`, noLLM },
+  };
+}
 
-  const source = await loadSource(input);
-  const outPath = output ?? `${input}.md`;
+async function main() {
+  const parsed = parseArgs(process.argv.slice(2));
+  if (parsed.kind === "help") {
+    console.log(USAGE);
+    process.exit(0);
+  }
+  if (parsed.kind === "error") {
+    console.error(`${parsed.message}\n\n${USAGE}`);
+    process.exit(1);
+  }
+  const args = parsed.args;
 
-  console.log(`[1/3] ${source.format} → markdown via pandoc-wasm: ${input}`);
-  const pandoc = await runPandocWasm(source);
-  const spliced =
-    source.format === "xlsx" ? await spliceXlsxImages(pandoc.markdown, source) : null;
-  const markdown = spliced?.markdown ?? pandoc.markdown;
-  const images = spliced ? [...pandoc.images, ...spliced.images] : pandoc.images;
-  console.log(`      ${markdown.length} chars, ${images.length} image(s)`);
-
-  console.log(`[2/3] describe images via Gemini (${process.env.GOOGLE_VERTEX_MODEL})`);
-  const descMap = await describeImages(images);
-
-  console.log(`[3/3] inject captions, write ${outPath}`);
-  const finalMd = injectImageDescriptions(markdown, images, descMap);
-  await Bun.write(outPath, finalMd);
-
-  console.log(`done. ${finalMd.length} chars written to ${outPath}`);
+  if (args.noLLM) {
+    console.log(`converting ${args.input} → ${args.output} (--no-llm, dummy captions)`);
+  } else {
+    console.log(`converting ${args.input} → ${args.output} via Gemini (${process.env.GOOGLE_VERTEX_MODEL})`);
+  }
+  const finalMd = await runPipeline(
+    args.input,
+    args.noLLM ? dummyDescribe : describeImages,
+  );
+  await Bun.write(args.output, finalMd);
+  console.log(`done. ${finalMd.length} chars written.`);
 }
 
 main().catch((err) => {

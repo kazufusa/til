@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "convert": "bun run convert.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "regen:expected": "bun run scripts/regen-expected.ts"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
@@ -15,5 +16,10 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "devDependencies": {
+    "depcheck": "1.4.7",
+    "knip": "5.65.0",
+    "ts-prune": "0.10.3"
   }
 }

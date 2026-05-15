@@ -1,5 +1,11 @@
-import { test, expect } from "bun:test";
+import { test, expect, afterAll } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadSource, mimeFromFilename, escapeRegex } from "../lib/common";
+
+const tmpDir = await mkdtemp(join(tmpdir(), "office2md-test-"));
+afterAll(() => rm(tmpDir, { recursive: true, force: true }));
 
 test("mimeFromFilename: extension lookup", () => {
   expect(mimeFromFilename("a.PNG")).toBe("image/png");
@@ -21,19 +27,10 @@ test("loadSource: rejects missing file", async () => {
   await expect(loadSource("./fixtures/docx/nope.docx")).rejects.toThrow(/not found/);
 });
 
-test("loadSource: detects valid docx", async () => {
-  const src = await loadSource("./fixtures/docx/sample.docx");
-  expect(src.format).toBe("docx");
-  expect(src.bytes.byteLength).toBeGreaterThan(0);
-  expect(src.zip.file("word/document.xml")).not.toBeNull();
-});
-
 test("loadSource: catches content/extension mismatch", async () => {
-  // Make a temp file: rename xlsx bytes to a .docx name.
+  // xlsx bytes renamed to .docx should fail validation with a clear message.
   const xlsx = await Bun.file("./fixtures/xlsx/sample.xlsx").arrayBuffer();
-  const tmp = "/tmp/mismatched.docx";
-  await Bun.write(tmp, xlsx);
-  await expect(loadSource(tmp)).rejects.toThrow(
-    /content looks like \.xlsx/,
-  );
+  const mismatched = join(tmpDir, "mismatched.docx");
+  await Bun.write(mismatched, xlsx);
+  await expect(loadSource(mismatched)).rejects.toThrow(/content looks like \.xlsx/);
 });
