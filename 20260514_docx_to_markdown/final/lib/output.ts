@@ -18,14 +18,26 @@ export function injectImageDescriptions(
   let out = markdown;
   for (const img of images) {
     const desc = descriptions.get(img.id) ?? "(画像説明なし)";
-    const oneLine = collapseWhitespaceWithNewlines(desc);
     const replacement =
       img.context === "inline"
-        ? `**[画像]** ${oneLine}`
-        : `\n\n> **[画像]** ${oneLine}\n\n`;
+        ? `**[画像]** ${collapseWhitespaceWithNewlines(desc)}`
+        : blockReplacement(desc);
     out = out.replaceAll(img.marker, replacement);
   }
   return collapseBlankRuns(out);
+}
+
+// Block-context caption: first line goes inside the `> **[画像]**` blockquote,
+// and any remaining lines are emitted as a sibling block separated by a
+// blank line. Captions that contain a markdown table or code fence need that
+// sibling block to render correctly.
+function blockReplacement(desc: string): string {
+  const trimmed = desc.trim();
+  const nl = trimmed.indexOf("\n");
+  if (nl === -1) return `\n\n> **[画像]** ${trimmed}\n\n`;
+  const first = trimmed.slice(0, nl);
+  const rest = trimmed.slice(nl + 1).trim();
+  return `\n\n> **[画像]** ${first}\n\n${rest}\n\n`;
 }
 
 // Collapse any run of whitespace that contains at least one newline into a
