@@ -5,7 +5,8 @@
 //   (1) drawing-anchored images (classic xl/drawings/* chart/picture float)
 //       — exceljs reads each anchor's top-left cell for us.
 //   (2) "Image in cell" / IMAGE() rich-data images (Excel 2022+). exceljs
-//       doesn't surface these; we walk the OOXML rich-data layer ourselves:
+//       doesn't surface these; we walk the OOXML rich-data layer ourselves
+//       (via fast-xml-parser):
 //       cell `<c r="A2" … vm="N">` → metadata.valueMetadata[N-1].rc.v=X
 //       → rdrichvalue.rv[X].v=Y → richValueRel.rel[Y].r:id=rIdK
 //       → _rels/richValueRel.xml.rels rIdK → image file path.
@@ -18,10 +19,16 @@
 //     their anchor row. Sub-tables are created by splitting the GFM table
 //     at all-empty data rows — that's how pandoc represents xlsx layouts
 //     where blocks are vertically separated by blank rows.
+//
+// All markdown structure recognition (sheet headings, tables, cells) goes
+// through marked's tokenizer; all OOXML parsing goes through
+// fast-xml-parser. No regex appears anywhere in this file.
 
 import ExcelJS from "exceljs";
 import colCache from "exceljs/lib/utils/col-cache.js";
-import { escapeRegex, mimeFromFilename } from "./common";
+import { XMLParser } from "fast-xml-parser";
+import { Lexer, type Token, type Tokens } from "marked";
+import { mimeFromFilename } from "./common";
 import type { Image, Source } from "./types";
 
 type AnchoredImage = {
@@ -42,6 +49,18 @@ const a1 = (col: number, row: number) => `${colCache.n2l(col)}${row}`;
 // markdown's first column. Defaults to (1, 1) when no <dimension> is present.
 type SheetOrigin = { row: number; col: number };
 const DEFAULT_ORIGIN: SheetOrigin = { row: 1, col: 1 };
+
+// Shared parser: attributes prefixed with "@", values left as strings unless
+// they're inside element text (numbers there get parsed automatically, which
+// is fine since we only read numeric ids from <v>).
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@",
+  allowBooleanAttributes: true,
+  parseAttributeValue: false,
+  isArray: (name) =>
+    ["Relationship", "sheet", "row", "c", "rv", "v", "bk", "rc", "rel"].includes(name),
+});
 
 async function readAnchoredImages(
   source: Source,
@@ -99,11 +118,13 @@ async function readSheetXmls(source: Source): Promise<SheetEntry[]> {
 
   const rels = new Map(parseRelationships(relsXml).map((r) => [r.rId, r.target]));
   const out: SheetEntry[] = [];
-  for (const m of wbXml.matchAll(
-    /<sheet\b[^>]*\bname=['"]([^'"]+)['"][^>]*\br:id=['"]([^'"]+)['"]/g,
-  )) {
-    const name = m[1]!;
-    const target = rels.get(m[2]!);
+  const wb: any = xmlParser.parse(wbXml);
+  const sheets: any[] = wb?.workbook?.sheets?.sheet ?? [];
+  for (const sh of sheets) {
+    const name: string | undefined = sh["@name"];
+    const rId: string | undefined = sh["@r:id"];
+    if (!name || !rId) continue;
+    const target = rels.get(rId);
     if (!target) continue;
     const path = resolveOoxmlPath("xl", target);
     const xml = await text(path);
@@ -115,15 +136,13 @@ async function readSheetXmls(source: Source): Promise<SheetEntry[]> {
 type Relationship = { rId: string; type: string; target: string };
 
 function parseRelationships(relsXml: string): Relationship[] {
+  const parsed: any = xmlParser.parse(relsXml);
+  const list: any[] = parsed?.Relationships?.Relationship ?? [];
   const out: Relationship[] = [];
-  // `[^>]*?` lazy-matches the attribute list up to `>`, leaving the optional
-  // self-closing `/` outside the capture so attribute values containing `/`
-  // (e.g. Type URIs) are preserved.
-  for (const m of relsXml.matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
-    const attrs = m[1]!;
-    const rId = attrs.match(/\bId=['"]([^'"]+)['"]/)?.[1];
-    const target = attrs.match(/\bTarget=['"]([^'"]+)['"]/)?.[1];
-    const type = attrs.match(/\bType=['"]([^'"]+)['"]/)?.[1] ?? "";
+  for (const r of list) {
+    const rId: string | undefined = r["@Id"];
+    const target: string | undefined = r["@Target"];
+    const type: string = r["@Type"] ?? "";
     if (rId && target) out.push({ rId, type, target });
   }
   return out;
@@ -145,10 +164,14 @@ function resolveOoxmlPath(baseDir: string, target: string): string {
 }
 
 function extractSheetOrigin(sheetXml: string): SheetOrigin {
-  // Tolerate single quotes and attribute reordering: `<dimension … ref="A1"/>`.
-  const m = sheetXml.match(/<dimension\b[^>]*\bref=['"]([A-Z]+\d+)/);
-  if (!m) return DEFAULT_ORIGIN;
-  const tl = colCache.decodeAddress(m[1]!);
+  const parsed: any = xmlParser.parse(sheetXml);
+  const ref: string | undefined = parsed?.worksheet?.dimension?.["@ref"];
+  if (!ref) return DEFAULT_ORIGIN;
+  // <dimension ref="A1"/> or <dimension ref="A1:C5"/> — top-left is the
+  // first cell address, before any colon.
+  const tlAddr = ref.split(":", 1)[0]!;
+  if (!tlAddr) return DEFAULT_ORIGIN;
+  const tl = colCache.decodeAddress(tlAddr);
   return { row: tl.row, col: tl.col };
 }
 
@@ -167,33 +190,48 @@ async function readRichDataCellImages(
 
   const relMap = new Map(
     parseRelationships(relsXml)
-      .filter((r) => /image/i.test(r.type))
+      .filter((r) => r.type.toLowerCase().includes("image"))
       .map((r) => [r.rId, resolveOoxmlPath("xl/richData", r.target)] as const),
   );
-  const richRelIdx: string[] = [];
-  for (const m of richRelXml.matchAll(/<rel\s+r:id=['"]([^'"]+)['"]\/>/g)) {
-    richRelIdx.push(m[1]!);
-  }
-  const rdRichValue: number[] = [];
-  for (const m of rdXml.matchAll(/<rv\b[^>]*>([\s\S]*?)<\/rv>/g)) {
-    const v = m[1]!.match(/<v>(\d+)<\/v>/);
-    rdRichValue.push(v ? parseInt(v[1]!, 10) : -1);
-  }
-  const vmBlock = mdXml.match(/<valueMetadata\b[\s\S]*?<\/valueMetadata>/)?.[0] ?? "";
+
+  // richValueRel.xml: ordered list of <rel r:id="rIdN"/> — index into
+  // relMap is what rdrichvalue.xml's <v> values point at.
+  const richRel: any = xmlParser.parse(richRelXml);
+  const rels: any[] = richRel?.richValueRels?.rel ?? [];
+  const richRelIdx: string[] = rels
+    .map((r) => r["@r:id"])
+    .filter((id): id is string => typeof id === "string");
+
+  // rdrichvalue.xml: each <rv> wraps an ordered <v> list. We want the
+  // first <v> of each rv — that's the index into richRelIdx.
+  const rd: any = xmlParser.parse(rdXml);
+  const rvs: any[] = rd?.rvData?.rv ?? [];
+  const rdRichValue: number[] = rvs.map((rv) => {
+    const vs: any[] = rv?.v ?? [];
+    if (vs.length === 0) return -1;
+    const n = Number(vs[0]);
+    return Number.isFinite(n) ? n : -1;
+  });
+
+  // metadata.xml: valueMetadata contains an ordered list of <bk> blocks,
+  // each with <rc v="N"/> entries. The cell's vm="K" attribute is a 1-based
+  // index into the flattened list of all <rc> elements.
+  const md: any = xmlParser.parse(mdXml);
+  const bks: any[] = md?.metadata?.valueMetadata?.bk ?? [];
   const vmToRv: number[] = [];
-  for (const m of vmBlock.matchAll(/<rc\b[^>]*\bv=['"](\d+)['"]/g)) {
-    vmToRv.push(parseInt(m[1]!, 10));
+  for (const bk of bks) {
+    const rcs: any[] = bk?.rc ?? [];
+    for (const rc of rcs) {
+      const v = rc?.["@v"];
+      vmToRv.push(v == null ? -1 : parseInt(String(v), 10));
+    }
   }
 
   const out: AnchoredImage[] = [];
   for (const sheet of sheets) {
-    for (const m of sheet.xml.matchAll(
-      /<c\b[^>]*\br=['"]([A-Z]+\d+)['"][^>]*\bvm=['"](\d+)['"][^>]*\/?>/g,
-    )) {
-      const cell = m[1]!;
-      // OOXML: cell `vm` attr is a 1-based index into valueMetadata.
-      const rvIdx = vmToRv[parseInt(m[2]!, 10) - 1];
-      if (rvIdx == null) continue;
+    for (const { addr, vm } of cellsWithVm(sheet.xml)) {
+      const rvIdx = vmToRv[vm - 1];
+      if (rvIdx == null || !Number.isFinite(rvIdx)) continue;
       const relIdx = rdRichValue[rvIdx];
       if (relIdx == null || relIdx < 0) continue;
       const rId = richRelIdx[relIdx];
@@ -202,7 +240,7 @@ async function readRichDataCellImages(
       if (!imgFile) continue;
       const buf = await imgFile.async("uint8array");
       const filename = imgPath!.split("/").pop()!;
-      const { col, row } = colCache.decodeAddress(cell);
+      const { col, row } = colCache.decodeAddress(addr);
       out.push({
         sheet: sheet.name,
         col,
@@ -217,6 +255,24 @@ async function readRichDataCellImages(
   return out;
 }
 
+// Walk a sheet xml and yield every cell that has a vm attribute (i.e. is a
+// rich-data image cell). Returns the cell's A1 address and 1-based vm index.
+function* cellsWithVm(sheetXml: string): Iterable<{ addr: string; vm: number }> {
+  const parsed: any = xmlParser.parse(sheetXml);
+  const rows: any[] = parsed?.worksheet?.sheetData?.row ?? [];
+  for (const r of rows) {
+    const cells: any[] = r?.c ?? [];
+    for (const c of cells) {
+      const vmRaw = c?.["@vm"];
+      const addr: string | undefined = c?.["@r"];
+      if (vmRaw == null || !addr) continue;
+      const vm = parseInt(String(vmRaw), 10);
+      if (!Number.isFinite(vm)) continue;
+      yield { addr, vm };
+    }
+  }
+}
+
 export async function spliceXlsxImages(
   markdown: string,
   source: Source,
@@ -229,129 +285,169 @@ export async function spliceXlsxImages(
   const images: Image[] = [];
   let phCounter = 0;
   const placeholderFor = (im: AnchoredImage): string => {
-    const placeholder = `<<IMG_XLSX_${phCounter++}>>`;
+    const marker = `<<IMG_XLSX_${phCounter++}>>`;
     images.push({
       id: `${im.sheet}!${a1(im.col, im.row)}!${im.filename}`,
-      pattern: new RegExp(escapeRegex(placeholder), "g"),
+      marker,
       mimeType: im.mimeType,
       base64: im.base64,
       context: im.anchorKind === "cell" ? "inline" : "block",
       filename: im.filename,
     });
-    return placeholder;
+    return marker;
   };
 
-  const sections = markdown.split(/(?=^## )/m);
+  // Tokenize pandoc's xlsx markdown so we can locate sheets (## headings)
+  // and their associated tables structurally — no regex slicing.
+  const topTokens = new Lexer().lex(markdown);
   const seenSheets = new Set<string>();
   const orphans: string[] = [];
-
-  const rebuilt = sections.map((sec) => {
-    const head = sec.match(/^## (.+?)\s*$/m);
-    if (!head) return sec;
-    const sheetName = head[1]!.trim();
+  const outParts: string[] = [];
+  let i = 0;
+  while (i < topTokens.length) {
+    const tok = topTokens[i]!;
+    if (!isSheetHeading(tok)) {
+      outParts.push(tok.raw);
+      i++;
+      continue;
+    }
+    // Collect [heading, ...inter-blocks, table?, ...post-blocks] up to the
+    // next sheet heading.
+    const headingTok = tok as Tokens.Heading;
+    const sheetName = headingTok.text.trim();
     seenSheets.add(sheetName);
+    let j = i + 1;
+    while (j < topTokens.length && !isSheetHeading(topTokens[j]!)) j++;
+    const section = topTokens.slice(i + 1, j);
+    const tableIdx = section.findIndex((t) => t.type === "table");
     const imgs = bySheet.get(sheetName);
-    if (!imgs || imgs.length === 0) return sec;
 
-    let section = sec;
+    outParts.push(headingTok.raw);
+
+    if (!imgs || imgs.length === 0 || tableIdx < 0) {
+      // No table in this section, or no images for this sheet — emit
+      // section verbatim. Anchored images for a missing-table sheet become
+      // orphans.
+      if (imgs && tableIdx < 0) for (const im of imgs) orphans.push(placeholderFor(im));
+      for (const sub of section) outParts.push(sub.raw);
+      i = j;
+      continue;
+    }
+
+    const tableTok = section[tableIdx] as Tokens.Table;
     const origin = origins.get(sheetName) ?? DEFAULT_ORIGIN;
+
+    // Cell-anchored: write the placeholder directly into the matching cell.
+    // Drawing-anchored: collect by row, to be slotted between sub-tables.
     const drawingByRow = new Map<number, string[]>();
     for (const im of imgs) {
       const ph = placeholderFor(im);
       if (im.anchorKind === "cell") {
-        const replaced = setMarkdownTableCell(section, im.row, im.col, ph, origin);
-        if (replaced !== null) section = replaced;
-        else orphans.push(ph);
+        if (!setTableCellInToken(tableTok, im.row, im.col, ph, origin)) orphans.push(ph);
       } else {
         if (!drawingByRow.has(im.row)) drawingByRow.set(im.row, []);
         drawingByRow.get(im.row)!.push(ph);
       }
     }
-    // Skip the full table rewrite when there are no drawing-anchored
-    // placeholders to slot in — for sheets with only cell-anchored images
-    // (or none at all on that sheet) the table is already correct.
-    return drawingByRow.size === 0
-      ? section
-      : splitTableAtEmptyRows(section, drawingByRow, origin);
-  });
+
+    // Emit any blocks that sat between heading and table verbatim.
+    for (let k = 0; k < tableIdx; k++) outParts.push(section[k]!.raw);
+    outParts.push(
+      drawingByRow.size === 0
+        ? emitGfmTableFromToken(tableTok)
+        : splitTableTokenAtEmptyRows(tableTok, drawingByRow, origin),
+    );
+    // Any blocks after the table are emitted verbatim.
+    for (let k = tableIdx + 1; k < section.length; k++) outParts.push(section[k]!.raw);
+    i = j;
+  }
 
   for (const [sheet, imgs] of bySheet) {
     if (seenSheets.has(sheet)) continue;
     for (const im of imgs) orphans.push(placeholderFor(im));
   }
-  let result = rebuilt.join("");
+
+  let result = outParts.join("");
   if (orphans.length) {
     result += "\n\n---\n\n## 画像一覧 (位置特定不可)\n\n" + orphans.join("\n\n") + "\n";
   }
+  // Marked's table token raw drops the trailing source newline; pandoc's
+  // own output keeps one, and the goldens were authored that way too.
+  // Restore the single EOF newline so file-shape stays stable.
+  if (!result.endsWith("\n")) result += "\n";
   return { markdown: result, images };
 }
 
-// ---------- GFM table helpers ----------
-
-const isTableRow = (s: string) => /^\|/.test(s);
-const isSeparator = (s: string) => /^\|[\s|\-:]+\|?\s*$/.test(s);
-const isEmptyRow = (s: string) =>
-  isTableRow(s) && s.split("|").slice(1, -1).every((c) => c.trim() === "");
-
-function findTableStart(lines: string[]): number {
-  for (let i = 0; i < lines.length; i++) {
-    if (isTableRow(lines[i]!) && isSeparator(lines[i + 1] ?? "")) return i;
-  }
-  return -1;
+function isSheetHeading(tok: Token): boolean {
+  return tok.type === "heading" && (tok as Tokens.Heading).depth === 2;
 }
 
-function setMarkdownTableCell(
-  section: string,
+// ---------- Token-level GFM table helpers ----------
+
+type Cell = Tokens.TableCell;
+
+const cellText = (c: Cell): string => (c?.text ?? "").trim();
+
+// Set the cell at (xlsxRow, xlsxCol) to `replacement`. Origin maps xlsx
+// coordinates to the table's header (xlsxRow=origin.row) and first column
+// (xlsxCol=origin.col). Returns false when the coordinates fall outside the
+// rendered table.
+function setTableCellInToken(
+  table: Tokens.Table,
   xlsxRow: number,
   xlsxCol: number,
   replacement: string,
   origin: SheetOrigin,
-): string | null {
-  const lines = section.split("\n");
-  const tableStart = findTableStart(lines);
-  if (tableStart < 0) return null;
-  // pandoc renders the row at the sheet's data-range top (origin.row) as the
-  // markdown header line; subsequent xlsx rows are data lines after the
-  // separator. xlsx column `origin.col` is parts[1] in each pipe-split row.
-  const target =
+): boolean {
+  const colIdx = xlsxCol - origin.col;
+  if (colIdx < 0 || colIdx >= table.header.length) return false;
+  const targetCells =
     xlsxRow === origin.row
-      ? tableStart
-      : tableStart + 2 + (xlsxRow - origin.row - 1);
-  if (target < 0 || target >= lines.length) return null;
-  const line = lines[target]!;
-  if (!line.startsWith("|")) return null;
-  const partsIdx = xlsxCol - origin.col + 1;
-  const parts = line.split("|");
-  if (partsIdx < 1 || partsIdx > parts.length - 2) return null;
-  parts[partsIdx] = ` ${replacement} `;
-  lines[target] = parts.join("|");
-  return lines.join("\n");
+      ? table.header
+      : table.rows[xlsxRow - origin.row - 1];
+  if (!targetCells) return false;
+  const cell = targetCells[colIdx];
+  if (!cell) return false;
+  cell.text = replacement;
+  cell.tokens = [];
+  return true;
 }
 
-function splitTableAtEmptyRows(
-  section: string,
+// Render a table (header + rows) as GFM, dropping any column that's empty
+// across the whole table. Used by both the "no split" and "split" paths.
+function emitGfmTableFromToken(table: Tokens.Table): string {
+  return renderGfmTable(table.header, table.rows);
+}
+
+function renderGfmTable(header: Cell[], rows: Cell[][]): string {
+  const keep = header.map(
+    (h, i) => cellText(h) !== "" || rows.some((r) => cellText(r[i]!) !== ""),
+  );
+  const fmt = (cells: Cell[]) =>
+    "| " + cells.filter((_, i) => keep[i]).map(cellText).join(" | ") + " |";
+  const sep = "| " + keep.filter(Boolean).map(() => "---").join(" | ") + " |";
+  return [fmt(header), sep, ...rows.map(fmt)].join("\n");
+}
+
+// Split the table into sub-tables at all-empty data rows; between sub-tables
+// emit any drawing placeholders whose xlsx row falls within the preceding
+// sub-table (or above the first one). Anchors past the last sub-table get
+// flushed at the end.
+function splitTableTokenAtEmptyRows(
+  table: Tokens.Table,
   injectAfterXlsxRow: Map<number, string[]>,
   origin: SheetOrigin,
 ): string {
-  const lines = section.split("\n");
-  const tStart = findTableStart(lines);
-  if (tStart < 0) return section;
-  let tEnd = tStart + 2;
-  while (tEnd < lines.length && isTableRow(lines[tEnd]!)) tEnd++;
-
-  const header = lines[tStart]!;
-  const data = lines.slice(tStart + 2, tEnd);
-
-  type Chunk = { rows: string[]; fromRow: number; toRow: number };
+  type Chunk = { header: Cell[]; rows: Cell[][]; fromRow: number; toRow: number };
   const chunks: Chunk[] = [];
-  let cursor: Chunk | null = null;
-  data.forEach((row, idx) => {
+  let cursor: { rows: Cell[][]; fromRow: number; toRow: number } | null = null;
+  table.rows.forEach((row, idx) => {
     // Header line corresponds to xlsx row `origin.row`; data row N (0-based)
     // is xlsx row origin.row + N + 1.
     const xlsxRow = origin.row + idx + 1;
-    if (isEmptyRow(row)) {
+    if (isEmptyRowCells(row)) {
       if (cursor) {
-        chunks.push(cursor);
+        chunks.push({ header: table.header, rows: cursor.rows, fromRow: cursor.fromRow, toRow: cursor.toRow });
         cursor = null;
       }
       return;
@@ -360,21 +456,23 @@ function splitTableAtEmptyRows(
     cursor.rows.push(row);
     cursor.toRow = xlsxRow;
   });
-  if (cursor) chunks.push(cursor);
-  if (chunks.length === 0) return section;
+  if (cursor) chunks.push({ header: table.header, rows: (cursor as any).rows, fromRow: (cursor as any).fromRow, toRow: (cursor as any).toRow });
+  if (chunks.length === 0) return renderGfmTable(table.header, table.rows);
+
+  // Chunks past the first consume their own first data row as the header
+  // (this matches how pandoc represents vertically-stacked xlsx blocks).
+  for (let i = 1; i < chunks.length; i++) {
+    const c = chunks[i]!;
+    c.header = c.rows[0] ?? c.header;
+    c.rows = c.rows.slice(1);
+  }
 
   const pending = new Map(injectAfterXlsxRow);
   const out: string[] = [];
   chunks.forEach((chunk, idx) => {
     const isFirst = idx === 0;
-    // Chunk 0 uses the original header; later chunks consume their own first
-    // row as the header. A blank line precedes every chunk except the first.
     if (!isFirst) out.push("");
-    out.push(
-      ...(isFirst
-        ? emitGfmTable(header, chunk.rows)
-        : emitGfmTable(chunk.rows[0]!, chunk.rows.slice(1))),
-    );
+    out.push(renderGfmTable(chunk.header, chunk.rows));
     // Chunk 0 also absorbs anchors that sit above the data range.
     for (const [row, phs] of [...pending]) {
       const above = isFirst && row < chunk.fromRow;
@@ -385,30 +483,19 @@ function splitTableAtEmptyRows(
       }
     }
   });
-  // Anchors past the last chunk go after it.
   for (const phs of pending.values()) out.push("", ...phs);
-  return [...lines.slice(0, tStart), ...out, ...lines.slice(tEnd)].join("\n");
+  return out.join("\n");
 }
 
-function emitGfmTable(headerLine: string, dataLines: string[]): string[] {
-  const splitCells = (l: string) => l.split("|").slice(1, -1).map((c) => c.trim());
-  const headerCells = splitCells(headerLine);
-  const dataCells = dataLines.map(splitCells);
-  // Drop columns that are entirely empty within this chunk.
-  const keep = headerCells.map(
-    (h, i) => h !== "" || dataCells.some((r) => (r[i] ?? "") !== ""),
-  );
-  const row = (cells: string[]) =>
-    "| " + cells.filter((_, i) => keep[i]).join(" | ") + " |";
-  const sep = "| " + keep.filter(Boolean).map(() => "---").join(" | ") + " |";
-  return [row(headerCells), sep, ...dataCells.map(row)];
+function isEmptyRowCells(cells: Cell[]): boolean {
+  return cells.every((c) => cellText(c) === "");
 }
 
 // Exported for tests.
 export const __testing = {
-  findTableStart,
-  setMarkdownTableCell,
-  splitTableAtEmptyRows,
-  emitGfmTable,
-  isEmptyRow,
+  setTableCellInToken,
+  splitTableTokenAtEmptyRows,
+  renderGfmTable,
+  isEmptyRowCells,
+  isSheetHeading,
 };

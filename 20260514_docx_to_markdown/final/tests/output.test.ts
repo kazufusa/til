@@ -8,7 +8,7 @@ import type { Image } from "../lib/types";
 
 const img = (overrides: Partial<Image> = {}): Image => ({
   id: "i1",
-  pattern: /<<I1>>/g,
+  marker: "<<I1>>",
   mimeType: "image/png",
   base64: "AAAA",
   filename: "image1.png",

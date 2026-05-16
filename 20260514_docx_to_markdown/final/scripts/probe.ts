@@ -6,11 +6,7 @@ import { spliceXlsxImages } from "../lib/xlsx";
 
 const paths = [
   "fixtures/docx/sample.docx",
-  "fixtures/docx/demo.docx",
-  "fixtures/xlsx/sample.xlsx",
   "fixtures/xlsx/example.xlsx",
-  "fixtures/xlsx/produceSales.xlsx",
-  "fixtures/xlsx/censuspopdata.xlsx",
   "fixtures/pptx/sample.pptx",
 ];
 

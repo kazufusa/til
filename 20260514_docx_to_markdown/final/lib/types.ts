@@ -13,7 +13,9 @@ export type Source = {
 
 export type Image = {
   id: string;
-  pattern: RegExp;
+  // Unique sentinel placed in the markdown where the caption will land.
+  // Replaced verbatim via String.prototype.replaceAll in the output stage.
+  marker: string;
   mimeType: string;
   base64: string;
   filename: string;
