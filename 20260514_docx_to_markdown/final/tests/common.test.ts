@@ -29,7 +29,7 @@ test("loadSource: rejects missing file", async () => {
 
 test("loadSource: catches content/extension mismatch", async () => {
   // xlsx bytes renamed to .docx should fail validation with a clear message.
-  const xlsx = await Bun.file("./fixtures/xlsx/sample.xlsx").arrayBuffer();
+  const xlsx = await Bun.file("./fixtures/xlsx/example.xlsx").arrayBuffer();
   const mismatched = join(tmpDir, "mismatched.docx");
   await Bun.write(mismatched, xlsx);
   await expect(loadSource(mismatched)).rejects.toThrow(/content looks like \.xlsx/);
