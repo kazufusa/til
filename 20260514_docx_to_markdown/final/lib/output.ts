@@ -17,7 +17,8 @@ export function injectImageDescriptions(
 ): string {
   let out = markdown;
   for (const img of images) {
-    const desc = descriptions.get(img.id) ?? "(画像説明なし)";
+    const raw = descriptions.get(img.id) ?? "(画像説明なし)";
+    const desc = unwrapMarkdownFences(raw);
     const replacement =
       img.context === "inline"
         ? `**[画像]** ${collapseWhitespaceWithNewlines(desc)}`
@@ -25,6 +26,33 @@ export function injectImageDescriptions(
     out = out.replaceAll(img.marker, replacement);
   }
   return collapseBlankRuns(out);
+}
+
+// LLM responses occasionally wrap an extracted table in a ```markdown ... ```
+// or ```md ... ``` fence even when asked for raw markdown. Strip those
+// wrappers so the table renders inline. Plain ``` fences and other language
+// tags are left alone — they're presumed intentional code samples.
+function unwrapMarkdownFences(s: string): string {
+  const lines = s.split("\n");
+  const out: string[] = [];
+  let inMdFence = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!inMdFence) {
+      if (trimmed === "```markdown" || trimmed === "```md") {
+        inMdFence = true;
+        continue;
+      }
+      out.push(line);
+    } else {
+      if (trimmed === "```") {
+        inMdFence = false;
+        continue;
+      }
+      out.push(line);
+    }
+  }
+  return out.join("\n");
 }
 
 // Block-context caption: first line goes inside the `> **[画像]**` blockquote,

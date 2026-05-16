@@ -28,3 +28,26 @@ test("multiline descriptions collapse to one line", () => {
   );
   expect(md).toContain("**[画像]** line1 line2 line3");
 });
+
+test("```markdown fence around a table is unwrapped", () => {
+  const desc = "要約文。\n\n```markdown\n| a | b |\n|---|---|\n| 1 | 2 |\n```";
+  const md = injectImageDescriptions("<<I1>>", [img()], new Map([["i1", desc]]));
+  expect(md).toContain("> **[画像]** 要約文。");
+  expect(md).toContain("| a | b |");
+  expect(md).not.toContain("```markdown");
+  expect(md).not.toMatch(/^```$/m);
+});
+
+test("```md fence is unwrapped too", () => {
+  const desc = "```md\n| x |\n|---|\n| 1 |\n```";
+  const md = injectImageDescriptions("<<I1>>", [img()], new Map([["i1", desc]]));
+  expect(md).not.toContain("```md");
+  expect(md).toContain("| x |");
+});
+
+test("plain ``` code fence is left alone", () => {
+  const desc = "コード例:\n\n```\nconsole.log(1);\n```";
+  const md = injectImageDescriptions("<<I1>>", [img()], new Map([["i1", desc]]));
+  expect(md).toContain("```");
+  expect(md).toContain("console.log(1);");
+});
