@@ -238,3 +238,6 @@ function visitTokens(tokens: Token[], fn: (tok: Token) => void): void {
     }
   }
 }
+
+// Exported for tests.
+export const __testing = { extractFigcaptionText, collectText, findRefInHtmlRaw };
