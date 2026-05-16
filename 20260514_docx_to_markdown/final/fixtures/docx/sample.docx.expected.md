@@ -67,12 +67,9 @@
 
 ## 
 
-<figure>
+### 図 1ドーナツ
 
 > **[画像]** (画像: image1.png)
-
-<figcaption><p>図 1ドーナツ</p></figcaption>
-</figure>
 
 ## 売上グラフ
 
@@ -82,18 +79,13 @@
 
 上のグラフは各商品の売上を示しています。詳細は表を参照してください。
 
-<figure>
+### 図 2猫
 
 > **[画像]** (画像: image3.jpeg)
 
-<figcaption><p>図 2猫</p></figcaption>
-</figure>
-
 # 調査結果
 
-<figure>
+## 表 2　生命保険
 
 > **[画像]** (画像: image4.png)
 
-<figcaption><p>表 2　生命保険</p></figcaption>
-</figure>
