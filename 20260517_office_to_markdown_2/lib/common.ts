@@ -64,6 +64,80 @@ export function imagePlaceholder(
   return context === "block" ? `> ${span}` : span;
 }
 
+// Replace `**[画像]** (画像: FILENAME)` markers with the LLM-formatted caption.
+//
+// Two cases distinguished by surrounding context:
+//   - block:  `> **[画像]** (画像: NAME)` on its own line. If the caption
+//             contains a newline (kind=='table' returns "summary\n\n<gfm>"),
+//             the first line goes inside the blockquote and the rest is
+//             emitted as a sibling block after a blank line.
+//   - inline: `**[画像]** (画像: NAME)` inside a GFM cell. The caption is
+//             flattened (newline-containing whitespace runs → single space)
+//             so the table row stays on one logical line.
+export function injectImageDescriptions(
+  markdown: string,
+  descriptions: Map<string, string>,
+): string {
+  // Block first — anchored to line start with the `> ` prefix.
+  // [ \t]*$ NOT \s*$ because \s matches \n, which would eat the trailing
+  // newline and collapse the blank line separating this block from the next.
+  let out = markdown.replace(
+    /^> \*\*\[画像\]\*\* \(画像: ([^)]+)\)[ \t]*$/gm,
+    (_match, filename: string) => {
+      const desc = descriptions.get(filename) ?? "(画像説明なし)";
+      return blockReplacement(desc);
+    },
+  );
+  // Inline — any remaining placeholder is inside a table cell or similar.
+  out = out.replace(
+    /\*\*\[画像\]\*\* \(画像: ([^)]+)\)/g,
+    (_match, filename: string) => {
+      const desc = descriptions.get(filename) ?? "(画像説明なし)";
+      return `**[画像]** ${collapseWhitespaceWithNewlines(desc)}`;
+    },
+  );
+  return collapseBlankRuns(out);
+}
+
+function blockReplacement(desc: string): string {
+  const trimmed = desc.trim();
+  const nl = trimmed.indexOf("\n");
+  if (nl === -1) return `> **[画像]** ${trimmed}`;
+  const first = trimmed.slice(0, nl);
+  const rest = trimmed.slice(nl + 1).trim();
+  return `> **[画像]** ${first}\n\n${rest}`;
+}
+
+function collapseWhitespaceWithNewlines(s: string): string {
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    if (isWs(s.charCodeAt(i))) {
+      let j = i;
+      let sawNl = false;
+      while (j < s.length && isWs(s.charCodeAt(j))) {
+        if (s.charCodeAt(j) === 10) sawNl = true;
+        j++;
+      }
+      out += sawNl ? " " : s.slice(i, j);
+      i = j;
+    } else {
+      out += s[i]!;
+      i++;
+    }
+  }
+  return out;
+}
+
+function collapseBlankRuns(s: string): string {
+  while (s.includes("\n\n\n")) s = s.replaceAll("\n\n\n", "\n\n");
+  return s;
+}
+
+function isWs(code: number): boolean {
+  return code === 0x20 || (code >= 0x09 && code <= 0x0d);
+}
+
 export async function writeImagesToDisk(
   images: Image[],
   outDir: string,

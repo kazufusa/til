@@ -152,7 +152,23 @@ bun run convert.ts fixtures/docx/sample.docx /tmp/out.md
 bun run convert.ts fixtures/xlsx/example.xlsx /tmp/out.md
 bun run convert.ts fixtures/pptx/sample.pptx /tmp/out.md
 # → /tmp/out.md + /tmp/out.md.media/image*.{png,jpeg,...}
+
+# LLM (Gemini) で画像説明を埋め込んだ最終形 (.llm.md 互換) を生成:
+bun run convert.ts --llm fixtures/docx/sample.docx /tmp/out.md
+# .env に GOOGLE_VERTEX_PROJECT / GOOGLE_VERTEX_LOCATION / GOOGLE_VERTEX_MODEL が必要。
+# 課金注意。
 ```
+
+## LLM 後処理 (`--llm`)
+
+`lib/gemini.ts` で Vertex AI / Gemini を呼び、画像ごとに日本語説明を生成。
+`lib/common.ts` の `injectImageDescriptions` が
+`**[画像]** (画像: FILENAME)` → `**[画像]** <description>` に置換。
+
+- 同一ファイル名は filename で deduplicate → LLM コール 1 回のみ
+- 非対応 mime (`image/x-emf`, `image/wmf` 等) は `(未対応の画像形式: ...)` を埋める
+- prompt は前回プロジェクトと同一: 「1〜3文で簡潔に日本語説明」
+- 出力は `fixtures/*/*.llm.md` 互換形式
 
 ## テスト(golden)
 
