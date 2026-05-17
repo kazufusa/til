@@ -1,0 +1,25 @@
+{
+  "name": "office-to-markdown-2",
+  "module": "convert.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "convert": "bun run convert.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@google/genai": "^1.52.0",
+    "exceljs": "^4.4.0",
+    "fast-xml-parser": "^4.5.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/turndown": "^5.0.5"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
