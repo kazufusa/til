@@ -64,21 +64,23 @@ SDK の自動リトライ対象外。ただしモデルの出力ブレなので*
 リトライを実装した:
 
 ```ts
+// recurs=回数、whileInput=対象エラー限定(バックオフ無し)
+const schemaRetrySchedule = Schedule.recurs(SCHEMA_RETRIES).pipe(
+  Schedule.whileInput((e) => e._tag === "OutputSchemaError"),
+);
+
 callObjectOnce().pipe(
   Effect.tapError((e) =>
     e._tag === "OutputSchemaError"
       ? Effect.logWarning("schema violation — 再生成リトライします")
       : Effect.void,
   ),
-  Effect.retry({
-    while: (e) => e._tag === "OutputSchemaError", // スキーマ違反だけ
-    times: SCHEMA_RETRIES,
-  }),
+  Effect.retry(schemaRetrySchedule),
 )
 ```
 
-`while` で **`OutputSchemaError` 以外(ApiError 等)は即 fail** にしているので、
-SDK の内蔵リトライと二重がけにならない。挙動はユニットテストで検証済み
+`whileInput` で **`OutputSchemaError` 以外(ApiError 等)は即停止 = リトライしない**
+ので、SDK の内蔵リトライと二重がけにならない。挙動はユニットテストで検証済み
 (2回違反→3回目成功 / 連続違反→4試行で諦め / ApiError→1試行で即 fail)。
 
 ### 結論: リトライは基本 SDK 任せでよい

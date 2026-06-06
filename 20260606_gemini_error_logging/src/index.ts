@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { deflateSync, inflateSync } from "node:zlib";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schedule } from "effect";
 import { createVertex } from "@ai-sdk/google-vertex";
 import {
   APICallError,
@@ -464,9 +464,14 @@ const callObjectOnce = () =>
     catch: classify,
   });
 
-// スキーマ違反のときだけ最大 SCHEMA_RETRIES 回まで再生成リトライする。
-// APICallError(429/5xx 等)は SDK が既にリトライ済みなので、ここでは
-// OutputSchemaError(HTTP 200・JSON/型違反)だけを対象にする。
+// OutputSchemaError のときだけ最大 SCHEMA_RETRIES 回まで再生成する Schedule。
+// recurs で回数を、whileInput で対象エラーを限定(バックオフ無し)。
+// それ以外(ApiError 等)は whileInput が false → 即停止 = リトライしない。
+// APICallError(429/5xx 等)は SDK が既にリトライ済みなのでここでは触らない。
+const schemaRetrySchedule = Schedule.recurs(SCHEMA_RETRIES).pipe(
+  Schedule.whileInput((e: { readonly _tag: string }) => e._tag === "OutputSchemaError"),
+);
+
 const callObject = () =>
   callObjectOnce().pipe(
     Effect.tapError((e) =>
@@ -476,10 +481,7 @@ const callObject = () =>
           )
         : Effect.void,
     ),
-    Effect.retry({
-      while: (e) => e._tag === "OutputSchemaError",
-      times: SCHEMA_RETRIES,
-    }),
+    Effect.retry(schemaRetrySchedule),
   );
 
 // ----------------------------------------------------------------------------
