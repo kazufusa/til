@@ -81,6 +81,46 @@ callObjectOnce().pipe(
 SDK の内蔵リトライと二重がけにならない。挙動はユニットテストで検証済み
 (2回違反→3回目成功 / 連続違反→4試行で諦め / ApiError→1試行で即 fail)。
 
+### 結論: リトライは基本 SDK 任せでよい
+
+| 種類 | リトライ | 誰が |
+| --- | --- | --- |
+| インフラ系(429/5xx/408/409/接続失敗) | する | **SDK が自動**(指数バックオフ + Retry-After) |
+| スキーマ違反(zod 不一致) | する余地あり | 自前(状況次第。必須ではない) |
+| その他 4xx(画像不正/ページ超過/サイズ超過/認証) | しない | リクエストを直す |
+
+→ **基本、リトライは自分で書かなくてよい。** SDK がインフラ系を見てくれる。
+スキーマ違反だけが SDK 圏外だが、それも必須ではなく「違反が頻発するなら足す」
+程度。実用上はほぼ SDK 任せで済む。
+
+### スキーマ検証は zod / SDK / 自前タグの 3 層分業
+
+「出力が zod と食い違うか」の**検証自体は zod がやる**が、`OutputSchemaError`
+は zod の産物ではない。失敗が 4 段で包まれる:
+
+```
+zod                  値が合うか判定し合否を返す(throw しない)
+  ↓ 失敗            ※ SDK は Standard Schema (~standard.validate) 経由で呼ぶ
+TypeValidationError  SDK が zod の失敗を標準エラー型に変換
+  ↓
+NoObjectGeneratedError  SDK が throw する実体(cause に上を持つ)
+  ↓ catch
+OutputSchemaError    本コードが Effect 用に付けたタグ(catchTag / retry 用)
+```
+
+- `cause` を見れば `JSONParseError`(JSON ですらない)と `TypeValidationError`
+  (JSON だが型不一致)を区別できる。
+- SDK は Standard Schema 経由なので zod 固定ではなく valibot/arktype でも動く。
+
+### なぜスキーマ違反は SDK が自動リトライしないか
+
+1. **仕組み上**: スキーマ違反は **HTTP 200 成功**。リトライ機構は
+   `APICallError.isRetryable`(ステータスコード由来)で動くので、200 は対象外。
+2. **設計思想**: 通信エラーは一時的(待てば直る)だが、スキーマ違反は構造的で
+   直る保証がなく、同じリクエストの再送は同じ結果になりがち。再生成は 1 回ごと
+   に実コスト。**「通信の信頼性=SDK / 出力の質=アプリ」** の責任分界で、
+   後者はアプリに委ねられる(SDK は代わりに `experimental_repairText` フックを提供)。
+
 ## モード (`MODE` env)
 
 | MODE | 送るもの | 結果 |
