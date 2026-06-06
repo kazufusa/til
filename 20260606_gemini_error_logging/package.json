@@ -1,0 +1,15 @@
+{
+  "name": "20260606_gemini_error_logging",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/google-vertex": "3.0.140",
+    "ai": "5.0.193",
+    "effect": "3.21.2",
+    "zod": "4.4.3"
+  }
+}
