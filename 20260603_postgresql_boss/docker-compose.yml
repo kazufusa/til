@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: pgboss-experiment
+    environment:
+      POSTGRES_USER: pgboss
+      POSTGRES_PASSWORD: pgboss
+      POSTGRES_DB: pgboss
+    ports:
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgboss"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

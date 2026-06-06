@@ -1,0 +1,21 @@
+{
+  "name": "pgboss-experiment",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "demo:basic": "bun run src/01_basic.ts",
+    "demo:retry": "bun run src/02_retry.ts",
+    "demo:schedule": "bun run src/03_schedule.ts",
+    "demo:throttle": "bun run src/04_throttle.ts",
+    "demo:deadletter": "bun run src/05_deadletter.ts",
+    "demo:competing": "bun run src/06_competing.ts",
+    "demo:pubsub": "bun run src/07_pubsub.ts",
+    "demo:priority": "bun run src/08_priority.ts"
+  },
+  "dependencies": {
+    "pg-boss": "12.18.2"
+  }
+}
