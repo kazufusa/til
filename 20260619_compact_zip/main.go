@@ -42,6 +42,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -87,49 +88,74 @@ func jobsFromEnv() int {
 }
 
 func run(inPath, outPath string, jobs int) error {
-	// Read the whole input into memory: zip's central directory lives at the
-	// end of the file, so the archive/zip reader needs random access. Buffering
-	// also lets us act as a stdin->stdout pipe filter.
-	var raw []byte
-	var err error
+	// zip's central directory lives at the end of the file, so the reader needs
+	// random access (io.ReaderAt). For a file we hand the *os.File straight to
+	// the zip reader — no need to load the whole input into memory; the OS page
+	// cache serves the ReadAt calls. stdin isn't seekable, so it alone is
+	// buffered (it also lets us work as a stdin->stdout pipe filter).
+	var ra io.ReaderAt
+	var size int64
 	if inPath == "" {
-		raw, err = io.ReadAll(os.Stdin)
-	} else {
-		raw, err = os.ReadFile(inPath)
-	}
-	if err != nil {
-		return fmt.Errorf("read input: %w", err)
-	}
-
-	var out io.Writer
-	if outPath == "" {
-		out = os.Stdout
-	} else {
-		f, err := os.Create(outPath)
+		raw, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return fmt.Errorf("create output: %w", err)
+			return fmt.Errorf("read input: %w", err)
+		}
+		ra, size = bytes.NewReader(raw), int64(len(raw))
+	} else {
+		f, err := os.Open(inPath)
+		if err != nil {
+			return fmt.Errorf("open input: %w", err)
 		}
 		defer f.Close()
-		out = f
+		st, err := f.Stat()
+		if err != nil {
+			return fmt.Errorf("stat input: %w", err)
+		}
+		ra, size = f, st.Size()
 	}
 
-	return compact(raw, jobs, out)
+	if outPath == "" {
+		return compact(ra, size, jobs, os.Stdout)
+	}
+
+	// Write to a temp file in the destination directory, then atomically rename.
+	// This keeps the output atomic on error and makes in-place rewrites
+	// (in == out) safe: we only replace inPath after all reads are done.
+	tmp, err := os.CreateTemp(filepath.Dir(outPath), ".compactzip-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create output: %w", err)
+	}
+	tmpName := tmp.Name()
+	if err := compact(ra, size, jobs, tmp); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("write output: %w", err)
+	}
+	if err := os.Rename(tmpName, outPath); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("finalize output: %w", err)
+	}
+	return nil
 }
 
-// compact reads the zip container in raw, shrinks its image entries using `jobs`
-// parallel workers, and writes the rebuilt zip to out.
-func compact(raw []byte, jobs int, out io.Writer) error {
-	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+// compact reads the zip container from ra (of the given size), shrinks its image
+// entries using `jobs` parallel workers, and writes the rebuilt zip to out.
+func compact(ra io.ReaderAt, size int64, jobs int, out io.Writer) error {
+	zr, err := zip.NewReader(ra, size)
 	if err != nil {
 		return fmt.Errorf("open zip: %w", err)
 	}
 
 	// Phase 1: shrink images concurrently across `jobs` workers. Image work
 	// (decode + downscale + re-encode) is CPU-bound and the slow part; zip
-	// reads are safe to do in parallel because the backing bytes.Reader serves
-	// concurrent ReadAt calls. Results go to disjoint slice indices, so no
-	// locking is needed. zip *writing* stays single-threaded in phase 2, since a
-	// zip stream must be produced in order.
+	// reads are safe to do in parallel because the backing io.ReaderAt
+	// (*os.File or bytes.Reader) serves concurrent ReadAt calls. Results go to
+	// disjoint slice indices, so no locking is needed. zip *writing* stays
+	// single-threaded in phase 2, since a zip stream must be produced in order.
 	shrunk := make([][]byte, len(zr.File)) // shrunk[i] != nil => replace entry i
 
 	indices := make(chan int)

@@ -10,6 +10,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/image/bmp"
@@ -145,7 +147,7 @@ func entryByName(es []entry, name string) (entry, bool) {
 func compactBytes(t *testing.T, raw []byte, jobs int) []byte {
 	t.Helper()
 	var out bytes.Buffer
-	if err := compact(raw, jobs, &out); err != nil {
+	if err := compact(bytes.NewReader(raw), int64(len(raw)), jobs, &out); err != nil {
 		t.Fatalf("compact: %v", err)
 	}
 	return out.Bytes()
@@ -333,9 +335,41 @@ func TestCompact_PreservesAlpha(t *testing.T) {
 	}
 }
 
+// Rewriting a file in place (in == out) is safe and shrinks it: the input is
+// fully read before the atomic rename replaces it.
+func TestRun_InPlaceOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "deck.pptx")
+	raw := buildZip(t, []entry{
+		{"media/img.png", makeRaster(t, "png", 1600, 1200, false)},
+		{"doc.xml", []byte("<x/>")},
+	})
+	if err := os.WriteFile(p, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(p, p, 4); err != nil {
+		t.Fatalf("run in-place: %v", err)
+	}
+	out, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	es := readZip(t, out)
+	if len(es) != 2 {
+		t.Fatalf("entries = %d, want 2", len(es))
+	}
+	if e, ok := entryByName(es, "doc.xml"); !ok || string(e.data) != "<x/>" {
+		t.Error("doc.xml lost or modified")
+	}
+	if int64(len(out)) >= int64(len(raw)) {
+		t.Errorf("in-place result not smaller: %d -> %d", len(raw), len(out))
+	}
+}
+
 // A non-zip input is reported as an error rather than panicking.
 func TestCompact_InvalidZip(t *testing.T) {
-	if err := compact([]byte("not a zip at all"), 4, io.Discard); err == nil {
+	raw := []byte("not a zip at all")
+	if err := compact(bytes.NewReader(raw), int64(len(raw)), 4, io.Discard); err == nil {
 		t.Error("expected error for non-zip input")
 	}
 }
