@@ -376,6 +376,108 @@ func TestDownscale(t *testing.T) {
 	}
 }
 
+// fillNRGBA builds a w×h image whose pixel at (x,y) is set by fn.
+func fillNRGBA(w, h int, fn func(x, y int) color.NRGBA) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			img.SetNRGBA(x, y, fn(x, y))
+		}
+	}
+	return img
+}
+
+// downscale must average exactly: these check numeric correctness, not just dims.
+func TestDownscale_Correctness(t *testing.T) {
+	// 1) A solid color downscales to the same solid color everywhere.
+	t.Run("solid color preserved", func(t *testing.T) {
+		want := color.NRGBA{37, 113, 200, 255}
+		src := fillNRGBA(1000, 1000, func(x, y int) color.NRGBA { return want })
+		dst := downscale(src, 800)
+		if dst.Bounds().Dx() != 800 || dst.Bounds().Dy() != 800 {
+			t.Fatalf("dims = %v, want 800x800", dst.Bounds())
+		}
+		b := dst.Bounds()
+		for y := range b.Dy() {
+			for x := range b.Dx() {
+				if got := dst.NRGBAAt(x, y); got != want {
+					t.Fatalf("pixel (%d,%d) = %v, want %v", x, y, got, want)
+				}
+			}
+		}
+	})
+
+	// 2) Exact 2x downscale: each output pixel is the mean of its 2x2 source block.
+	t.Run("2x2 block average is exact", func(t *testing.T) {
+		// Four uniform 2x2 quadrants in a 4x4 image.
+		quad := func(x, y int) uint8 {
+			switch {
+			case x < 2 && y < 2:
+				return 10
+			case x >= 2 && y < 2:
+				return 20
+			case x < 2 && y >= 2:
+				return 30
+			default:
+				return 40
+			}
+		}
+		src := fillNRGBA(4, 4, func(x, y int) color.NRGBA {
+			v := quad(x, y)
+			return color.NRGBA{v, v, v, 255}
+		})
+		dst := downscale(src, 2) // 4x4 -> 2x2
+		want := [2][2]uint8{{10, 20}, {30, 40}}
+		for y := range 2 {
+			for x := range 2 {
+				if got := dst.NRGBAAt(x, y).R; got != want[y][x] {
+					t.Errorf("dst(%d,%d).R = %d, want %d", x, y, got, want[y][x])
+				}
+			}
+		}
+	})
+
+	// 3) Alpha-weighted average: an opaque pixel next to a fully transparent one
+	//    keeps the opaque color (a naive RGB mean would darken it), and alpha is
+	//    the plain mean.
+	t.Run("alpha weighting", func(t *testing.T) {
+		src := fillNRGBA(2, 1, func(x, y int) color.NRGBA {
+			if x == 0 {
+				return color.NRGBA{200, 100, 50, 255} // opaque
+			}
+			return color.NRGBA{0, 0, 0, 0} // fully transparent
+		})
+		dst := downscale(src, 1) // 2x1 -> 1x1
+		got := dst.NRGBAAt(0, 0)
+		// color = sum(c*a)/sum(a) = c_opaque ; alpha = (255+0)/2 = 127
+		if got.R != 200 || got.G != 100 || got.B != 50 {
+			t.Errorf("color = (%d,%d,%d), want (200,100,50) — alpha weighting wrong", got.R, got.G, got.B)
+		}
+		if got.A != 127 {
+			t.Errorf("alpha = %d, want 127", got.A)
+		}
+	})
+
+	// 4) Every source pixel is counted exactly once (no gaps/overlap) for a
+	//    non-integer scale factor: the mean of a known set is preserved.
+	t.Run("non-integer scale conserves mean", func(t *testing.T) {
+		// 5x1 ramp 0,10,20,30,40 (mean 20) -> width 2. Each output is a partition
+		// mean; the two partitions together must cover all 5 pixels once.
+		src := fillNRGBA(5, 1, func(x, y int) color.NRGBA {
+			v := uint8(x * 10)
+			return color.NRGBA{v, v, v, 255}
+		})
+		dst := downscale(src, 2) // 5x1 -> 2x1, ratio 2.5
+		// srcSpan: dst0 covers [0,2)->mean(0,10)=5 ; dst1 covers [2,5)->mean(20,30,40)=30
+		if r := dst.NRGBAAt(0, 0).R; r != 5 {
+			t.Errorf("dst0.R = %d, want 5", r)
+		}
+		if r := dst.NRGBAAt(1, 0).R; r != 30 {
+			t.Errorf("dst1.R = %d, want 30", r)
+		}
+	})
+}
+
 func TestSrcSpan(t *testing.T) {
 	cases := []struct {
 		d, limit       int
