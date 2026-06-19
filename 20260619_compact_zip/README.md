@@ -70,6 +70,36 @@ $ compactzip tmp/sample-3.pptx out.pptx
 # 18MB -> 1.67MB (元の約9%)
 ```
 
+## ベンチ: pptx→圧縮PDF パイプラインの前段に挟むと速い
+
+pptx を「圧縮 PDF」にする定番パイプライン **LibreOffice headless + ghostscript** の前段に
+本コマンドを挟むと、**全体が速くなり、PDF も小さくなる**。画像を先に縮小しておくことで、
+LibreOffice のインポート/レンダリング負荷が下がり、ghostscript の重いダウンサンプルが
+ほぼ不要になるため。compactzip 自身のコスト（数秒）はこの節約に十分見合う。
+
+- **A**: `pptx → (LibreOffice) → pdf → (ghostscript) → 圧縮pdf`
+- **B**: `pptx → (compactzip) → 縮小pptx → (LibreOffice) → pdf → (ghostscript) → 圧縮pdf`
+
+`sample-3.pptx`（18MB）/ 5回計測の中央値:
+
+| 段 | A | B |
+|---|---|---|
+| compactzip | – | ~3.6s |
+| LibreOffice | ~68s | ~50s |
+| ghostscript | ~9.0s | **~0.5s**（約18倍速） |
+| **total** | **76.7s** | **54.3s** |
+| 出力PDF | 2,672 KB | 915 KB |
+
+→ **B は 1.41 倍速く、PDF も約 1/3**。効果は画像が多く高解像度なほど大きい
+（小さいデッキは LibreOffice の固定起動コストが支配的で差は縮む）。
+
+再現スクリプトは `bench/`（`a_baseline.sh` / `b_compactzip.sh` / `bench.sh`）:
+
+```sh
+# 要 libreoffice-impress と ghostscript、先に go build しておく
+bash bench/bench.sh <deck.pptx> 5
+```
+
 ## 設計メモ
 
 - zip の中央ディレクトリは末尾にあるため、`archive/zip.Reader` はランダムアクセス
