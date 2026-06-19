@@ -1,0 +1,4 @@
+# グローバル ~/.config/.bunfig.toml と同じく、公開から7日未満の
+# 新しすぎるバージョンを誤って掴まないようにクールダウンを明示しておく。
+[install]
+minimumReleaseAge = 604800 # 7 days (seconds)
