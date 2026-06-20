@@ -210,8 +210,10 @@ func entryByName2(t *testing.T, raw []byte, name string) []byte {
 	return e.data
 }
 
-// Non-image entries and overall entry order are preserved exactly.
-func TestCompact_PreservesNonImagesAndOrder(t *testing.T) {
+// Non-image entries are preserved byte-for-byte, the full entry set is kept, and
+// the first entry stays first (EPUB/ODF mimetype convention). Image entries may
+// be reordered (written in completion order), which zip allows.
+func TestCompact_PreservesNonImages(t *testing.T) {
 	xml := []byte(`<?xml version="1.0"?><root>hello</root>`)
 	in := buildZip(t, []entry{
 		{"[Content_Types].xml", xml},
@@ -225,10 +227,19 @@ func TestCompact_PreservesNonImagesAndOrder(t *testing.T) {
 	if len(inE) != len(outE) {
 		t.Fatalf("entry count changed: in=%d out=%d", len(inE), len(outE))
 	}
-	for i := range inE {
-		if inE[i].name != outE[i].name {
-			t.Errorf("order/name changed at %d: %q vs %q", i, inE[i].name, outE[i].name)
+	// Same set of entry names (order may differ for images).
+	inNames := map[string]bool{}
+	for _, e := range inE {
+		inNames[e.name] = true
+	}
+	for _, e := range outE {
+		if !inNames[e.name] {
+			t.Errorf("unexpected entry %q in output", e.name)
 		}
+	}
+	// First entry kept in place.
+	if outE[0].name != inE[0].name {
+		t.Errorf("first entry changed: %q -> %q", inE[0].name, outE[0].name)
 	}
 	// Non-image entries must be byte-identical.
 	for _, name := range []string{"[Content_Types].xml", "ppt/slides/slide1.xml", "ppt/media/image2.emf"} {
@@ -292,19 +303,39 @@ func entrySizes(t *testing.T, raw []byte) map[string]uint64 {
 	return m
 }
 
-// Output is byte-for-byte identical regardless of worker count.
-func TestCompact_DeterministicAcrossJobs(t *testing.T) {
+// Worker count must not change the result: same entry set, same content per
+// entry (image write order may differ, but content must not).
+func TestCompact_SameContentAcrossJobs(t *testing.T) {
 	in := buildZip(t, []entry{
 		{"a.png", makeRaster(t, "png", 1600, 1200, false)},
 		{"b.jpg", makeRaster(t, "jpeg", 1800, 1000, false)},
 		{"c.tif", makeRaster(t, "tiff", 1200, 1200, false)},
 		{"doc.xml", []byte("<x/>")},
 	})
-	one := compactBytes(t, in, 1)
-	many := compactBytes(t, in, 8)
-	if !bytes.Equal(one, many) {
-		t.Error("output differs between jobs=1 and jobs=8 (non-deterministic)")
+	m1 := zipContentMap(t, compactBytes(t, in, 1))
+	m8 := zipContentMap(t, compactBytes(t, in, 8))
+	if len(m1) != len(m8) {
+		t.Fatalf("entry counts differ: %d vs %d", len(m1), len(m8))
 	}
+	for name, c1 := range m1 {
+		c8, ok := m8[name]
+		if !ok {
+			t.Errorf("entry %q missing at jobs=8", name)
+			continue
+		}
+		if !bytes.Equal(c1, c8) {
+			t.Errorf("entry %q differs between jobs=1 and jobs=8", name)
+		}
+	}
+}
+
+func zipContentMap(t *testing.T, raw []byte) map[string][]byte {
+	t.Helper()
+	m := map[string][]byte{}
+	for _, e := range readZip(t, raw) {
+		m[e.name] = e.data
+	}
+	return m
 }
 
 // PNG transparency survives downscaling and re-encoding.

@@ -143,50 +143,97 @@ func run(inPath, outPath string, jobs int) error {
 }
 
 // compact reads the zip container from ra (of the given size), shrinks its image
-// entries using `jobs` parallel workers, and writes the rebuilt zip to out.
+// entries, and writes the rebuilt zip to out.
+//
+// A zip is one sequential byte stream, so writing is single-threaded; image work
+// (decode/downscale/re-encode) runs on `jobs` parallel workers that hand finished
+// results to the writer, which writes each as it arrives and frees it. Writing in
+// completion order keeps held memory bounded to ~jobs results: buffering every
+// result until the end would let images that barely shrink each sit near their
+// original size in memory, so the total could approach the whole deck's image
+// payload (dangerous for large, hard-to-shrink decks).
+//
+// Image entries are therefore not kept in their original positions — zip readers
+// locate parts by name via the central directory, so order does not affect
+// validity. The FIRST entry is kept in place, because EPUB/ODF require their
+// `mimetype` part to be the first stored entry.
 func compact(ra io.ReaderAt, size int64, jobs int, out io.Writer) error {
 	zr, err := zip.NewReader(ra, size)
 	if err != nil {
 		return fmt.Errorf("open zip: %w", err)
 	}
-
-	// Phase 1: shrink images concurrently across `jobs` workers. Image work
-	// (decode + downscale + re-encode) is CPU-bound and the slow part; zip
-	// reads are safe to do in parallel because the backing io.ReaderAt
-	// (*os.File or bytes.Reader) serves concurrent ReadAt calls. Results go to
-	// disjoint slice indices, so no locking is needed. zip *writing* stays
-	// single-threaded in phase 2, since a zip stream must be produced in order.
-	shrunk := make([][]byte, len(zr.File)) // shrunk[i] != nil => replace entry i
-
-	indices := make(chan int)
-	var wg sync.WaitGroup
-	for range jobs {
-		wg.Go(func() {
-			for i := range indices {
-				f := zr.File[i]
-				if newBytes, ok := shrinkImage(f); ok && int64(len(newBytes)) < int64(f.CompressedSize64) {
-					shrunk[i] = newBytes
-				}
-			}
-		})
-	}
-	for i, f := range zr.File {
-		if !f.FileInfo().IsDir() && isImageEntry(f) {
-			indices <- i
-		}
-	}
-	close(indices)
-	wg.Wait()
-
-	// Phase 2: write every entry in its original order.
 	zw := zip.NewWriter(out)
-	for i, f := range zr.File {
-		if err := writeEntry(zw, f, shrunk[i]); err != nil {
-			return fmt.Errorf("entry %q: %w", f.Name, err)
+
+	if files := zr.File; len(files) > 0 {
+		// Keep entry 0 first (EPUB/ODF mimetype convention; harmless otherwise).
+		if err := writeEntry(zw, files[0], tryShrink(files[0])); err != nil {
+			return fmt.Errorf("entry %q: %w", files[0].Name, err)
+		}
+
+		var images, others []*zip.File
+		for _, f := range files[1:] {
+			if !f.FileInfo().IsDir() && isImageEntry(f) {
+				images = append(images, f)
+			} else {
+				others = append(others, f) // dirs + non-images: written after
+			}
+		}
+
+		type result struct {
+			f    *zip.File
+			data []byte // nil => didn't shrink; copy raw, hold nothing
+		}
+		imageCh := make(chan *zip.File)
+		results := make(chan result, jobs)
+		var wg sync.WaitGroup
+		for range jobs {
+			wg.Go(func() {
+				for f := range imageCh {
+					results <- result{f, tryShrink(f)}
+				}
+			})
+		}
+		go func() {
+			for _, f := range images {
+				imageCh <- f
+			}
+			close(imageCh)
+		}()
+		go func() { wg.Wait(); close(results) }()
+
+		// Single writer (this goroutine): write finished images in completion
+		// order (freeing each), then the non-image entries in input order.
+		var werr error
+		for r := range results {
+			if werr == nil {
+				werr = writeEntry(zw, r.f, r.data)
+			}
+		}
+		if werr != nil {
+			return fmt.Errorf("write image: %w", werr)
+		}
+		for _, f := range others {
+			if err := writeEntry(zw, f, nil); err != nil {
+				return fmt.Errorf("entry %q: %w", f.Name, err)
+			}
 		}
 	}
+
 	if err := zw.Close(); err != nil {
 		return fmt.Errorf("finalize zip: %w", err)
+	}
+	return nil
+}
+
+// tryShrink returns recompressed bytes for f when it is an image that re-encodes
+// smaller, otherwise nil (meaning: keep the entry's original bytes). It is the
+// single place the "shrink only if worth it" decision lives.
+func tryShrink(f *zip.File) []byte {
+	if f.FileInfo().IsDir() || !isImageEntry(f) {
+		return nil
+	}
+	if b, ok := shrinkImage(f); ok && int64(len(b)) < int64(f.CompressedSize64) {
+		return b
 	}
 	return nil
 }
