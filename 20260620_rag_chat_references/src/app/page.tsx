@@ -25,6 +25,7 @@ type Msg = {
   refs?: Reference[];
   skills?: SkillRef[];
   error?: string;
+  saved?: { id: number; filename: string };
 };
 
 type Preview =
@@ -37,12 +38,99 @@ type Preview =
     }
   | { kind: "skill"; id: number; label: string };
 
-function refLabel(r: Reference): string {
+// ブロック描画に必要な参照の最小型(Reference / 保存docの block_data.refs 共通)
+type RenderRef = {
+  id: number;
+  source_id: number;
+  filename: string;
+  heading_path: string[];
+  block_type?: string;
+  char_start: number;
+  char_end: number;
+  snippet?: string;
+};
+
+function refLabel(r: RenderRef): string {
   let head = r.heading_path.length
     ? r.heading_path[r.heading_path.length - 1]
-    : r.block_type;
+    : r.block_type ?? "";
   if (head.length > 40) head = head.slice(0, 40) + "…";
   return `${r.filename} › ${head}`;
+}
+
+// 構造化データ(ブロック+引用)からの描画。チャット回答・保存docプレビュー共通。
+// markdown を介さず、各ブロックに出典が一級で付き、クリックで元ソースへ飛べる。
+function AnswerView({
+  blocks,
+  refs,
+  onOpen,
+}: {
+  blocks: Block[];
+  refs: RenderRef[];
+  onOpen: (p: Preview) => void;
+}) {
+  const refById = new Map(refs.map((r) => [r.id, r]));
+  const citedRefs: RenderRef[] = [];
+  const seen = new Set<number>();
+  for (const b of blocks)
+    for (const c of b.citations ?? [])
+      if (!seen.has(c) && refById.has(c)) {
+        seen.add(c);
+        citedRefs.push(refById.get(c)!);
+      }
+  const numById = new Map(citedRefs.map((r, i) => [r.id, i + 1]));
+  const open = (r: RenderRef) =>
+    onOpen({
+      kind: "source",
+      id: r.source_id,
+      charStart: r.char_start,
+      charEnd: r.char_end,
+      label: refLabel(r),
+    });
+
+  return (
+    <>
+      {blocks.map((b, bi) => (
+        <div className="block" key={bi}>
+          <div className="block-md">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {b.text ?? ""}
+            </ReactMarkdown>
+          </div>
+          {!!b.citations?.length && (
+            <sup className="cite-marks">
+              {b.citations.map((cid) => {
+                const r = refById.get(cid);
+                const n = numById.get(cid);
+                if (!r || !n) return null;
+                return (
+                  <span
+                    className="cite-mark"
+                    key={cid}
+                    data-label={refLabel(r)}
+                    onClick={() => open(r)}
+                  >
+                    {n}
+                  </span>
+                );
+              })}
+            </sup>
+          )}
+        </div>
+      ))}
+      {!!citedRefs.length && (
+        <div className="refs">
+          <h4>出典 ({citedRefs.length})</h4>
+          {citedRefs.map((r, i) => (
+            <div className="ref-item" key={r.id} onClick={() => open(r)}>
+              <span className="ref-id">{i + 1}</span>
+              <span>{refLabel(r)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function Page() {
@@ -64,6 +152,49 @@ export default function Page() {
       .then((r) => r.json())
       .then((d) => setSkills(d.skills ?? []))
       .catch(() => {});
+  }, []);
+
+  // URL ハッシュをプレビューの正にする。開く操作は hash を変えるだけ → 履歴に積まれ、
+  // 戻る/進む/リロードで同じドキュメントに戻れる。
+  //   #source-<id> / #source-<id>-<cs>-<ce> / #skill-<id>
+  useEffect(() => {
+    const apply = () => {
+      const h = window.location.hash;
+      let m = /^#source-(\d+)(?:-(\d+)-(\d+))?$/.exec(h);
+      if (m) {
+        setPreview({
+          kind: "source",
+          id: Number(m[1]),
+          charStart: m[2] ? Number(m[2]) : undefined,
+          charEnd: m[3] ? Number(m[3]) : undefined,
+          label: `source ${m[1]}`,
+        });
+        return;
+      }
+      m = /^#skill-(\d+)$/.exec(h);
+      if (m) {
+        setPreview({ kind: "skill", id: Number(m[1]), label: `skill ${m[1]}` });
+        return;
+      }
+      setPreview(null);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, []);
+
+  const openPreview = useCallback((p: Preview) => {
+    const hash =
+      p.kind === "skill"
+        ? `#skill-${p.id}`
+        : p.charStart != null && p.charEnd != null
+          ? `#source-${p.id}-${p.charStart}-${p.charEnd}`
+          : `#source-${p.id}`;
+    if (window.location.hash === hash) {
+      setPreview(p); // 同じURL(再クリック)はそのまま反映
+    } else {
+      window.location.hash = hash; // 履歴に積む → hashchange で apply
+    }
   }, []);
 
   const send = useCallback(async () => {
@@ -112,6 +243,8 @@ export default function Page() {
             if (ev.sessionId) setSessionId(ev.sessionId);
           } else if (ev.type === "answer") {
             patchLast({ blocks: ev.value?.blocks ?? [] });
+          } else if (ev.type === "saved") {
+            patchLast({ saved: { id: ev.id, filename: ev.filename } });
           } else if (ev.type === "error") {
             patchLast({ error: ev.error });
           }
@@ -145,7 +278,12 @@ export default function Page() {
                 <div className="bubble user">{m.text}</div>
               </div>
             ) : (
-              <AssistantMsg key={i} m={m} onOpen={setPreview} />
+              <AssistantMsg
+                key={i}
+                m={m}
+                question={messages[i - 1]?.text ?? ""}
+                onOpen={openPreview}
+              />
             ),
           )}
           {loading && <div className="empty">検索 / 生成中…</div>}
@@ -170,11 +308,11 @@ export default function Page() {
 
       <div className="col">
         <FilesPanel
-          onOpen={setPreview}
+          onOpen={openPreview}
           activeId={preview?.kind === "source" ? preview.id : null}
           skills={skills}
         />
-        <PreviewPanel preview={preview} />
+        <PreviewPanel preview={preview} onOpen={openPreview} />
       </div>
     </div>
   );
@@ -260,11 +398,18 @@ function FilesPanel({
 
 function AssistantMsg({
   m,
+  question,
   onOpen,
 }: {
   m: Msg;
+  question: string;
   onOpen: (p: Preview) => void;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [localSaved, setLocalSaved] = useState<{
+    id: number;
+    filename: string;
+  } | null>(null);
   const refById = new Map((m.refs ?? []).map((r) => [r.id, r]));
   // 出典は「回答が実際に引用したチャンク」だけを導出(検索で拾っただけのものは出さない)
   const citedRefs: Reference[] = [];
@@ -277,87 +422,75 @@ function AssistantMsg({
       }
   // 本文中の引用は小さな通し番号で示す
   const numById = new Map(citedRefs.map((r, i) => [r.id, i + 1]));
+
+  const saved = m.saved ?? localSaved;
+  const doSave = async () => {
+    if (saving || saved || !(m.blocks ?? []).length) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          blocks: m.blocks ?? [],
+          references: citedRefs,
+        }),
+      });
+      const d = await res.json();
+      if (d.id) setLocalSaved({ id: d.id, filename: d.filename });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="msg">
       <div className="role">assistant</div>
       <div className="bubble">
         {m.error && <div style={{ color: "#ff8585" }}>エラー: {m.error}</div>}
-        {(m.blocks ?? []).map((b, bi) => (
-          <div className="block" key={bi}>
-            <div className="block-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {b.text ?? ""}
-              </ReactMarkdown>
-            </div>
-            {!!b.citations?.length && (
-              <sup className="cite-marks">
-                {b.citations.map((cid) => {
-                  const r = refById.get(cid);
-                  const n = numById.get(cid);
-                  if (!r || !n) return null;
-                  return (
-                    <span
-                      className="cite-mark"
-                      key={cid}
-                      data-label={refLabel(r)}
-                      onClick={() =>
-                        onOpen({
-                          kind: "source",
-                          id: r.source_id,
-                          charStart: r.char_start,
-                          charEnd: r.char_end,
-                          label: refLabel(r),
-                        })
-                      }
-                    >
-                      {n}
-                    </span>
-                  );
-                })}
-              </sup>
-            )}
-          </div>
-        ))}
 
-        {(!!citedRefs.length || !!m.skills?.length) && (
+        <AnswerView blocks={m.blocks ?? []} refs={m.refs ?? []} onOpen={onOpen} />
+
+        {!!m.skills?.length && (
           <div className="refs">
-            {!!m.skills?.length && (
-              <>
-                <h4>実行されたスキル</h4>
-                {m.skills.map((s) => (
-                  <div
-                    className="ref-item"
-                    key={`sk-${s.id}`}
-                    onClick={() =>
-                      onOpen({ kind: "skill", id: s.id, label: s.name })
-                    }
-                  >
-                    <span className="badge skill">skill</span>
-                    <span>{s.name}</span>
-                    <span className="ref-snip">{s.rel_path}</span>
-                  </div>
-                ))}
-              </>
-            )}
-            <h4>出典 ({citedRefs.length})</h4>
-            {citedRefs.map((r, i) => (
+            <h4>実行されたスキル</h4>
+            {m.skills.map((s) => (
               <div
                 className="ref-item"
-                key={r.id}
-                onClick={() =>
-                  onOpen({
-                    kind: "source",
-                    id: r.source_id,
-                    charStart: r.char_start,
-                    charEnd: r.char_end,
-                    label: refLabel(r),
-                  })
-                }
+                key={`sk-${s.id}`}
+                onClick={() => onOpen({ kind: "skill", id: s.id, label: s.name })}
               >
-                <span className="ref-id">{i + 1}</span>
-                <span>{refLabel(r)}</span>
+                <span className="badge skill">skill</span>
+                <span>{s.name}</span>
+                <span className="ref-snip">{s.rel_path}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {!!(m.blocks ?? []).length && (
+          <div className="save-bar">
+            {saved ? (
+              <>
+                <span className="saved-note">✓ 保存しました(検索対象に追加)</span>
+                <a
+                  className="dl"
+                  href={`/api/sources/${saved.id}?download=1`}
+                  download
+                >
+                  ⬇ {saved.filename}
+                </a>
+              </>
+            ) : (
+              <button
+                className="save-btn"
+                onClick={() => void doSave()}
+                disabled={saving}
+              >
+                {saving ? "保存中…" : "この回答を保存"}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -368,12 +501,30 @@ function AssistantMsg({
 // raw 表示で該当箇所の前後に出す文字数(全文を描画すると巨大 DOM で重い/ガタつくため窓表示)
 const RAW_PAD = 1200;
 
-function PreviewPanel({ preview }: { preview: Preview | null }) {
+function PreviewPanel({
+  preview,
+  onOpen,
+}: {
+  preview: Preview | null;
+  onOpen: (p: Preview) => void;
+}) {
   const [content, setContent] = useState<string>("");
   const [meta, setMeta] = useState<{ title: string; path: string } | null>(null);
   const [tab, setTab] = useState<"raw" | "rendered">("raw");
+  // 保存docの構造化データ(あれば markdown ではなくこれから描画する)
+  const [blockData, setBlockData] = useState<{
+    blocks?: Block[];
+    refs?: RenderRef[];
+  } | null>(null);
   const cacheRef = useRef<
-    Map<string, { content: string; meta: { title: string; path: string } }>
+    Map<
+      string,
+      {
+        content: string;
+        meta: { title: string; path: string };
+        blockData: { blocks?: Block[]; refs?: RenderRef[] } | null;
+      }
+    >
   >(new Map());
   const markRef = useRef<HTMLElement>(null);
 
@@ -383,9 +534,9 @@ function PreviewPanel({ preview }: { preview: Preview | null }) {
     const key = `${preview.kind}:${preview.id}`;
     const cached = cacheRef.current.get(key);
     if (cached) {
-      // キャッシュ済みは即時表示(空にしないのでガタつかない)
       setContent(cached.content);
       setMeta(cached.meta);
+      setBlockData(cached.blockData);
       return;
     }
     let cancelled = false;
@@ -399,15 +550,22 @@ function PreviewPanel({ preview }: { preview: Preview | null }) {
         if (cancelled) return;
         if (d.error) {
           setContent(`(取得失敗: ${d.error})`);
+          setBlockData(null);
           return;
         }
         const m =
           preview.kind === "source"
             ? { title: d.title ?? d.filename, path: d.filename }
             : { title: d.name, path: d.rel_path };
-        cacheRef.current.set(key, { content: d.content ?? "", meta: m });
+        const bd = d.block_data ?? null;
+        cacheRef.current.set(key, {
+          content: d.content ?? "",
+          meta: m,
+          blockData: bd,
+        });
         setContent(d.content ?? "");
         setMeta(m);
+        setBlockData(bd);
       })
       .catch((e) => {
         if (!cancelled) setContent(`(取得失敗: ${String(e)})`);
@@ -443,32 +601,87 @@ function PreviewPanel({ preview }: { preview: Preview | null }) {
   const hasRange = cs >= 0 && ce > cs && ce <= content.length;
   const from = hasRange ? Math.max(0, cs - RAW_PAD) : 0;
   const to = hasRange ? Math.min(content.length, ce + RAW_PAD) : content.length;
+  // 保存doc(構造化データあり・範囲ジャンプでない)は markdown ではなく構造化描画
+  const structured = !hasRange && !!blockData?.blocks?.length;
 
   return (
     <>
       <div className="header preview-head">
         {preview.kind === "skill" && <span className="badge skill">skill</span>}
+        {structured && <span className="badge">保存回答</span>}
         <span>{meta?.title ?? preview.label}</span>
         <span className="path">{meta?.path}</span>
-        <div className="tabs">
-          <span
-            className={`tab ${tab === "raw" ? "active" : ""}`}
-            onClick={() => setTab("raw")}
-          >
-            raw (該当箇所)
-          </span>
-          <span
-            className={`tab ${tab === "rendered" ? "active" : ""}`}
-            onClick={() => setTab("rendered")}
-          >
-            rendered
-          </span>
-        </div>
+        <a
+          className="dl"
+          href={`/api/${preview.kind === "skill" ? "skills" : "sources"}/${
+            preview.id
+          }?download=1`}
+          download
+          title="markdown をダウンロード"
+        >
+          ⬇ md
+        </a>
+        {!structured && (
+          <div className="tabs">
+            <span
+              className={`tab ${tab === "raw" ? "active" : ""}`}
+              onClick={() => setTab("raw")}
+            >
+              raw (該当箇所)
+            </span>
+            <span
+              className={`tab ${tab === "rendered" ? "active" : ""}`}
+              onClick={() => setTab("rendered")}
+            >
+              rendered
+            </span>
+          </div>
+        )}
       </div>
       <div className="preview-body">
-        {tab === "rendered" ? (
+        {structured ? (
+          <AnswerView
+            blocks={blockData!.blocks ?? []}
+            refs={blockData!.refs ?? []}
+            onOpen={onOpen}
+          />
+        ) : tab === "rendered" ? (
           <div className="block-md">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                // 保存docの出典リンク(#src-id-cs-ce)をクリックで元ソースへジャンプ
+                a: ({ href, children }) => {
+                  const m = /^#src-(\d+)-(\d+)-(\d+)$/.exec(href ?? "");
+                  if (m)
+                    return (
+                      <a
+                        className="srcref"
+                        href={href}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onOpen({
+                            kind: "source",
+                            id: Number(m[1]),
+                            charStart: Number(m[2]),
+                            charEnd: Number(m[3]),
+                            label: String(children),
+                          });
+                        }}
+                      >
+                        {children}
+                      </a>
+                    );
+                  return (
+                    <a href={href} target="_blank" rel="noreferrer">
+                      {children}
+                    </a>
+                  );
+                },
+              }}
+            >
+              {content}
+            </ReactMarkdown>
           </div>
         ) : hasRange ? (
           <div className="raw">

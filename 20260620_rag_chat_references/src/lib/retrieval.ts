@@ -235,8 +235,14 @@ export async function touchSearchSession(
 // --- プレビュー用 全文取得 ---
 export async function getSourceContent(id: number) {
   const rows = await sql<
-    { id: number; filename: string; title: string; content: string }[]
-  >`SELECT id, filename, title, content FROM sources WHERE id = ${id}`;
+    {
+      id: number;
+      filename: string;
+      title: string;
+      content: string;
+      block_data: unknown;
+    }[]
+  >`SELECT id, filename, title, content, block_data FROM sources WHERE id = ${id}`;
   return rows[0] ?? null;
 }
 export async function getSkillContent(id: number) {

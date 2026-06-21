@@ -16,6 +16,9 @@ CREATE TABLE sources (
   byte_size    integer     NOT NULL,
   content      text        NOT NULL,        -- 生 markdown 全文(プレビュー & char offset の基準)
   content_hash text        NOT NULL,
+  -- 保存された回答のみ: 構造化データ(blocks+refs)。表示はこれから直接描画する
+  -- (markdown content は DL/検索インデックス用の派生物)。
+  block_data   jsonb,
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 

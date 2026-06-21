@@ -218,6 +218,42 @@ body {
   color: var(--skill);
 }
 
+.save-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.save-btn {
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.save-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.saved-note {
+  font-size: 12px;
+  color: var(--skill);
+}
+.dl {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.dl:hover {
+  text-decoration: underline;
+}
+
 .refs {
   margin-top: 12px;
   border-top: 1px dashed var(--border);
@@ -405,6 +441,15 @@ body {
   line-height: 1.6;
   color: var(--muted);
 }
+.srcref {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.srcref:hover {
+  text-decoration: underline;
+}
+
 .raw-ellipsis {
   color: var(--accent);
   opacity: 0.6;
