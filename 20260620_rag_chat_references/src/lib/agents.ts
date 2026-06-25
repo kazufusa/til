@@ -43,10 +43,13 @@ export async function runSearchAgent(
     const k = Number(process.env.EVAL_DIRECT_K ?? "15");
     return { chunks: await R.hybridSearch(question, k), skills: [], sessionId: ks.id };
   }
-  // EVAL_P13=1 のときは、検索/選抜段を「クエリ分解 + 根拠抽出(map-reduce)」へ差し替える。
-  // 戻り型(SearchResult)も後段(streamAnswer)も不変。フラグ off では従来挙動と完全一致。
+  // EVAL_P13=1: クエリ分解 + 根拠抽出(chunk_id map)→ 合成。※抽出が“けちな選抜”で逆効果(EXP-006)。
   if (process.env.EVAL_P13 === "1") {
     return runDecomposedSearch(question, priorSessionId);
+  }
+  // EVAL_DECOMP=1: ON 流の正しい形。分解 + 各サブで網羅検索 → 抽出せず候補を“全部”合成へ(EXP-010)。
+  if (process.env.EVAL_DECOMP === "1") {
+    return runDecomposedSearch(question, priorSessionId, { extract: false });
   }
 
   // 検索セッションを解決してエージェントにバインド(深掘りの単位)
@@ -113,10 +116,11 @@ export async function runSearchAgent(
   // 直接ハイブリッド検索で網羅候補を確保し、選抜と統合して合成へ渡す。citation は各 block が
   // chunk_id を引くので広く渡しても出典精度は保たれる。EVAL_NARROW=1 で旧挙動(A/B 用)。
   if (process.env.EVAL_NARROW !== "1") {
+    const wk = Number(process.env.EVAL_WIDE_K ?? "12");
     const sel = new Set(ids);
-    const direct = await R.hybridSearch(question, 12);
+    const direct = await R.hybridSearch(question, wk);
     const extra = direct.filter((h) => !sel.has(h.id)).map((h) => h.id);
-    ids = [...ids, ...extra].slice(0, 15);
+    ids = [...ids, ...extra].slice(0, Math.max(15, wk));
   }
   if (ids.length === 0) {
     ids = [...session.candidates.values()]
@@ -185,6 +189,7 @@ function buildExtractContext(chunks: R.ChunkHit[]): string {
 export async function runDecomposedSearch(
   question: string,
   priorSessionId: string | null = null,
+  opts: { extract?: boolean } = {},
 ): Promise<SearchResult> {
   // セッションは既存経路と同様に解決(sessionId の返却契約を維持)。
   const ks = await R.resolveSearchSession(priorSessionId);
@@ -223,7 +228,9 @@ export async function runDecomposedSearch(
 
   // 3) Map(抽出): サブクエリごとに、その候補から裏付け chunk_id を抽出(LLM N回・並列)。
   //    [F5] 返るのは chunk_id のみ。テキストは扱わない。
+  //    opts.extract===false(EVAL_DECOMP)なら抽出を飛ばし、候補を全部 合成へ(ON 流・飢えさせない)。
   const selected = new Set<number>();
+  if (opts.extract !== false)
   await Promise.all(
     subQueries.map(async (q, i) => {
       const cand = hitsPerSub[i];
@@ -247,12 +254,13 @@ export async function runDecomposedSearch(
     }),
   );
 
-  // 4) Reduce: 抽出 id を和集合。空なら候補上位を採用(空回答の回避)。
+  // 4) Reduce: 抽出 id を和集合。抽出を飛ばした/空なら候補上位を採用。
+  //    抽出無し(EVAL_DECOMP)は網羅文脈を渡すのが狙いなので広めに(18)。
   let ids = [...selected];
   if (ids.length === 0) {
     ids = [...candidates.values()]
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .slice(0, 8)
+      .slice(0, opts.extract === false ? 18 : 8)
       .map((h) => h.id);
   }
   if (trace) console.error(`[trace:p13] selected=${selected.size} returned=${ids.length}`);
