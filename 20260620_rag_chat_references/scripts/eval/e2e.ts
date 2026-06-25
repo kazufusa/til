@@ -84,7 +84,10 @@ async function main() {
   const n = Number(arg("n", "50"));
   const goldFile = arg("gold", "queries.json")!;
   const gold = sample(JSON.parse(await readFile(join(ROOT, goldFile), "utf8")) as GoldCase[], n);
-  console.log(`eval:e2e n=${gold.length} gold=${goldFile} judge=同一chatModel`);
+  // --runs k: 各問を k 回実行(エージェント非決定のノイズ低減)。集計は全 N×k で取る。
+  const runs = Number(arg("runs", "1"));
+  const jobs = runs > 1 ? gold.flatMap((g) => Array.from({ length: runs }, () => g)) : gold;
+  console.log(`eval:e2e n=${gold.length} runs=${runs} jobs=${jobs.length} gold=${goldFile} judge=同一chatModel`);
 
   // 各問は独立で大半が API 待ち → 同時実行で高速化(既定6、Vertex レート/PGプール max:10 を考慮)。
   const conc = Number(arg("concurrency", "6"));
@@ -93,7 +96,7 @@ async function main() {
   // 監視: tail -f scripts/eval/results/.e2e-progress
   const PROGRESS = join(RESULTS_DIR, ".e2e-progress");
   await mkdir(RESULTS_DIR, { recursive: true });
-  writeFileSync(PROGRESS, `e2e start n=${gold.length} conc=${conc}\n`);
+  writeFileSync(PROGRESS, `e2e start n=${gold.length} runs=${runs} jobs=${jobs.length} conc=${conc}\n`);
   let done = 0;
   const runCase = async (g: GoldCase) => {
     const targetFile = basename(g.target_md);
@@ -115,18 +118,18 @@ async function main() {
       return { question: g.question, domain: g.domain, type: g.type, targetFile, score: null, error: String(e) };
     } finally {
       done++;
-      appendFileSync(PROGRESS, `${done}/${gold.length} ${new Date().toISOString()}\n`);
-      if (done % 5 === 0) console.log(`  ${done}/${gold.length}`);
+      appendFileSync(PROGRESS, `${done}/${jobs.length} ${new Date().toISOString()}\n`);
+      if (done % 5 === 0) console.log(`  ${done}/${jobs.length}`);
     }
   };
   // 順序保持つき並列プール
-  const cases: any[] = new Array(gold.length);
+  const cases: any[] = new Array(jobs.length);
   let next = 0;
   await Promise.all(
-    Array.from({ length: Math.min(conc, gold.length) }, async () => {
-      while (next < gold.length) {
+    Array.from({ length: Math.min(conc, jobs.length) }, async () => {
+      while (next < jobs.length) {
         const idx = next++;
-        cases[idx] = await runCase(gold[idx]);
+        cases[idx] = await runCase(jobs[idx]);
       }
     }),
   );
@@ -136,18 +139,27 @@ async function main() {
   const correct = scored.filter((c) => c.score === 2).length / (scored.length || 1);
   const partialUp = scored.filter((c) => c.score >= 1).length / (scored.length || 1);
   const citedOK = scored.filter((c) => c.citedTargetFile).length / (scored.length || 1);
+  // 平均スコアの標準誤差→95%CI(ノイズ帯)。delta がこの帯を超えて初めて「有意」と言える。
+  const variance = scored.reduce((s, c) => s + (c.score - mean) ** 2, 0) / (scored.length || 1);
+  const se = Math.sqrt(variance / (scored.length || 1));
+  const ci95 = 1.96 * se;
+  // runs>1: 質問ごとに k 回平均(ノイズ低減した per-question 推定)
+  const perQ = new Map<string, number[]>();
+  for (const c of scored) (perQ.get(c.question) ?? perQ.set(c.question, []).get(c.question)!).push(c.score);
+  const perQMean = [...perQ.values()].map((a) => a.reduce((x, y) => x + y, 0) / a.length);
+  const meanOfQ = perQMean.reduce((x, y) => x + y, 0) / (perQMean.length || 1);
 
   const record = {
-    meta: { entry: "e2e", goldFile, gitSha: gitSha(), timestamp: new Date().toISOString(), n: gold.length, scored: scored.length },
-    summary: { mean, correct, partialUp, citedOK },
+    meta: { entry: "e2e", goldFile, gitSha: gitSha(), timestamp: new Date().toISOString(), n: gold.length, runs, jobs: jobs.length, scored: scored.length },
+    summary: { mean, ci95, correct, partialUp, citedOK, meanOfQ, questions: perQMean.length },
     cases,
   };
   await mkdir(RESULTS_DIR, { recursive: true });
   const out = join(RESULTS_DIR, `e2e-${goldFile.replace(/[^a-z0-9]/gi, "_")}-${record.meta.gitSha}-${Date.now()}.json`);
   await writeFile(out, JSON.stringify(record, null, 2));
 
-  console.log(`\n# e2e baseline (n=${scored.length}/${gold.length} scored)`);
-  console.log(`mean score (0-2): ${mean.toFixed(3)}`);
+  console.log(`\n# e2e (questions=${perQMean.length} runs=${runs} jobs scored=${scored.length})`);
+  console.log(`mean score (0-2): ${mean.toFixed(3)} ± ${ci95.toFixed(3)} (95%CI)`);
   console.log(`correct (=2):     ${(correct * 100).toFixed(1)}%`);
   console.log(`partial+ (>=1):   ${(partialUp * 100).toFixed(1)}%`);
   console.log(`cited target file:${(citedOK * 100).toFixed(1)}%`);
