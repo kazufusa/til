@@ -1,0 +1,316 @@
+[
+  {
+    "question": "awesome-goのロゴ画像はどこにホストされていますか？",
+    "target_answer": "awesome-goのロゴ画像は、GitHubのavelino/awesome-goリポジトリ内のmainブランチにあるtmpl/assets/logo.pngにホストされています。",
+    "target_file": "awesome-go.md",
+    "target_md": "markdowns/awesome-go.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Awesome Go"
+    ],
+    "target_snippet": "<a href=\"https://awesome-go.com/\"><img align=\"right\" src=\"https://github.com/avelino/awesome-go/raw/main/tmpl/assets/logo.png\" alt=\"awesome-go\" title=\"awesome-go\" /></a>",
+    "domain": "tech",
+    "type": "paragraph",
+    "lang": "ja"
+  },
+  {
+    "question": "Watermillで利用可能なメッセージングの実装にはどのようなものがありますか？",
+    "target_answer": "Watermillでは、KafkaやRabbitMQといった一般的なパブサブ実装に加えて、HTTPやMySQLのバイナリログ（binlog）を利用することが可能です。",
+    "target_file": "awesome-go.md",
+    "target_md": "markdowns/awesome-go.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Awesome Go",
+      "Messaging"
+    ],
+    "target_snippet": "- [Watermill](https://github.com/ThreeDotsLabs/watermill) - Working efficiently with message streams. Building event driven applications, enabling event sourcing, RPC over messages, sagas. Can use conventional pub/sub implementations like Kafka or RabbitMQ, but also HTTP or MySQL binlog.\n- [zmq4](ht",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "リストに記載されているGo関連のカンファレンスのうち、開催地がドイツのベルリンであるものはどれですか？",
+    "target_answer": "リストに記載されているカンファレンスのうち、開催地がドイツのベルリンであるものは「GoDays」と「GopherCon Europe」の2つです。",
+    "target_file": "awesome-go.md",
+    "target_md": "markdowns/awesome-go.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Resources",
+      "Conferences"
+    ],
+    "target_snippet": "- [GoCon](https://gocon.connpass.com/) - Tokyo, Japan.\n- [GoDays](https://www.godays.io/) - Berlin, Germany.\n- [GoLab](https://golab.io/) - Florence, Italy.\n- [GopherCon](https://www.gophercon.com/) - Varied Locations Each Year, USA.\n- [GopherCon Africa](https://gophercon.africa/) - Nairobi, Kenya.\n",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "リストされているメニューバーアプリのうち、オープンソースソフトウェアとして公開されているものはどれですか？",
+    "target_answer": "リストに含まれるオープンソースソフトウェアは、Repose、Fishing Funds、GoogleDriveSync、Hidden、Iceの5つです。",
+    "target_file": "awesome-mac.md",
+    "target_md": "markdowns/awesome-mac.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Awesome Mac\n===",
+      "Utilities",
+      "Menu Bar Tools"
+    ],
+    "target_snippet": "* [Repose](https://github.com/fikrikarim/repose) - Menu bar break timer that dims your screen and pauses during calls. [![Open-Source Software][OSS Icon]](https://github.com/fikrikarim/repose) ![Freeware][Freeware Icon]\n* [Fishing Funds](https://ff.1zilc.top) - Display real-time trends of Chinese fu",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "Pythonで関数型プログラミングを行うためのライブラリのうち、Cythonによる高速化版が提供されているものはどれですか？",
+    "target_answer": "toolzです。toolzはイテレータ、関数、辞書のための関数型ユーティリティ集であり、Cythonで高速化されたバージョンとしてcytoolzも提供されています。",
+    "target_file": "awesome-python.md",
+    "target_md": "markdowns/awesome-python.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "[Awesome Python](https://awesome-python.com/)",
+      "Projects",
+      "Functional Programming"
+    ],
+    "target_snippet": "- [coconut](https://github.com/evhub/coconut) - A variant of Python built for simple, elegant, Pythonic functional programming.\n- [functools](https://docs.python.org/3/library/functools.html) - (Python standard library) Higher-order functions and operations on callable objects.\n- [funcy](https://git",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "簡易ファイルサーバーが提供するアップロード機能にはどのようなものがありますか？",
+    "target_answer": "シングルクリックによるアップロード機能、またはドラッグ・アンド・ドロップによるアップロード機能が提供されています。",
+    "target_file": "awesome-selfhosted.md",
+    "target_md": "markdowns/awesome-selfhosted.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Awesome-Selfhosted",
+      "Software",
+      "File Transfer - Single-click & Drag-n-drop Upload"
+    ],
+    "target_snippet": "Simplified file servers for sharing of one-time/short-lived/temporary files, providing single-click or [drag-and-drop](https://en.wikipedia.org/wiki/Drag_and_drop) upload functionality.",
+    "domain": "tech",
+    "type": "paragraph",
+    "lang": "ja"
+  },
+  {
+    "question": "ローコード開発プラットフォーム（LCDP）とはどのような環境を提供するものですか？",
+    "target_answer": "グラフィカルユーザーインターフェースを通じてアプリケーションソフトウェアを作成するための開発環境を提供します。",
+    "target_file": "awesome-selfhosted.md",
+    "target_md": "markdowns/awesome-selfhosted.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Awesome-Selfhosted",
+      "Software",
+      "Software Development - Low Code"
+    ],
+    "target_snippet": "A [low-code](https://en.wikipedia.org/wiki/Low-code_development_platform) development platform (LCDP) provides a development environment used to create application software through a graphical user interface.",
+    "domain": "tech",
+    "type": "paragraph",
+    "lang": "ja"
+  },
+  {
+    "question": "提供されたコードブロックにおいて、ファイルやコマンドの権限を変更するために使用されている3つの異なる手法は何ですか？",
+    "target_answer": "1つ目は、cpコマンドでファイルをコピーした後にchmodコマンドを実行する方法、2つ目は、/bin/busyboxを介してchmodコマンドを実行する方法、3つ目は、setfaclコマンドを使用してアクセス制御リスト（ACL）を設定する方法です。",
+    "target_file": "book-of-secret-knowledge.md",
+    "target_md": "markdowns/book-of-secret-knowledge.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      ":trident: &nbsp;The Book of Secret Knowledge (Chapters)",
+      "Shell One-liners &nbsp;[<sup>[TOC]</sup>](#anger-table-of-contents)",
+      "Tool: [chmod](https://en.wikipedia.org/wiki/Chmod)",
+      "Restore permission for /bin/chmod"
+    ],
+    "target_snippet": "```bash\n# 1:\ncp /bin/ls chmod.01\ncp /bin/chmod chmod.01\n./chmod.01 700 file\n\n# 2:\n/bin/busybox chmod 0700 /bin/chmod\n\n# 3:\nsetfacl --set u::rwx,g::---,o::--- /bin/chmod\n```",
+    "domain": "tech",
+    "type": "code",
+    "lang": "ja"
+  },
+  {
+    "question": "Zohoの無料プランにおいて、Zoho Connectで利用可能な制限事項を教えてください。",
+    "target_answer": "Zoho Connectの無料プランでは、25ユーザーまで利用可能であり、3つのグループ、3つのカスタムアプリ、3つのボード、3つのマニュアル、10の統合機能が提供されます。また、チャンネル、イベント、フォーラムの機能も含まれています。",
+    "target_file": "free-for-dev.md",
+    "target_md": "markdowns/free-for-dev.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Table of Contents",
+      "Major Cloud Providers"
+    ],
+    "target_snippet": "* [Zoho](https://www.zoho.com) - Started as an e-mail provider but now provides a suite of services, some of which have free plans. List of services having free plans :\n    * [Catalyst by Zoho](https://catalyst.zoho.com) -  PaaS/full-stack cloud platform with a generous [free tier](https://catalyst.",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "numverifyとveriphoneの無料プランにおける月間のAPIリクエスト上限数はそれぞれいくつですか？",
+    "target_answer": "numverifyの無料プランは月間100リクエストまで、veriphoneの無料プランは月間1000リクエストまでとなっています。",
+    "target_file": "free-for-dev.md",
+    "target_md": "markdowns/free-for-dev.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "Table of Contents",
+      "International Mobile Number Verification API and SDK"
+    ],
+    "target_snippet": "* [numverify](https://numverify.com/) - Global phone number validation and lookup JSON API. 100 API requests/month\n  * [veriphone](https://veriphone.io/) - Global phone number verification in a free, fast, reliable JSON API. 1000 requests/month",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "LaTeXの学習に役立つリソースとして、StackOverflowのドキュメントを基に作成されたPDF形式の資料はどれですか？",
+    "target_answer": "「LaTex Notes for Professionals」という資料です。これはStackOverflowのドキュメントから編集されたもので、PDF形式で提供されており、CC BY-SAライセンスの下で公開されています。",
+    "target_file": "free-programming-books-langs.md",
+    "target_md": "markdowns/free-programming-books-langs.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "BY PROGRAMMING LANGUAGE",
+      "LaTeX / TeX",
+      "LaTeX"
+    ],
+    "target_snippet": "* [Arbitrary LaTex Reference](http://latex.knobs-dials.com)\n* [Begin Latex in minutes](https://github.com/VoLuong/Begin-Latex-in-minutes)\n* [LaTeX](https://en.wikibooks.org/wiki/LaTeX) - Wikibooks (CC BY-SA)\n* [LaTex Notes for Professionals](https://goalkicker.com/LaTeXBook/) - Compiled from StackOv",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "リストされているデータサイエンス関連のリソースのうち、現在作成中（in process）と記載されているものはどれですか？",
+    "target_answer": "Siva Athreya、Deepayan Sarkar、Steve Tannerらによる「Probability and Statistics with Examples using R」が、現在作成中（in process）と記載されています。",
+    "target_file": "free-programming-books-subjects.md",
+    "target_md": "markdowns/free-programming-books-subjects.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "BY SUBJECT",
+      "Data Science"
+    ],
+    "target_snippet": "* [Introduction to Data Science in Python](https://www.coursera.org/learn/python-data-analysis) - Christopher Brooks (University of Michigan) (Coursera)\n* [Julia Data Science](https://juliadatascience.io) - Jose Storopoli, Rik Huijzer, Lazaro Alonso (HTML) (CC BY-NC-SA 4.0)\n* [Mining of Massive Data",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "Kubernetesの最新のビルドで使用されているGoのバージョンと、更新されたdistroless-iptablesのバージョンは何ですか？",
+    "target_answer": "Kubernetesは現在Go 1.21.8でビルドされており、distroless-iptablesはv0.4.6に更新されています。",
+    "target_file": "k8s-changelog-1.27.md",
+    "target_md": "markdowns/k8s-changelog-1.27.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.27.12",
+      "Changes by Kind",
+      "Feature"
+    ],
+    "target_snippet": "- Kubernetes is now built with go 1.21.8\n  - update distroless-iptables to v0.4.6 ([#123771](https://github.com/kubernetes/kubernetes/pull/123771), [@cpanato](https://github.com/cpanato)) [SIG Release and Testing]",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "特定のアーキテクチャのコンテナイメージを直接プルするには、イメージ名にどのような接尾辞を追加する必要がありますか？",
+    "target_answer": "コンテナイメージ名に「-$ARCH」という接尾辞を追加することで、特定のアーキテクチャのイメージを直接プルすることが可能です。",
+    "target_file": "k8s-changelog-1.27.md",
+    "target_md": "markdowns/k8s-changelog-1.27.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.27.2",
+      "Downloads for v1.27.2",
+      "Container Images"
+    ],
+    "target_snippet": "All container images are available as manifest lists and support the described\narchitectures. It is also possible to pull a specific architecture directly by\nadding the \"-$ARCH\" suffix  to the container image name.",
+    "domain": "tech",
+    "type": "paragraph",
+    "lang": "ja"
+  },
+  {
+    "question": "このリリースノートにおいて、バイナリのリンクが静的（static）に変更されたコンポーネントは何ですか？",
+    "target_answer": "apiextensions-apiserverとkube-aggregatorの2つのバイナリが静的リンクに変更されました。この変更は、debおよびrpmパッケージにも影響を及ぼします。",
+    "target_file": "k8s-changelog-1.27.md",
+    "target_md": "markdowns/k8s-changelog-1.27.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.27.0-beta.0",
+      "Changes by Kind",
+      "Feature"
+    ],
+    "target_snippet": "- Locks CSIMigrationvSphere feature gate. ([#116610](https://github.com/kubernetes/kubernetes/pull/116610), [@xing-yang](https://github.com/xing-yang)) [SIG Storage]\n- Make `apiextensions-apiserver` binary linking static (also affects the deb and rpm packages). ([#114226](https://github.com/kubernet",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "kubernetes-src.tar.gzのSHA512ハッシュ値は何ですか？",
+    "target_answer": "b9e0d50b7726886013dab700aa55f3f63498f0e32608643ba244efd0969fcd579c67f1efe8254d9515c7a8e01b95f1bde145bf0cd3ee27ea8daacffa3100e6bfです。",
+    "target_file": "k8s-changelog-1.28.md",
+    "target_md": "markdowns/k8s-changelog-1.28.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.28.12",
+      "Downloads for v1.28.12",
+      "Source Code"
+    ],
+    "target_snippet": "filename | sha512 hash\n-------- | -----------\n[kubernetes.tar.gz](https://dl.k8s.io/v1.28.12/kubernetes.tar.gz) | f8bd6e65af7abffde8ba359254ddc167c2945464e989f56ca52a9ec75357fecd64f1c149c2f44be15d737221d9823acf57453d0a498f9232fee84a5dedb334f6\n[kubernetes-src.tar.gz](https://dl.k8s.io/v1.28.12/kubern",
+    "domain": "tech",
+    "type": "table",
+    "lang": "ja"
+  },
+  {
+    "question": "kubernetes-server-linux-arm64.tar.gzのSHA512ハッシュ値は何ですか？",
+    "target_answer": "e879568fb40ac54b897ac52e39aa3077278f9ea502c4b7d639a247d503be85db623c264cc30300016ac1651db2c93bc82420decb5e904af396f54e40d3aa33ffです。",
+    "target_file": "k8s-changelog-1.28.md",
+    "target_md": "markdowns/k8s-changelog-1.28.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.28.2",
+      "Downloads for v1.28.2",
+      "Server Binaries"
+    ],
+    "target_snippet": "filename | sha512 hash\n-------- | -----------\n[kubernetes-server-linux-amd64.tar.gz](https://dl.k8s.io/v1.28.2/kubernetes-server-linux-amd64.tar.gz) | cd54f2f48733806208d3b1585ed307bebf91893e250a1eb3e18355c9a9e6d1f75a70966cb66165be2fbb8566e5368b14f66f63a8929fbceca30aa73bfd491441\n[kubernetes-server-l",
+    "domain": "tech",
+    "type": "table",
+    "lang": "ja"
+  },
+  {
+    "question": "kube-proxyのメトリクスであるsync_proxy_rules_iptables_totalの挙動は、1.27以前と比較してどのように変更されましたか？",
+    "target_answer": "1.27以前の挙動に戻され、kube-proxyが管理するiptablesルールの総数を追跡するようになりました。直近の同期で再同期されたルール数のみをカウントする挙動ではなくなりました。なお、再同期されたルール数は、新しく追加されたsync_proxy_rules_iptables_lastメトリクスで確認可能です。",
+    "target_file": "k8s-changelog-1.28.md",
+    "target_md": "markdowns/k8s-changelog-1.28.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.28.0-beta.0",
+      "Changes by Kind",
+      "Bug or Regression"
+    ],
+    "target_snippet": "- Only declare Job as finished after removing all Pod finalizers to avoid orphan Pods ([#119159](https://github.com/kubernetes/kubernetes/pull/119159), [@alculquicondor](https://github.com/alculquicondor)) [SIG Apps and Testing]\n- Reduces CPU and memory consumption of kube-apiserver if OpenAPI V2 is",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "バージョンv1.29.13のkube-schedulerおよびkubectlにおいて、サポートされているCPUアーキテクチャは何ですか？",
+    "target_answer": "サポートされているCPUアーキテクチャは、amd64、arm64、ppc64le、s390xの4種類です。",
+    "target_file": "k8s-changelog-1.29.md",
+    "target_md": "markdowns/k8s-changelog-1.29.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.29.13",
+      "Downloads for v1.29.13",
+      "Container Images"
+    ],
+    "target_snippet": "[registry.k8s.io/kube-scheduler:v1.29.13](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler) | [amd64](https://console.cloud.google.com/artifacts/docker/k8s-artifacts-prod/southamerica-east1/images/kube-scheduler-amd64), [arm64](https://con",
+    "domain": "tech",
+    "type": "list",
+    "lang": "ja"
+  },
+  {
+    "question": "特定のアーキテクチャのコンテナイメージを直接プルするには、イメージ名にどのような接尾辞を追加する必要がありますか？",
+    "target_answer": "コンテナイメージ名に「-$ARCH」という接尾辞を追加することで、特定のアーキテクチャのイメージを直接プルすることが可能です。",
+    "target_file": "k8s-changelog-1.29.md",
+    "target_md": "markdowns/k8s-changelog-1.29.md",
+    "target_page_no": null,
+    "target_heading_path": [
+      "v1.29.2",
+      "Downloads for v1.29.2",
+      "Container Images"
+    ],
+    "target_snippet": "All container images are available as manifest lists and support the described\narchitectures. It is also possible to pull a specific architecture directly by\nadding the \"-$ARCH\" suffix  to the container image name.",
+    "domain": "tech",
+    "type": "paragraph",
+    "lang": "ja"
+  }
+]

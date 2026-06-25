@@ -126,6 +126,23 @@
 - 副次の残: P2-6 チャンク床併合(断片対策・再ingest要)、英語 eval セット(cross-lingual・必須だが未着手)。
 - **確定して残る成果**: keyword 日本語復活(0→96.6%)、heading 復活、ツール名、評価ハーネス(並列/CI/トレース)、実験記録。
 
+## EXP-007 英語コーパス baseline(cross-lingual: 日本語Q × 英語markdowns / queries.en.json N=20)
+- gen-cases.ts で生成(品質ゲート全通過20件, list 多め, 11/16ファイル)。
+- **検索3モード(決定的・生クエリ)**:
+  | mode | H@1 | H@10 | MRR |
+  |---|---|---|---|
+  | vector | 70 | **90** | 0.754 |
+  | keyword | 45 | 45 | 0.450 |
+  | hybrid | 75 | 80 | 0.756 |
+- **JP との決定的な違い**:
+  - 日本語docs は検索飽和(97-99%)=合成がボトルネック。**英語(cross-lingual)は検索が未飽和(vector90/hybrid80)=検索自体がボトルネック・伸びしろあり**。
+  - keyword は cross-lingual で弱い(45%、生の日本語Q×英語本文は trigram 当たらず)。
+  - **弱い keyword が hybrid を引下げ**(H@10 80 < vector 90): RRF が 45% のノイズを混入。
+  - ただし**agent 経由は別**: トレースで agent は英語語に翻訳して keyword 発行→機能(「agent が穴を埋める」)。決定的(生クエリ) vs agent で挙動差。
+- **含意(改善方向が JP/EN で逆)**: 日本語=合成を直す / **英語=検索を直す**(クエリ EN 翻訳 or hybrid で keyword down-weight)。
+- **留保**: N=20 で誤差大(±20%級)。方向性として読む。トレース: 5問とも正解ファイル命中、step 3-7、select_sources 毎回(健全)。
+- result: `retrieval-{vector,keyword,hybrid}-queries_en_json-*.json`
+
 ---
 
 ## 次の実験(予定)
