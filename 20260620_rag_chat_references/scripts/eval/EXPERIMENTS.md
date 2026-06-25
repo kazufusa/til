@@ -61,6 +61,26 @@
 - e2e を**並列化**(`--concurrency` 既定6・順序保持)＝今後の実行が数倍速。
 - 進捗を `results/.e2e-progress` に**即時flush**書き込み → `tail -f` で live 監視可(stdoutパイプのバッファ問題回避)。
 
+## TRACE-001 エージェント挙動調査(EVAL_TRACE) → 既存バグ発覚【baseline以前】
+- **方法**: `agents.ts` に `onStepFinish` トレース(env `EVAL_TRACE=1`)を追加し、代表5問でツール呼び出しを記録。
+- **判明した欠陥(改善でなくバグ。直してから再baseline)**:
+  1. **keyword_search が日本語で毎回 0件**。エージェントは毎問これに1ステップ無駄打ち(#1 の実害)。
+  2. **search_headings も日本語で 0件**(trigram `%` 閾値)。→ keyword+heading の2モダリティが死亡、実質 vector 単独。
+  3. **ツール名バグ**: 定義は `searchKnowledge`(キャメル)だけ、他は snake_case。モデルが `search_knowledge` と
+     誤呼出し→空振り→1ステップ無駄(EXP トレース Q2 で観測)。
+  4. **flail(迷走)**: step 6/7/5/11/9。死んだツールに当たり続け vector を言い換え連打。Q4 は cap(12)寸前。
+     `search_files` は毎回20件で絞れず。
+- **含意**: #4 が e2e を下げた理由が判明(heading 検索が既に死亡 → vector が章脈源 → 見出し除外で文脈喪失)。
+  retrieval 微調整が e2e を動かさない理由も(エージェントが言い換えで穴埋め)。**#1 は降格でなく最優先のバグ**。
+- **教訓**: **エージェント系はトレースを最初に見る**。挙動を見ずに集計だけで baseline/改善を語ると、
+  壊れた土台の上で測ることになる。
+
+## 修正タスク(Phase −1 / baseline以前)
+- [ ] BUG-1 ツール名 `searchKnowledge` → `search_knowledge`(snake_case 統一)。再ingest不要。
+- [ ] BUG-2 日本語 keyword 全文検索(#1)。pg_bigm/pgroonga + 再ingest。
+- [ ] BUG-3 日本語 search_headings(trigram 閾値 or bigram)。
+- [ ] 修正後 re-baseline(retrieval + e2e) → その後に P1-3 等の改善実験。
+
 ---
 
 ## 次の実験(予定)

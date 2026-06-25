@@ -79,7 +79,8 @@ export async function searchHeadings(query: string, k = 12): Promise<ChunkHit[]>
       similarity(coalesce(c.heading_text, ''), ${query}) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
     WHERE c.block_type = 'heading'
-      AND coalesce(c.heading_text, '') % ${query}
+      -- pg_trgm 既定閾値(0.3)は日本語に高すぎ(多バイト trigram は類似度が低く出る)→ 明示閾値で拾う
+      AND similarity(coalesce(c.heading_text, ''), ${query}) > 0.15
     ORDER BY score DESC
     LIMIT ${k}
   `;

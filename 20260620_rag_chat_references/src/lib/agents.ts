@@ -14,12 +14,12 @@ const SEARCH_SYSTEM = `あなたは RAG の検索エージェントです。mark
 - search_headings: 見出しから章を特定
 - keyword_search: 全文検索(固有名詞・コマンド名に強い)
 - vector_search: 意味検索(言い換え・概念に強い)
-- searchKnowledge: ハイブリッド検索。検索セッションに紐づき既出を除外。「もっと深掘り」「続き」には未取得分を追加取得できる
+- search_knowledge: ハイブリッド検索。検索セッションに紐づき既出を除外。「もっと深掘り」「続き」には未取得分を追加取得できる
 - expand_chunk: 前後ブロックで文脈を補う
 
 進め方:
 1. 下記「利用可能なスキル」を見て、ユーザがそのスキルの挙動を回答に適用してほしいと意図していれば run_skill で実行する(例:「猫っぽく」→ neko-mane、「比較表で」→ compare-table)。スキルについて尋ねているだけなら実行しない。
-2. ファイル→見出し→本文(keyword と vector を併用)の順に段階的に絞り込む。言い換えて複数回検索してよい。深掘り依頼なら searchKnowledge を使う。
+2. ファイル→見出し→本文(keyword と vector を併用)の順に段階的に絞り込む。言い換えて複数回検索してよい。深掘り依頼なら search_knowledge を使う。
 3. 取りこぼしが無いか確認し、必要なら expand_chunk で文脈を広げる。
 4. 最後に必ず select_sources を呼び、回答の根拠になる chunk_id を確定する(無関係なものは含めない)。
 
@@ -60,6 +60,9 @@ export async function runSearchAgent(
         .join("\n")}`
     : "";
 
+  // EVAL_TRACE=1 の時だけ、各ステップのツール呼び出しを stderr に記録(本番の NDJSON 出力には無影響)。
+  const trace = process.env.EVAL_TRACE === "1";
+  let stepCount = 0;
   await generateText({
     model: chatModel,
     system: SEARCH_SYSTEM,
@@ -67,7 +70,25 @@ export async function runSearchAgent(
     tools,
     toolChoice: "auto",
     stopWhen: stepCountIs(12),
+    onStepFinish: trace
+      ? (s) => {
+          stepCount++;
+          for (const tc of s.toolCalls ?? []) {
+            const r = s.toolResults?.find((x) => x.toolCallId === tc.toolCallId);
+            const n = Array.isArray((r as { output?: unknown })?.output)
+              ? ((r as { output: unknown[] }).output.length as number)
+              : (r as { output?: { results?: unknown[] } })?.output?.results?.length ?? "";
+            console.error(
+              `[trace] step${stepCount} ${tc.toolName}(${JSON.stringify(tc.input).slice(0, 70)}) -> ${n}`,
+            );
+          }
+        }
+      : undefined,
   });
+  if (trace)
+    console.error(
+      `[trace] steps=${stepCount} selected=${session.selected.size} candidates=${session.candidates.size}`,
+    );
 
   // 確定があればそれ、無ければ候補上位をフォールバック採用
   let ids = [...session.selected];

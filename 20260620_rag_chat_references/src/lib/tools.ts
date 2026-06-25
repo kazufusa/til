@@ -87,7 +87,7 @@ export function createTools(session: AgentSession) {
         remember(await R.vectorSearch(query, k ?? 8)),
     }),
 
-    searchKnowledge: tool({
+    search_knowledge: tool({
       description:
         "ナレッジベースをハイブリッド(キーワード+ベクトル, RRF)検索する。検索セッションに紐づき、既に取得済みのチャンクは除外して返す。同じトピックを「もっと深掘り」したい時に呼ぶと、未取得の関連情報を追加で取得できる。",
       inputSchema: z.object({
