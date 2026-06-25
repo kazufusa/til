@@ -36,6 +36,13 @@ export async function runSearchAgent(
   question: string,
   priorSessionId: string | null = null,
 ): Promise<SearchResult> {
+  // EVAL_DIRECT=1: 検索エージェント(ツール選択ループ)を丸ごと外し、網羅 hybridSearch 直結で合成へ。
+  // 真因がエージェントの取りこぼしなら、これが速くて精度も同等以上のはず(EXP-009)。k は EVAL_DIRECT_K。
+  if (process.env.EVAL_DIRECT === "1") {
+    const ks = await R.resolveSearchSession(priorSessionId);
+    const k = Number(process.env.EVAL_DIRECT_K ?? "15");
+    return { chunks: await R.hybridSearch(question, k), skills: [], sessionId: ks.id };
+  }
   // EVAL_P13=1 のときは、検索/選抜段を「クエリ分解 + 根拠抽出(map-reduce)」へ差し替える。
   // 戻り型(SearchResult)も後段(streamAnswer)も不変。フラグ off では従来挙動と完全一致。
   if (process.env.EVAL_P13 === "1") {
