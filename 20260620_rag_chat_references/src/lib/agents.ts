@@ -98,6 +98,17 @@ export async function runSearchAgent(
 
   // 確定があればそれ、無ければ候補上位をフォールバック採用
   let ids = [...session.selected];
+  // EVAL_WIDE=1: select_sources の選抜だけに合成を縛らず、検索で当たった候補ブロックも渡す。
+  // (エージェントが選抜で必要ブロックを取りこぼす問題への対処。citation は各 block が
+  //  chunk_id を引くので、広く渡しても出典精度は保たれる。)
+  if (process.env.EVAL_WIDE === "1") {
+    // エージェントの候補はツール選択依存で網羅性に欠ける(vector/hybrid を呼ばず取りこぼす)。
+    // 直接ハイブリッド検索で網羅的な候補を確保し、選抜と統合して合成へ渡す。
+    const sel = new Set(ids);
+    const direct = await R.hybridSearch(question, 12);
+    const extra = direct.filter((h) => !sel.has(h.id)).map((h) => h.id);
+    ids = [...ids, ...extra].slice(0, 15);
+  }
   if (ids.length === 0) {
     ids = [...session.candidates.values()]
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
