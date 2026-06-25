@@ -101,9 +101,11 @@ export async function runSearchAgent(
   // EVAL_WIDE=1: select_sources の選抜だけに合成を縛らず、検索で当たった候補ブロックも渡す。
   // (エージェントが選抜で必要ブロックを取りこぼす問題への対処。citation は各 block が
   //  chunk_id を引くので、広く渡しても出典精度は保たれる。)
-  if (process.env.EVAL_WIDE === "1") {
-    // エージェントの候補はツール選択依存で網羅性に欠ける(vector/hybrid を呼ばず取りこぼす)。
-    // 直接ハイブリッド検索で網羅的な候補を確保し、選抜と統合して合成へ渡す。
+  // 既定で網羅文脈を渡す(EXP-008: e2e mean 1.385→1.520)。検索エージェントの候補はツール選択依存で
+  // 網羅性に欠け(vector/hybrid を呼ばず取りこぼす)、select_sources の選抜も少なく合成を飢えさせていた。
+  // 直接ハイブリッド検索で網羅候補を確保し、選抜と統合して合成へ渡す。citation は各 block が
+  // chunk_id を引くので広く渡しても出典精度は保たれる。EVAL_NARROW=1 で旧挙動(A/B 用)。
+  if (process.env.EVAL_NARROW !== "1") {
     const sel = new Set(ids);
     const direct = await R.hybridSearch(question, 12);
     const extra = direct.filter((h) => !sel.has(h.id)).map((h) => h.id);
