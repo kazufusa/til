@@ -32,6 +32,20 @@ function gitSha(): string {
   }
 }
 
+// rate limit/一時失敗を指数バックオフ+ジッタで retry(並列でもエラー汚染を防ぐ)。
+async function withRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      await new Promise((r) => setTimeout(r, 800 * 2 ** i + Math.floor(Math.random() * 600)));
+    }
+  }
+  throw last;
+}
+
 // N件を全体から均等サンプル(domain/type が偏らないよう間引き)。決定的。
 function sample<T>(arr: T[], n: number): T[] {
   if (arr.length <= n) return arr;
@@ -106,8 +120,12 @@ async function main() {
   const runCase = async (g: GoldCase) => {
     const targetFile = basename(g.target_md);
     try {
-      const { answerText, citedFiles, retrievedFiles } = await generateAnswer(g.question);
-      const j = await judge(g.question, g.target_answer, answerText);
+      // rate limit 等は指数バックオフで retry(並列でも汚染しない)。全 retry 失敗時のみ error 記録。
+      const { answerText, citedFiles, retrievedFiles, j } = await withRetry(async () => {
+        const a = await generateAnswer(g.question);
+        const jj = await judge(g.question, g.target_answer, a.answerText);
+        return { ...a, j: jj };
+      });
       return {
         question: g.question,
         domain: g.domain,
