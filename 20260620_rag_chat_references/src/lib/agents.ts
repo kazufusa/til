@@ -122,9 +122,9 @@ export async function runSearchAgent(
     const extra = direct.filter((h) => !sel.has(h.id)).map((h) => h.id);
     ids = [...ids, ...extra].slice(0, Math.max(15, wk));
   }
-  // EVAL_SECTION=1: 取得チャンクの同セクション兄弟(同 heading_path)を足す。
-  // 薄いチャンク(表の数値等)を、質問にマッチした説明文と同セクションごと文脈に入れる(放棄ケース対策)。
-  if (process.env.EVAL_SECTION === "1") {
+  // 取得チャンクの同セクション兄弟(同 heading_path)を足す(default; EVAL_NOSECTION=1 で無効)。
+  // 薄いチャンク(表の数値等)を、質問にマッチした説明文と同セクションごと文脈に入れる(放棄ケース対策, EXP-014)。
+  if (process.env.EVAL_NOSECTION !== "1") {
     const have = new Set(ids);
     const sec = await R.expandSection(ids, 24);
     ids = [...ids, ...sec.filter((h) => !have.has(h.id)).map((h) => h.id)].slice(0, 28);
