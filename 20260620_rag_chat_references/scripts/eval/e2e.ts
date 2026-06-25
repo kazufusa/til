@@ -6,6 +6,7 @@
 // ファイル Hit が飽和した今(E節)、これが改善を測る本命の指標。
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execSync } from "node:child_process";
 import { generateObject } from "ai";
@@ -85,14 +86,21 @@ async function main() {
   const gold = sample(JSON.parse(await readFile(join(ROOT, goldFile), "utf8")) as GoldCase[], n);
   console.log(`eval:e2e n=${gold.length} gold=${goldFile} judge=同一chatModel`);
 
-  const cases: any[] = [];
-  let i = 0;
-  for (const g of gold) {
+  // 各問は独立で大半が API 待ち → 同時実行で高速化(既定6、Vertex レート/PGプール max:10 を考慮)。
+  const conc = Number(arg("concurrency", "6"));
+  console.log(`(concurrency=${conc})`);
+  // 進捗を即時 flush でファイルに書く(stdout はパイプだとバッファされ live で見えないため)。
+  // 監視: tail -f scripts/eval/results/.e2e-progress
+  const PROGRESS = join(RESULTS_DIR, ".e2e-progress");
+  await mkdir(RESULTS_DIR, { recursive: true });
+  writeFileSync(PROGRESS, `e2e start n=${gold.length} conc=${conc}\n`);
+  let done = 0;
+  const runCase = async (g: GoldCase) => {
     const targetFile = basename(g.target_md);
     try {
       const { answerText, citedFiles, retrievedFiles } = await generateAnswer(g.question);
       const j = await judge(g.question, g.target_answer, answerText);
-      cases.push({
+      return {
         question: g.question,
         domain: g.domain,
         type: g.type,
@@ -102,12 +110,26 @@ async function main() {
         citedTargetFile: citedFiles.includes(targetFile),
         retrievedTargetFile: retrievedFiles.includes(targetFile),
         answerPreview: answerText.slice(0, 160),
-      });
+      };
     } catch (e) {
-      cases.push({ question: g.question, domain: g.domain, type: g.type, targetFile, score: null, error: String(e) });
+      return { question: g.question, domain: g.domain, type: g.type, targetFile, score: null, error: String(e) };
+    } finally {
+      done++;
+      appendFileSync(PROGRESS, `${done}/${gold.length} ${new Date().toISOString()}\n`);
+      if (done % 5 === 0) console.log(`  ${done}/${gold.length}`);
     }
-    if (++i % 5 === 0) console.log(`  ${i}/${gold.length}`);
-  }
+  };
+  // 順序保持つき並列プール
+  const cases: any[] = new Array(gold.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(conc, gold.length) }, async () => {
+      while (next < gold.length) {
+        const idx = next++;
+        cases[idx] = await runCase(gold[idx]);
+      }
+    }),
+  );
 
   const scored = cases.filter((c) => typeof c.score === "number");
   const mean = scored.reduce((s, c) => s + c.score, 0) / (scored.length || 1);
