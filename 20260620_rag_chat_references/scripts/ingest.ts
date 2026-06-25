@@ -6,7 +6,7 @@ import { join, basename } from "node:path";
 import { assertEnv } from "../src/lib/env";
 import { sql, toVectorLiteral } from "../src/lib/db";
 import { chunkMarkdown } from "../src/lib/chunk";
-import { embedDocuments } from "../src/lib/embed";
+import { embedDocuments, embedText } from "../src/lib/embed";
 
 const ROOT = join(import.meta.dirname, "..");
 // 取込元ディレクトリ(ROOT 相対)。既定は markdowns/。例: MARKDOWN_DIR=docs
@@ -68,7 +68,7 @@ async function upsertSource(filename: string, raw: string, relPath: string) {
 
   for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
     const batch = chunks.slice(i, i + EMBED_BATCH);
-    const embeddings = await embedDocuments(batch.map((c) => c.content));
+    const embeddings = await embedDocuments(batch.map((c) => embedText(c)));
     for (let j = 0; j < batch.length; j++) {
       const c = batch[j];
       await sql`

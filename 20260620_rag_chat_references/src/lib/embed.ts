@@ -28,6 +28,17 @@ export async function embedDocuments(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
+// 埋め込み入力テキストを組み立てる共通ヘルパー。
+// 見出しパスをコンテキストとして前置きすることで短いブロックの検索精度を改善する。
+// ※ DB に保存する content / char_start / char_end は変更しない(ハイライト不変条件を維持)。
+export function embedText(chunk: {
+  headingPath: string[];
+  content: string;
+}): string {
+  if (chunk.headingPath.length === 0) return chunk.content;
+  return chunk.headingPath.join(" > ") + "\n\n" + chunk.content;
+}
+
 // クエリ側の埋め込み(検索時)
 export async function embedQuery(text: string): Promise<number[]> {
   const { embedding } = await embed({

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql, toVectorLiteral } from "./db";
 import { chunkMarkdown } from "./chunk";
-import { embedDocuments } from "./embed";
+import { embedDocuments, embedText } from "./embed";
 
 // チャット回答を「出典が再現できる」markdown 構造で保存する。
 //  - frontmatter + 本文(各ブロック末尾に脚注 [^cN])+ ## 出典(脚注定義)
@@ -112,7 +112,7 @@ async function ingestSourceContent(
   const B = 50;
   for (let i = 0; i < chunks.length; i += B) {
     const batch = chunks.slice(i, i + B);
-    const embeddings = await embedDocuments(batch.map((c) => c.content));
+    const embeddings = await embedDocuments(batch.map((c) => embedText(c)));
     for (let j = 0; j < batch.length; j++) {
       const c = batch[j];
       await sql`
