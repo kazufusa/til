@@ -36,13 +36,15 @@ export async function vectorSearch(query: string, k = 8): Promise<ChunkHit[]> {
   return rows;
 }
 
-// --- キーワード(全文)検索 ---
+// --- キーワード検索(trigram, 日本語対応) ---
+// 旧実装は to_tsvector('english') で日本語が 1 トークン化し Hit 0% だった(#1/BUG-2)。
+// pg_trgm の word_similarity(クエリが本文の最良部分文字列にどれだけ一致するか)で並べ、上位 k。
+// 形態素解析・閾値チューニング不要。固有名詞/数値/語句の部分一致に強い。
 export async function keywordSearch(query: string, k = 8): Promise<ChunkHit[]> {
   const rows = await sql<ChunkHit[]>`
     SELECT ${SELECT_COLS},
-      ts_rank_cd(c.tsv, websearch_to_tsquery('english', ${query})) AS score
+      word_similarity(${query}, c.content) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
-    WHERE c.tsv @@ websearch_to_tsquery('english', ${query})
     ORDER BY score DESC
     LIMIT ${k}
   `;
@@ -78,9 +80,8 @@ export async function searchHeadings(query: string, k = 12): Promise<ChunkHit[]>
     SELECT ${SELECT_COLS},
       similarity(coalesce(c.heading_text, ''), ${query}) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
+    -- 閾値は使わず類似度で並べて上位 k(日本語は trigram 類似度が低く出るため閾値チューニングを避ける)
     WHERE c.block_type = 'heading'
-      -- pg_trgm 既定閾値(0.3)は日本語に高すぎ(多バイト trigram は類似度が低く出る)→ 明示閾値で拾う
-      AND similarity(coalesce(c.heading_text, ''), ${query}) > 0.15
     ORDER BY score DESC
     LIMIT ${k}
   `;

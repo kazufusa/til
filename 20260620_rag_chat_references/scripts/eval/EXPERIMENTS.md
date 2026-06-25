@@ -76,10 +76,14 @@
   壊れた土台の上で測ることになる。
 
 ## 修正タスク(Phase −1 / baseline以前)
-- [ ] BUG-1 ツール名 `searchKnowledge` → `search_knowledge`(snake_case 統一)。再ingest不要。
-- [ ] BUG-2 日本語 keyword 全文検索(#1)。pg_bigm/pgroonga + 再ingest。
-- [ ] BUG-3 日本語 search_headings(trigram 閾値 or bigram)。
-- [ ] 修正後 re-baseline(retrieval + e2e) → その後に P1-3 等の改善実験。
+- [x] **BUG-1** ツール名 `searchKnowledge`→`search_knowledge`(snake_case 統一)。commit bf63328。
+- [x] **BUG-3** 日本語 search_headings。**閾値廃止・top-k**(trigram 既定0.3が日本語に高すぎ)。検証OK。
+- [x] **BUG-2** 日本語 keyword。pgroonga不要、**pg_trgm `word_similarity` の top-k**で実装(イメージ入替・再ingest不要)。
+      設計方針: 閾値チューニングを避け **類似度で並べて上位k**。検証: 正解ファイルがトップに来た(01.pdf 0.31 / itaku 0.63)。
+      perf: seq scan で ~1.2s/クエリ。要なら GiST trigram(`<->>` KNN)で高速化(別途・試作番号)。
+- [ ] **re-baseline**(keyword 0%→? / hybrid が真にhybridに / e2e) ← 次。その後 P1-3 等の改善実験。
+
+> 設計ルール追記: 検索の絞り込みは**閾値でなく top-k**(マジックナンバー回避)。変種は試作番号で記録し A/B 可能に。
 
 ---
 
