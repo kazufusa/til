@@ -273,6 +273,59 @@ export async function runDecomposedSearch(
   };
 }
 
+// ---- ON 忠実版(EVAL_ON): 分解 → 各サブで検索+テキスト抽出 → テキスト統合 ----
+// ON の本体(ask.py): 各サブクエリの取得チャンクを“焦点を絞ったテキスト小回答”に脱ノイズし、
+// その小回答群だけを統合する(出典 id は捨てる)。品質が wide を超えるかの検証用。
+// 出典契約は持たない(ON 同様) → 採用時は別途 id 保持の工夫が要る。e2e は最終テキストを採点。
+export async function runOnAnswer(
+  question: string,
+): Promise<{ answer: string; retrievedFiles: string[] }> {
+  let subQueries: string[];
+  try {
+    const { object } = await generateObject({
+      model: chatModel,
+      schema: StrategySchema,
+      temperature: 0,
+      system: STRATEGY_SYSTEM,
+      prompt: `# 質問\n${question}\n\n上記の質問を検索用サブクエリに分解せよ。`,
+    });
+    subQueries = object.sub_queries.map((q) => q.trim()).filter(Boolean);
+  } catch {
+    subQueries = [];
+  }
+  if (subQueries.length === 0) subQueries = [question];
+
+  const files = new Set<string>();
+  const subAnswers = await Promise.all(
+    subQueries.map(async (q) => {
+      const hits = await R.hybridSearch(q, 10);
+      for (const h of hits) files.add(h.filename);
+      if (!hits.length) return "";
+      const ctx = hits.map((h) => h.content).join("\n---\n");
+      const { text } = await generateText({
+        model: chatModel,
+        temperature: 0,
+        system:
+          "与えられた資料だけを根拠に、サブクエリへ簡潔な日本語で答える。資料に無ければ「該当情報なし」と書く。推測しない。",
+        prompt: `# サブクエリ\n${q}\n\n# 資料\n${ctx}`,
+      });
+      return text.trim();
+    }),
+  );
+
+  const { text: answer } = await generateText({
+    model: chatModel,
+    temperature: 0,
+    system:
+      "以下の小回答(各サブクエリへの抽出結果)だけを統合し、元の質問に日本語で過不足なく答える。小回答に無い情報は足さない。",
+    prompt: `# 質問\n${question}\n\n# 小回答\n${subAnswers
+      .filter(Boolean)
+      .map((a, i) => `(${i + 1}) ${a}`)
+      .join("\n\n")}`,
+  });
+  return { answer: answer.trim(), retrievedFiles: [...files] };
+}
+
 // ---- 2段目: Chat Agent(ブロック単位 + 引用) ----
 
 export const AnswerSchema = z.object({

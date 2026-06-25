@@ -14,7 +14,7 @@ import { z } from "zod";
 import { assertEnv } from "../../src/lib/env";
 import { sql } from "../../src/lib/db";
 import { chatModel } from "../../src/lib/vertex";
-import { runSearchAgent, streamAnswer } from "../../src/lib/agents";
+import { runSearchAgent, streamAnswer, runOnAnswer } from "../../src/lib/agents";
 import type { GoldCase } from "./types";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -65,6 +65,11 @@ async function judge(question: string, target: string, answer: string) {
 
 // 本番と同じ消費の仕方で最終 blocks を取り出す(route.ts と同じ)。
 async function generateAnswer(question: string) {
+  // EVAL_ON=1: ON 忠実版(分解→各サブで抽出テキスト→統合)。出典は持たない。最終テキストを採点。
+  if (process.env.EVAL_ON === "1") {
+    const { answer, retrievedFiles } = await runOnAnswer(question);
+    return { answerText: answer, citedFiles: [] as string[], retrievedFiles };
+  }
   const result = await runSearchAgent(question, null);
   const { partialObjectStream } = streamAnswer(question, result);
   let last: { blocks?: { text?: string; citations?: number[] }[] } = {};

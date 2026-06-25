@@ -30,6 +30,7 @@ export async function vectorSearch(query: string, k = 8): Promise<ChunkHit[]> {
       1 - (c.embedding <=> ${v}::halfvec) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
     WHERE c.embedding IS NOT NULL
+      ${process.env.EVAL_NOHEAD === "1" ? sql`AND c.block_type <> 'heading'` : sql``}
     ORDER BY c.embedding <=> ${v}::halfvec
     LIMIT ${k}
   `;
@@ -45,6 +46,7 @@ export async function keywordSearch(query: string, k = 8): Promise<ChunkHit[]> {
     SELECT ${SELECT_COLS},
       word_similarity(${query}, c.content) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
+    ${process.env.EVAL_NOHEAD === "1" ? sql`WHERE c.block_type <> 'heading'` : sql``}
     ORDER BY score DESC
     LIMIT ${k}
   `;
