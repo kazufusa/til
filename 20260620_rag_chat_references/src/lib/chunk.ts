@@ -250,5 +250,5 @@ export function chunkMarkdown(raw: string): RawChunk[] {
     }
   }
 
-  return floorMerge(out, raw);
+  return out; // P2-6(合体)撤回: 近傍展開(query時)に切替えハイライト精度維持
 }

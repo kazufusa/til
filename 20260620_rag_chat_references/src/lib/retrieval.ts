@@ -140,6 +140,29 @@ export async function expandChunk(
   return rows;
 }
 
+// --- セクション展開: 取得チャンクと同じ heading_path(同セクション)の兄弟ブロックを引く ---
+// 親子(見出し階層)を使い、薄いチャンク(例:表の"12%")をその説明文と同セクションごと文脈に入れる。
+// チャンクは小さいまま=ハイライト精度維持。query 時・再ingest不要。
+export async function expandSection(
+  chunkIds: number[],
+  cap = 24,
+): Promise<ChunkHit[]> {
+  if (!chunkIds.length) return [];
+  const rows = await sql<ChunkHit[]>`
+    WITH seeds AS (
+      SELECT DISTINCT source_id, heading_path FROM chunks
+      WHERE id = ANY(${chunkIds}) AND array_length(heading_path, 1) >= 1
+    )
+    SELECT ${SELECT_COLS}, 0::float AS score
+    FROM chunks c JOIN sources s ON s.id = c.source_id
+    JOIN seeds ON seeds.source_id = c.source_id AND seeds.heading_path = c.heading_path
+    WHERE c.block_type <> 'heading'
+    ORDER BY c.source_id, c.ordinal
+    LIMIT ${cap}
+  `;
+  return rows;
+}
+
 export async function getChunksByIds(ids: number[]): Promise<ChunkHit[]> {
   if (!ids.length) return [];
   const rows = await sql<ChunkHit[]>`
