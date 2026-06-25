@@ -102,6 +102,97 @@ function splitBlock(
   return lineWindows(raw, start, end);
 }
 
+// 隣接する小さなチャンクを同一 headingPath 内でまとめ上げる後処理。
+// - blockType === 'heading' のチャンクは変更せず、マージの境界として機能する。
+// - 同一 headingPath(スペース結合で比較)のチャンクのみ連結候補。
+// - 連結後の span 長が MAX_CHARS を超えないこと。
+// - 連結後の content = raw.slice(charStart, charEnd) が成立する
+//   (連結 span は先頭.charStart〜末尾.charEnd の連続区間なので常に成立)。
+// - floor 未満でも heading 境界や MAX_CHARS 制限で flush されたランはそのまま出力。
+// - blockType は "merged" に統一(単体チャンクは元の blockType を維持)。
+// - ordinal は出力順に 0..n-1 で振り直す。
+function floorMerge(chunks: RawChunk[], raw: string, floor = 400): RawChunk[] {
+  const result: RawChunk[] = [];
+
+  // run = 現在蓄積中の連結候補リスト
+  let run: RawChunk[] = [];
+
+  const flushRun = () => {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      result.push(run[0]);
+    } else {
+      const first = run[0];
+      const last = run[run.length - 1];
+      const charStart = first.charStart;
+      const charEnd = last.charEnd;
+      const content = raw.slice(charStart, charEnd);
+      result.push({
+        ordinal: 0, // 後で振り直す
+        blockType: "merged",
+        headingDepth: first.headingDepth,
+        headingPath: first.headingPath,
+        headingText: first.headingText,
+        charStart,
+        charEnd,
+        content,
+        tokenEstimate: Math.ceil(content.length / 4),
+      });
+    }
+    run = [];
+  };
+
+  for (const chunk of chunks) {
+    // heading チャンクはマージに参加しない — まず蓄積中の run を flush してから通す
+    if (chunk.blockType === "heading") {
+      flushRun();
+      result.push(chunk);
+      continue;
+    }
+
+    if (run.length === 0) {
+      run.push(chunk);
+      continue;
+    }
+
+    const runHead = run[0];
+    // headingPath が異なる → 境界: flush してから新しい run を開始
+    if (runHead.headingPath.join(" ") !== chunk.headingPath.join(" ")) {
+      flushRun();
+      run.push(chunk);
+      continue;
+    }
+
+    // 連結すると MAX_CHARS を超える → flush してから新しい run を開始
+    const accumulatedEnd = chunk.charEnd;
+    const accumulatedStart = runHead.charStart;
+    if (accumulatedEnd - accumulatedStart > MAX_CHARS) {
+      flushRun();
+      run.push(chunk);
+      continue;
+    }
+
+    // 連結可能: run に追加
+    run.push(chunk);
+
+    // 蓄積内容が floor に達したら flush
+    const spanLen = run[run.length - 1].charEnd - run[0].charStart;
+    if (spanLen >= floor) {
+      flushRun();
+    }
+  }
+
+  // 末尾残り
+  flushRun();
+
+  // ordinal を 0..n-1 で振り直す
+  for (let i = 0; i < result.length; i++) {
+    result[i] = { ...result[i], ordinal: i };
+  }
+
+  return result;
+}
+
 export function chunkMarkdown(raw: string): RawChunk[] {
   const tree = processor.parse(raw) as any;
   const out: RawChunk[] = [];
@@ -159,5 +250,5 @@ export function chunkMarkdown(raw: string): RawChunk[] {
     }
   }
 
-  return out;
+  return floorMerge(out, raw);
 }
