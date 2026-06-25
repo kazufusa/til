@@ -103,6 +103,18 @@
 - **next**: (1) e2e のノイズ低減(N拡大 or k=3平均を harness に) (2) その上で P1-3。
   併せて step数(労力)で bug 修正の flail 減を測ると、決定的に効果が見える可能性。
 
+## EXP-005 低ノイズ baseline(N=50 × runs=3 / バグ修正後 sha d732d04)
+- 目的: e2e の ±8pt ノイズ(EXP-004)を潰し、改善判定の基準帯を作る。`--runs 3`(各問3回)+ 95%CI を実装。
+- **結果: mean 1.385 ± 0.118 (95%CI)** / correct 53.4% / partial+ 85.1% / cited 91.2% (148/150 scored, err 2)
+- これまでの単発 mean 1.32/1.40/1.34 は**全てこの帯(±0.118)の中** = やはりノイズ。真の中心 ~1.385。
+- **判定基準**: 改善は mean を **+0.12 超**動かせば有意(or 同 runs=3 で CI 非重複)。
+- result: `e2e-...-d732d04-1782405911701.json`
+
+## EXP-006 P1-3 クエリ分解+根拠抽出(map-reduce) 〔実行中〕
+- 実装: `runDecomposedSearch`(`agents.ts`, `EVAL_P13=1` ゲート)。分解→各サブクエリ hybridSearch→
+  map で chunk_id 抽出([F5]id のみ)→getChunksByIds→既存 streamAnswer。フラグoffは従来不変。
+- 測定: `EVAL_P13=1 ... --n 50 --runs 3`、baseline(EXP-005 1.385±0.118)と比較。→ 結果待ち。
+
 ---
 
 ## 次の実験(予定)
