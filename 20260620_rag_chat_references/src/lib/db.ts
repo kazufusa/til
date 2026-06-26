@@ -8,6 +8,9 @@ export const sql =
   g.__sql ??
   (g.__sql = postgres(env.DATABASE_URL, {
     max: 10,
+    // 暴走クエリ(ILIKE 先頭ワイルドカードの全スキャン等)を 5 秒で強制中断する保険。
+    // LLM 駆動で任意語が検索に渡るため、1 本のクエリが DB を占有しないようにする。
+    connection: { statement_timeout: 5000 },
     // halfvec 等の独自型は text として受け取り、こちらで整形する
     types: {},
   }));
