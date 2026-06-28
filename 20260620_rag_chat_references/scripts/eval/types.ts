@@ -18,8 +18,8 @@ export type GoldCase = {
   lang?: string; // 英語セット: 質問言語(現状は日本語=cross-lingual)
 };
 
-// 検索モード(B.2.1)。hybrid が現状の挙動。
-export type Mode = "vector" | "keyword" | "hybrid";
+// 検索モード(B.2.1)。hybrid が現状の挙動。retrieval.ts の RetrievalMode が正(単一の真実)。
+export type Mode = R.RetrievalMode;
 
 // 1問の検索結果(決定的・retrieval 層)。
 export type RetrievalCaseResult = {
@@ -46,18 +46,6 @@ export type RunRecord = {
   cases: RetrievalCaseResult[];
 };
 
-// retrieve ディスパッチャ(B.2.1 A の最小差分)。
-// 評価では prod の retrieval 関数をそのまま叩く。mode で融合方法だけ差し替える。
-// 注: prod の retrieval.ts は変更しない。mode-swap を agentic でも使う段階で
-//     retrieval.ts に昇格させる(ACCURACY_IMPROVEMENT.md B.2.1)。
-export function retrieve(
-  query: string,
-  k: number,
-  mode: Mode,
-): Promise<R.ChunkHit[]> {
-  return mode === "vector"
-    ? R.vectorSearch(query, k)
-    : mode === "keyword"
-      ? R.keywordSearch(query, k)
-      : R.hybridSearch(query, k);
-}
+// retrieve ディスパッチャは retrieval.ts に昇格済み(agentic 経路でも mode-swap を使うため)。
+// run.ts の後方互換のためここで再エクスポートする。
+export const retrieve = R.retrieve;

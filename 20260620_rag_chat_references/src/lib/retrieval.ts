@@ -30,7 +30,7 @@ export async function vectorSearch(query: string, k = 8): Promise<ChunkHit[]> {
       1 - (c.embedding <=> ${v}::halfvec) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
     WHERE c.embedding IS NOT NULL
-      ${process.env.EVAL_KEEPHEAD === "1" ? sql`` : sql`AND c.block_type <> 'heading'`}
+      AND c.block_type <> 'heading'
     ORDER BY c.embedding <=> ${v}::halfvec
     LIMIT ${k}
   `;
@@ -46,7 +46,7 @@ export async function keywordSearch(query: string, k = 8): Promise<ChunkHit[]> {
     SELECT ${SELECT_COLS},
       word_similarity(${query}, c.content) AS score
     FROM chunks c JOIN sources s ON s.id = c.source_id
-    ${process.env.EVAL_KEEPHEAD === "1" ? sql`` : sql`WHERE c.block_type <> 'heading'`}
+    WHERE c.block_type <> 'heading'
     ORDER BY score DESC
     LIMIT ${k}
   `;
@@ -74,6 +74,21 @@ export async function hybridSearch(query: string, k = 8): Promise<ChunkHit[]> {
     .map((h) => ({ ...h, score: score.get(h.id) ?? 0 }))
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
+}
+
+// --- 検索手法ディスパッチャ(vector / keyword(=similar, trigram) / hybrid を切替) ---
+// 評価で本文検索の手法だけを差し替えるための単一の入口。retrieval ロジックは各関数のまま。
+export type RetrievalMode = "vector" | "keyword" | "hybrid";
+export function retrieve(
+  query: string,
+  k: number,
+  mode: RetrievalMode,
+): Promise<ChunkHit[]> {
+  return mode === "vector"
+    ? vectorSearch(query, k)
+    : mode === "keyword"
+      ? keywordSearch(query, k)
+      : hybridSearch(query, k);
 }
 
 // --- 見出し検索(trigram 類似) ---

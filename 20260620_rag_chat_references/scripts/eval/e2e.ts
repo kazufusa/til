@@ -14,8 +14,9 @@ import { z } from "zod";
 import { assertEnv } from "../../src/lib/env";
 import { sql } from "../../src/lib/db";
 import { chatModel } from "../../src/lib/vertex";
-import { runSearchAgent, streamAnswer, runOnAnswer } from "../../src/lib/agents";
-import type { GoldCase } from "./types";
+import { runSearchAgent, streamAnswer } from "../../src/lib/agents";
+import { withUsage, newTally, recordLLM, type UsageTally } from "../../src/lib/usage";
+import type { GoldCase, Mode } from "./types";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const RESULTS_DIR = join(import.meta.dirname, "results");
@@ -77,17 +78,16 @@ async function judge(question: string, target: string, answer: string) {
   return object;
 }
 
-// 本番と同じ消費の仕方で最終 blocks を取り出す(route.ts と同じ)。
-async function generateAnswer(question: string) {
-  // EVAL_ON=1: ON 忠実版(分解→各サブで抽出テキスト→統合)。出典は持たない。最終テキストを採点。
-  if (process.env.EVAL_ON === "1") {
-    const { answer, retrievedFiles } = await runOnAnswer(question);
-    return { answerText: answer, citedFiles: [] as string[], retrievedFiles };
-  }
-  const result = await runSearchAgent(question, null);
-  const { partialObjectStream } = streamAnswer(question, result);
+// 本番と同じ消費の仕方で最終 blocks を取り出す(route.ts と同じ)。mode で検索手法を切替える。
+async function generateAnswer(question: string, mode: Mode) {
+  const result = await runSearchAgent(question, null, mode);
+  const stream = streamAnswer(question, result);
+  const { partialObjectStream } = stream;
   let last: { blocks?: { text?: string; citations?: number[] }[] } = {};
   for await (const part of partialObjectStream) last = part as typeof last;
+  // 回答合成(streamObject)のトークンを計測(検索エージェント分は runSearchAgent 内で計上済み)
+  const u = await stream.usage;
+  recordLLM(u?.inputTokens, u?.outputTokens);
   const blocks = (last.blocks ?? []).filter(Boolean);
   const answerText = blocks.map((b) => b?.text ?? "").join("\n\n").trim();
   const cited = new Set<number>();
@@ -102,11 +102,15 @@ async function main() {
   assertEnv();
   const n = Number(arg("n", "50"));
   const goldFile = arg("gold", "queries.json")!;
+  const mode = (arg("mode", "hybrid") as Mode) ?? "hybrid";
+  if (!["vector", "keyword", "hybrid"].includes(mode)) {
+    throw new Error(`invalid --mode: ${mode} (vector|keyword|hybrid)`);
+  }
   const gold = sample(JSON.parse(await readFile(join(ROOT, goldFile), "utf8")) as GoldCase[], n);
   // --runs k: 各問を k 回実行(エージェント非決定のノイズ低減)。集計は全 N×k で取る。
   const runs = Number(arg("runs", "1"));
   const jobs = runs > 1 ? gold.flatMap((g) => Array.from({ length: runs }, () => g)) : gold;
-  console.log(`eval:e2e n=${gold.length} runs=${runs} jobs=${jobs.length} gold=${goldFile} judge=同一chatModel`);
+  console.log(`eval:e2e mode=${mode} n=${gold.length} runs=${runs} jobs=${jobs.length} gold=${goldFile} judge=同一chatModel`);
 
   // 各問は独立で大半が API 待ち → 同時実行で高速化(既定6、Vertex レート/PGプール max:10 を考慮)。
   const conc = Number(arg("concurrency", "6"));
@@ -121,10 +125,11 @@ async function main() {
     const targetFile = basename(g.target_md);
     try {
       // rate limit 等は指数バックオフで retry(並列でも汚染しない)。全 retry 失敗時のみ error 記録。
-      const { answerText, citedFiles, retrievedFiles, j } = await withRetry(async () => {
-        const a = await generateAnswer(g.question);
+      // 回答生成(検索+合成)だけを withUsage で包んでトークン計測。judge は外なので計上されない。
+      const { answerText, citedFiles, retrievedFiles, usage, j } = await withRetry(async () => {
+        const { value: a, usage } = await withUsage(() => generateAnswer(g.question, mode));
         const jj = await judge(g.question, g.target_answer, a.answerText);
-        return { ...a, j: jj };
+        return { ...a, usage, j: jj };
       });
       return {
         question: g.question,
@@ -136,6 +141,7 @@ async function main() {
         citedTargetFile: citedFiles.includes(targetFile),
         retrievedTargetFile: retrievedFiles.includes(targetFile),
         answerPreview: answerText.slice(0, 160),
+        usage,
       };
     } catch (e) {
       return { question: g.question, domain: g.domain, type: g.type, targetFile, score: null, error: String(e) };
@@ -172,20 +178,41 @@ async function main() {
   const perQMean = [...perQ.values()].map((a) => a.reduce((x, y) => x + y, 0) / a.length);
   const meanOfQ = perQMean.reduce((x, y) => x + y, 0) / (perQMean.length || 1);
 
+  // トークン消費の集計(手法別比較用)。usage を持つ scored ケースのみ。
+  const withTok = scored.filter((c) => c.usage);
+  const totalTok = withTok.reduce((acc: UsageTally, c) => {
+    acc.llmIn += c.usage.llmIn; acc.llmOut += c.usage.llmOut; acc.llmCalls += c.usage.llmCalls;
+    acc.embedTokens += c.usage.embedTokens; acc.embedCalls += c.usage.embedCalls;
+    return acc;
+  }, newTally());
+  const nTok = withTok.length || 1;
+  const tokens = {
+    total: totalTok,
+    perCase: {
+      llmIn: totalTok.llmIn / nTok, llmOut: totalTok.llmOut / nTok,
+      llmTotal: (totalTok.llmIn + totalTok.llmOut) / nTok, llmCalls: totalTok.llmCalls / nTok,
+      embedTokens: totalTok.embedTokens / nTok, embedCalls: totalTok.embedCalls / nTok,
+    },
+    nCases: withTok.length,
+  };
+
   const record = {
-    meta: { entry: "e2e", goldFile, gitSha: gitSha(), timestamp: new Date().toISOString(), n: gold.length, runs, jobs: jobs.length, scored: scored.length },
+    meta: { entry: "e2e", mode, goldFile, gitSha: gitSha(), timestamp: new Date().toISOString(), n: gold.length, runs, jobs: jobs.length, scored: scored.length },
     summary: { mean, ci95, correct, partialUp, citedOK, meanOfQ, questions: perQMean.length },
+    tokens,
     cases,
   };
   await mkdir(RESULTS_DIR, { recursive: true });
-  const out = join(RESULTS_DIR, `e2e-${goldFile.replace(/[^a-z0-9]/gi, "_")}-${record.meta.gitSha}-${Date.now()}.json`);
+  const out = join(RESULTS_DIR, `e2e-${mode}-${goldFile.replace(/[^a-z0-9]/gi, "_")}-${record.meta.gitSha}-${Date.now()}.json`);
   await writeFile(out, JSON.stringify(record, null, 2));
 
-  console.log(`\n# e2e (questions=${perQMean.length} runs=${runs} jobs scored=${scored.length})`);
+  console.log(`\n# e2e mode=${mode} (questions=${perQMean.length} runs=${runs} jobs scored=${scored.length})`);
   console.log(`mean score (0-2): ${mean.toFixed(3)} ± ${ci95.toFixed(3)} (95%CI)`);
   console.log(`correct (=2):     ${(correct * 100).toFixed(1)}%`);
   console.log(`partial+ (>=1):   ${(partialUp * 100).toFixed(1)}%`);
   console.log(`cited target file:${(citedOK * 100).toFixed(1)}%`);
+  console.log(`tokens/case: LLM in=${tokens.perCase.llmIn.toFixed(0)} out=${tokens.perCase.llmOut.toFixed(0)} (calls=${tokens.perCase.llmCalls.toFixed(1)}) | embed tok=${tokens.perCase.embedTokens.toFixed(0)} (calls=${tokens.perCase.embedCalls.toFixed(1)})`);
+  console.log(`tokens total: LLM in=${totalTok.llmIn} out=${totalTok.llmOut} | embed=${totalTok.embedTokens} over ${tokens.nCases} cases`);
   if (cases.length - scored.length) console.log(`errors: ${cases.length - scored.length}`);
   console.log(`\nwrote ${out}`);
   await sql.end();

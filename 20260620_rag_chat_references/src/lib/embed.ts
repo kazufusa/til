@@ -1,6 +1,7 @@
 import { embed, embedMany } from "ai";
 import { EMBEDDING_DIM } from "./vertex";
 import { createGeminiEmbeddingModel } from "./embedding-model";
+import { recordEmbed } from "./usage";
 
 // AI SDK の embed/embedMany を使う。モデルは :embedContent アダプタ。
 const model = createGeminiEmbeddingModel();
@@ -41,7 +42,7 @@ export function embedText(chunk: {
 
 // クエリ側の埋め込み(検索時)
 export async function embedQuery(text: string): Promise<number[]> {
-  const { embedding } = await embed({
+  const { embedding, usage } = await embed({
     model,
     value: text,
     maxRetries: 4,
@@ -52,5 +53,8 @@ export async function embedQuery(text: string): Promise<number[]> {
       },
     },
   });
+  // 評価のトークン計測(本番では withUsage 外なので no-op)。
+  // API が usageMetadata を返さない場合は文字数からの粗い推定(~4 char/token)にフォールバック。
+  recordEmbed(usage?.tokens || Math.ceil(text.length / 4));
   return embedding;
 }

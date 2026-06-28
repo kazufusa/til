@@ -15,11 +15,15 @@ export type AgentSession = {
     { id: number; name: string; rel_path: string; content: string }
   >;
   knowledge: { id: string; seen: Set<number> };
+  // 本文検索の手法。default hybrid(=本番)。評価で vector/keyword に切替える。
+  // エージェントのプロンプト・ツール構成は一定に保ち、ランキング関数だけを差し替える(統制比較)。
+  mode: R.RetrievalMode;
 };
 
 export function newSession(
   query: string,
   knowledge: { id: string; seen: Set<number> },
+  mode: R.RetrievalMode = "hybrid",
 ): AgentSession {
   return {
     query,
@@ -27,6 +31,7 @@ export function newSession(
     selected: new Set(),
     skillRefs: new Map(),
     knowledge,
+    mode,
   };
 }
 
@@ -72,8 +77,10 @@ export function createTools(session: AgentSession) {
         query: z.string(),
         k: z.number().int().min(1).max(20).optional(),
       }),
+      // 本文検索は session.mode 経由。default(hybrid)では従来どおりキーワード検索。
+      // 評価で vector/keyword に固定すると、エージェント挙動は変えず検索手法だけを統制できる。
       execute: async ({ query, k }) =>
-        remember(await R.keywordSearch(query, k ?? 8)),
+        remember(await R.retrieve(query, k ?? 8, session.mode)),
     }),
 
     vector_search: tool({
@@ -84,7 +91,7 @@ export function createTools(session: AgentSession) {
         k: z.number().int().min(1).max(20).optional(),
       }),
       execute: async ({ query, k }) =>
-        remember(await R.vectorSearch(query, k ?? 8)),
+        remember(await R.retrieve(query, k ?? 8, session.mode)),
     }),
 
     search_knowledge: tool({
@@ -95,7 +102,7 @@ export function createTools(session: AgentSession) {
         k: z.number().int().min(1).max(20).optional(),
       }),
       execute: async ({ query, k }) => {
-        const hits = await R.hybridSearch(query, k ?? 8);
+        const hits = await R.retrieve(query, k ?? 8, session.mode);
         // バインド済みセッションの既出を除外(=深掘り)
         const fresh = hits.filter((h) => !session.knowledge.seen.has(h.id));
         const out = fresh.length ? fresh : hits;

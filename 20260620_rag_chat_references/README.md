@@ -123,7 +123,7 @@ DB 接続(`db.ts`)は `statement_timeout=5s` を設定し、暴走クエリで D
 - `keyword_search` / `vector_search` / `search_headings` / `expand_chunk` の結果は全て `AgentSession.candidates`(`Map<id, ChunkHit>`)に蓄積される。
 - 最後に `select_sources(chunk_ids)` を呼ばせて **採用集合**を確定。呼ばれなかった場合は candidates を score 降順で上位8件にフォールバック。
 - 2つの融合が別レイヤで効く: `search_knowledge` 内部は **固定 RRF(C=60)**、どのツールを何回呼ぶかは **エージェントの逐次判断**。
-- 既定で確定集合に **直接 `hybridSearch(question,12)` を合流(EVAL_WIDE)** し、さらに **同セクション兄弟ブロックを展開(expandSection)** してから合成へ渡す(取りこぼし対策, EXP-008/014)。詳細・実測は [DESIGN_SEARCH.md](DESIGN_SEARCH.md) と `ACCURACY_IMPROVEMENT.md`。
+- 採用集合に **直接 `hybridSearch(question,12)` を合流** し、さらに **同セクション兄弟ブロックを展開(`expandSection`)** してから合成へ渡す(取りこぼし対策)。詳細は [DESIGN_SEARCH.md](DESIGN_SEARCH.md)、実測経緯は `ACCURACY_IMPROVEMENT.md`。
 
 ### 3. リファレンス保持
 

@@ -50,6 +50,7 @@ export function createGeminiEmbeddingModel(): EmbeddingModelV3 {
       const token = await getAccessToken();
       const url = embedContentUrl();
       const embeddings: number[][] = [];
+      let totalTokens = 0; // usageMetadata があれば集計(評価のトークン計測用)
 
       for (const value of values) {
         const res = await fetch(url, {
@@ -75,15 +76,19 @@ export function createGeminiEmbeddingModel(): EmbeddingModelV3 {
         }
         const data = (await res.json()) as {
           embedding?: { values: number[] };
+          usageMetadata?: { totalTokenCount?: number };
         };
         const vals = data.embedding?.values;
         if (!vals?.length) {
           throw new Error("embedContent: レスポンスに embedding がありません");
         }
         embeddings.push(vals);
+        totalTokens += data.usageMetadata?.totalTokenCount ?? 0;
       }
 
-      return { embeddings, warnings: [] };
+      // usage を返すと AI SDK の embed()/embedMany() が result.usage.tokens で受け取れる。
+      // usageMetadata が無いレスポンスでも tokens:0 で安全(呼び出し側で文字数推定にフォールバック)。
+      return { embeddings, usage: { tokens: totalTokens }, warnings: [] };
     },
   };
 }
