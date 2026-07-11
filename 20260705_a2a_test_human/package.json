@@ -1,0 +1,26 @@
+{
+  "name": "20260705_a2a_test_human",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "llm": "sh scripts/llm-server.sh",
+    "server": "bun run src/server.ts",
+    "server:dev": "bun --hot src/server.ts",
+    "cli": "bun run src/cli.ts",
+    "agent": "bun run src/agent-cli.ts",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "4.17.21"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "0.3.13",
+    "@ai-sdk/openai-compatible": "3.0.1",
+    "ai": "7.0.4",
+    "express": "4.21.2"
+  }
+}
