@@ -1,0 +1,12 @@
+[project]
+name = "strands-30-agents-swarm"
+version = "0.1.0"
+description = "実ビジネス組織をモデルにした30 functional roleのSwarmオーケストレーション"
+requires-python = ">=3.11"
+dependencies = [
+    "strands-agents[ollama]",
+]
+
+[tool.uv]
+# パッケージのcooldown: 公開から7日未満のリリースを除外する
+exclude-newer = "2026-07-07T00:00:00Z"
