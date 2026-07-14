@@ -82,6 +82,18 @@ handoff は `handoff_to_agent` ツール呼び出しの引数
 (`agent_name` / `message` / `context`)をそのまま保存するので、
 「なぜその職能に渡ったのか」がモデルの言葉で残る。
 
+## 実行結果
+
+リクエスト「新機能『利用状況レポートの自動配信』をリリースしたい。仕様の要点、実装方針、告知文のドラフトまで用意して」での実績。
+
+| ラン | 結果 | 経路 | 時間 / トークン |
+| --- | --- | --- | --- |
+| [runs/20260715_000303](runs/20260715_000303/report.md) | COMPLETED | intake_coordinator → product_management → devops_sre → product_management → ux_research | 1022s / 31,608 tok |
+| [runs/20260714_233502](runs/20260714_233502/report.md) | FAILED(失敗例として保存) | ux_research が自己 handoff を 4 回繰り返し max_iterations 到達 | 1511s / 65,568 tok |
+
+失敗例に自己 handoff 遮断 hook(`BlockSelfHandoff`)を入れたのが成功ラン。
+経路・handoff 理由・各職能の成果物は各 report.md を参照。
+
 ## 設計メモ(local_llm.md の原則の適用)
 
 - temperature 0。ツール駆動の小型モデルは劣化に弱い
