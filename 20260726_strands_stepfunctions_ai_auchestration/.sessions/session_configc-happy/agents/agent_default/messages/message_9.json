@@ -1,0 +1,30 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "run_finalizer",
+          "input": {}
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 3103,
+        "outputTokens": 265,
+        "totalTokens": 3368
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 4988
+      }
+    },
+    "tracking_id": "d83650a8-8b06-4506-857f-a2c68d620307"
+  },
+  "message_id": 9,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:47:48.309781+00:00",
+  "updated_at": "2026-07-26T13:47:48.309788+00:00"
+}

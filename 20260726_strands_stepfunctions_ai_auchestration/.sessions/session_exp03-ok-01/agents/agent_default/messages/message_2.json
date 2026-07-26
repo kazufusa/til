@@ -1,0 +1,23 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "toolResult": {
+          "toolUseId": "call_0",
+          "status": "success",
+          "content": [
+            {
+              "text": "change CHG-42 applied to production"
+            }
+          ]
+        }
+      }
+    ],
+    "tracking_id": "c26c753e-9970-41ff-81e2-fa879f12c950"
+  },
+  "message_id": 2,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:32:33.573737+00:00",
+  "updated_at": "2026-07-26T13:32:33.573742+00:00"
+}

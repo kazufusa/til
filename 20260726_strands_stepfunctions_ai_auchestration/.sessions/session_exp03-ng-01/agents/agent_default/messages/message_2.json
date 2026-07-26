@@ -1,0 +1,23 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "toolResult": {
+          "toolUseId": "call_0",
+          "status": "error",
+          "content": [
+            {
+              "text": "human rejected the change: NG: too risky"
+            }
+          ]
+        }
+      }
+    ],
+    "tracking_id": "f36f96a2-91e3-4010-bdcb-d2c90c40236b"
+  },
+  "message_id": 2,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:34:08.008137+00:00",
+  "updated_at": "2026-07-26T13:34:08.008142+00:00"
+}

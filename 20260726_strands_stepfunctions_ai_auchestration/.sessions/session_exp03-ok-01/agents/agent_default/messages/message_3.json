@@ -1,0 +1,32 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "apply_change",
+          "input": {
+            "change_id": "CHG-42"
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 983,
+        "outputTokens": 178,
+        "totalTokens": 1161
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 3964
+      }
+    },
+    "tracking_id": "322d2152-e6e7-4dac-964d-5a13b824053d"
+  },
+  "message_id": 3,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:32:37.542307+00:00",
+  "updated_at": "2026-07-26T13:32:37.542315+00:00"
+}

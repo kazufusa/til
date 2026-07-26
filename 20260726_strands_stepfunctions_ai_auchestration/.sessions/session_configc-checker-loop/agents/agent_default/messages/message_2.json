@@ -1,0 +1,23 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "toolResult": {
+          "toolUseId": "call_0",
+          "status": "success",
+          "content": [
+            {
+              "text": "下書きを生成した (120字):\n弊社は本日、新製品『SkyLine X1』を発表いたします。SkyLine X1は最先端のテクノロジーを搭載し、高い性能と優れた使いやすさを兼ね備えた製品です。革新的な機能と洗練されたデザインにより、お客様の期待を超える体験をご提供します。"
+            }
+          ]
+        }
+      }
+    ],
+    "tracking_id": "b3b27c1f-fa08-4437-ba8f-2de963538a91"
+  },
+  "message_id": 2,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:48:34.248407+00:00",
+  "updated_at": "2026-07-26T13:48:34.248410+00:00"
+}

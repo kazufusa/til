@@ -1,0 +1,35 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "新製品 SkyLine X1 の発表お知らせ文作成ワークフローを開始します。\n\nまず手順1として、writer エージェントを実行して下書きを生成します。"
+      },
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "run_writer",
+          "input": {
+            "instruction": "新製品 SkyLine X1 の発表に関するお知らせ文を作成してください"
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 2761,
+        "outputTokens": 473,
+        "totalTokens": 3234
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 5105
+      }
+    },
+    "tracking_id": "1385f100-ac30-4814-95d5-819f6bf6b278"
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:48:17.578232+00:00",
+  "updated_at": "2026-07-26T13:48:17.578239+00:00"
+}

@@ -1,0 +1,26 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "The change 'CHG-42' was rejected by a human reviewer due to being deemed too risky."
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 1009,
+        "outputTokens": 143,
+        "totalTokens": 1152
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 4096
+      }
+    },
+    "tracking_id": "825ddeab-a311-4686-a01e-50ffd3f1e2d0"
+  },
+  "message_id": 3,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:34:12.855582+00:00",
+  "updated_at": "2026-07-26T13:34:12.855588+00:00"
+}

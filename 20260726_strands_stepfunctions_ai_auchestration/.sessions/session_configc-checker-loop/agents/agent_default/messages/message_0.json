@@ -1,0 +1,15 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "text": "新製品 SkyLine X1 の発表お知らせ文を作成するワークフローを実行してください。"
+      }
+    ],
+    "tracking_id": "6c073ca1-fd15-4e86-b651-67fac49d26e0"
+  },
+  "message_id": 0,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:48:11.042141+00:00",
+  "updated_at": "2026-07-26T13:48:11.042145+00:00"
+}

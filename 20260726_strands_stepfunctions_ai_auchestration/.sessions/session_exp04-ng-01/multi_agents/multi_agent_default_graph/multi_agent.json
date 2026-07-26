@@ -1,0 +1,119 @@
+{
+  "type": "graph",
+  "id": "default_graph",
+  "status": "failed",
+  "completed_nodes": [
+    "writer"
+  ],
+  "failed_nodes": [
+    "publisher"
+  ],
+  "interrupted_nodes": [],
+  "node_results": {
+    "writer": {
+      "result": {
+        "type": "agent_result",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "# Draft Announcement\n\nWe're thrilled to announce the launch of **dark mode for the dashboard**, enabling you to reduce eye strain and customize your interface for comfortable viewing in any lighting condition."
+            }
+          ],
+          "metadata": {
+            "usage": {
+              "inputTokens": 180,
+              "outputTokens": 217,
+              "totalTokens": 397
+            },
+            "metrics": {
+              "latencyMs": 0,
+              "timeToFirstByteMs": 4546
+            }
+          },
+          "tracking_id": "10595d55-fec9-4ad0-998e-428161cf5609"
+        },
+        "stop_reason": "end_turn",
+        "checkpoint": null
+      },
+      "execution_time": 5278,
+      "status": "completed",
+      "accumulated_usage": {
+        "inputTokens": 180,
+        "outputTokens": 217,
+        "totalTokens": 397
+      },
+      "accumulated_metrics": {
+        "latencyMs": 0
+      },
+      "execution_count": 1,
+      "interrupts": []
+    },
+    "publisher": {
+      "result": {
+        "type": "exception",
+        "message": "human rejected publishing: NG: wording is off-brand"
+      },
+      "execution_time": 0,
+      "status": "failed",
+      "accumulated_usage": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0
+      },
+      "accumulated_metrics": {
+        "latencyMs": 0
+      },
+      "execution_count": 1,
+      "interrupts": []
+    }
+  },
+  "next_nodes_to_execute": [
+    "publisher"
+  ],
+  "current_task": "New feature: dark mode for the dashboard",
+  "execution_order": [
+    "writer"
+  ],
+  "_internal_state": {
+    "interrupt_state": {
+      "interrupts": {
+        "v1:before_node_call:005fb2a2-66f9-58ce-84ac-14e5a6dfc855:e9020b73-5849-5804-96a9-d1481a84dfe6": {
+          "id": "v1:before_node_call:005fb2a2-66f9-58ce-84ac-14e5a6dfc855:e9020b73-5849-5804-96a9-d1481a84dfe6",
+          "name": "publisher_gate",
+          "reason": {
+            "question": "publish the draft?",
+            "node_id": "publisher"
+          },
+          "response": "NG: wording is off-brand"
+        }
+      },
+      "context": {
+        "publisher": {
+          "from_hook": true,
+          "interrupt_ids": [
+            "v1:before_node_call:005fb2a2-66f9-58ce-84ac-14e5a6dfc855:e9020b73-5849-5804-96a9-d1481a84dfe6"
+          ],
+          "interrupt_state": {
+            "interrupts": {},
+            "context": {},
+            "activated": false
+          },
+          "state": {},
+          "messages": [],
+          "model_state": {}
+        },
+        "completed_nodes": [],
+        "responses": [
+          {
+            "interruptResponse": {
+              "interruptId": "v1:before_node_call:005fb2a2-66f9-58ce-84ac-14e5a6dfc855:e9020b73-5849-5804-96a9-d1481a84dfe6",
+              "response": "NG: wording is off-brand"
+            }
+          }
+        ]
+      },
+      "activated": true
+    }
+  }
+}

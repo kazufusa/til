@@ -1,0 +1,23 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "toolResult": {
+          "toolUseId": "call_0",
+          "status": "success",
+          "content": [
+            {
+              "text": "APPROVED: 人間レビューで承認された。finalizer に進んでよい。"
+            }
+          ]
+        }
+      }
+    ],
+    "tracking_id": "e979ad7a-dcb5-42c1-bf95-d511d222ffea"
+  },
+  "message_id": 8,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:47:43.317776+00:00",
+  "updated_at": "2026-07-26T13:47:43.317783+00:00"
+}

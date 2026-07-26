@@ -1,0 +1,15 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "text": "My favorite secret keyword is 'AOZORA-1234'. Just acknowledge it briefly."
+      }
+    ],
+    "tracking_id": "c74e7597-65bc-4e11-9126-f256865dc3c8"
+  },
+  "message_id": 0,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:31:38.470666+00:00",
+  "updated_at": "2026-07-26T13:31:38.470669+00:00"
+}

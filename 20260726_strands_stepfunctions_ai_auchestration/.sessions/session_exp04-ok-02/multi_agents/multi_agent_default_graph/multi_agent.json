@@ -1,0 +1,104 @@
+{
+  "type": "graph",
+  "id": "default_graph",
+  "status": "completed",
+  "completed_nodes": [
+    "publisher",
+    "writer"
+  ],
+  "failed_nodes": [],
+  "interrupted_nodes": [],
+  "node_results": {
+    "writer": {
+      "result": {
+        "type": "agent_result",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "We're excited to announce that dark mode is now available for the dashboard, offering a more comfortable viewing experience in any lighting condition."
+            }
+          ],
+          "metadata": {
+            "usage": {
+              "inputTokens": 180,
+              "outputTokens": 366,
+              "totalTokens": 546
+            },
+            "metrics": {
+              "latencyMs": 0,
+              "timeToFirstByteMs": 6342
+            }
+          },
+          "tracking_id": "690d8637-1f02-4468-99f5-0fba4fead079"
+        },
+        "stop_reason": "end_turn",
+        "checkpoint": null
+      },
+      "execution_time": 7177,
+      "status": "completed",
+      "accumulated_usage": {
+        "inputTokens": 180,
+        "outputTokens": 366,
+        "totalTokens": 546
+      },
+      "accumulated_metrics": {
+        "latencyMs": 0
+      },
+      "execution_count": 1,
+      "interrupts": []
+    },
+    "publisher": {
+      "result": {
+        "type": "agent_result",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "PUBLISHED: We're excited to announce that dark mode is now available for the dashboard, offering a more comfortable viewing experience in any lighting condition."
+            }
+          ],
+          "metadata": {
+            "usage": {
+              "inputTokens": 225,
+              "outputTokens": 223,
+              "totalTokens": 448
+            },
+            "metrics": {
+              "latencyMs": 0,
+              "timeToFirstByteMs": 4339
+            }
+          },
+          "tracking_id": "402d9a7d-a1d3-4fd4-8e22-15323f72f19a"
+        },
+        "stop_reason": "end_turn",
+        "checkpoint": null
+      },
+      "execution_time": 5124,
+      "status": "completed",
+      "accumulated_usage": {
+        "inputTokens": 225,
+        "outputTokens": 223,
+        "totalTokens": 448
+      },
+      "accumulated_metrics": {
+        "latencyMs": 0
+      },
+      "execution_count": 1,
+      "interrupts": []
+    }
+  },
+  "next_nodes_to_execute": [],
+  "current_task": "New feature: dark mode for the dashboard",
+  "execution_order": [
+    "writer",
+    "publisher"
+  ],
+  "_internal_state": {
+    "interrupt_state": {
+      "interrupts": {},
+      "context": {},
+      "activated": false
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "**[差戻し 2/3 - 手順1 完了]** 下書き再生成 (134字)\n> 本日2026年7月26日、新製品「SkyLine X1」を発表いたします。最先端AI技術搭載で、卓越した性能・高速処理・直感的な操作性を実現。ビジネスと生活の質を革新します。\n> \n> 【お問い合わせ先】\n> 電話：03-123-4567\n> メール：pr@company.co.jp\n\n発表日がより明記され、問い合わせ先として電話番号とメールアドレスが追加されました。続いて手順2として、static_check を実行します。"
+      },
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "run_static_check",
+          "input": {}
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 319,
+        "totalTokens": 329
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 2696
+      }
+    },
+    "tracking_id": "eaf8e5b0-8571-48cc-a7d3-7e1bb58ed5cb"
+  },
+  "message_id": 15,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:52:11.479072+00:00",
+  "updated_at": "2026-07-26T13:52:11.479090+00:00"
+}

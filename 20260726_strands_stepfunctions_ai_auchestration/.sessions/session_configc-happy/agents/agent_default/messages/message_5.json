@@ -1,0 +1,30 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "run_checker",
+          "input": {}
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 3017,
+        "outputTokens": 153,
+        "totalTokens": 3170
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 3766
+      }
+    },
+    "tracking_id": "1cccc7d1-31c6-4f85-b951-ac69a7ee5f41"
+  },
+  "message_id": 5,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:47:12.855329+00:00",
+  "updated_at": "2026-07-26T13:47:12.855335+00:00"
+}

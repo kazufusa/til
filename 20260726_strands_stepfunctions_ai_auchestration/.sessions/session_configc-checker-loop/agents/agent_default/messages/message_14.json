@@ -1,0 +1,23 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "toolResult": {
+          "toolUseId": "call_0",
+          "status": "success",
+          "content": [
+            {
+              "text": "下書きを生成した (134字):\n本日2026年7月26日、新製品「SkyLine X1」を発表いたします。最先端AI技術搭載で、卓越した性能・高速処理・直感的な操作性を実現。ビジネスと生活の質を革新します。\n\n【お問い合わせ先】\n電話：03-123-4567\nメール：pr@company.co.jp"
+            }
+          ]
+        }
+      }
+    ],
+    "tracking_id": "5808abe9-f332-4072-b194-4ecbce51288b"
+  },
+  "message_id": 14,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:52:06.751709+00:00",
+  "updated_at": "2026-07-26T13:52:06.751716+00:00"
+}

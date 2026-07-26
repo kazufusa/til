@@ -1,0 +1,26 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "The change CHG-42 has been successfully applied to production."
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 1054,
+        "outputTokens": 208,
+        "totalTokens": 1262
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 4519
+      }
+    },
+    "tracking_id": "f803f0f8-241f-4a54-bec3-2f3ca6b61f9b"
+  },
+  "message_id": 5,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:33:52.238153+00:00",
+  "updated_at": "2026-07-26T13:33:52.238158+00:00"
+}

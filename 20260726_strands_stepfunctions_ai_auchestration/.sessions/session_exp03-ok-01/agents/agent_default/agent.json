@@ -1,0 +1,59 @@
+{
+  "agent_id": "default",
+  "state": {},
+  "conversation_manager_state": {
+    "__name__": "SlidingWindowConversationManager",
+    "removed_message_count": 0,
+    "model_call_count": 0
+  },
+  "_internal_state": {
+    "interrupt_state": {
+      "interrupts": {
+        "v1:before_tool_call:call_0:910cf365-bba1-5526-8d41-0f9d1e109548": {
+          "id": "v1:before_tool_call:call_0:910cf365-bba1-5526-8d41-0f9d1e109548",
+          "name": "human_approval",
+          "reason": {
+            "question": "approve apply_change?",
+            "tool_input": {
+              "change_id": "CHG-42"
+            }
+          },
+          "response": null
+        }
+      },
+      "context": {
+        "tool_use_message": {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "toolUseId": "call_0",
+                "name": "apply_change",
+                "input": {
+                  "change_id": "CHG-42"
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "usage": {
+              "inputTokens": 983,
+              "outputTokens": 178,
+              "totalTokens": 1161
+            },
+            "metrics": {
+              "latencyMs": 0,
+              "timeToFirstByteMs": 3964
+            }
+          },
+          "tracking_id": "322d2152-e6e7-4dac-964d-5a13b824053d"
+        },
+        "tool_results": []
+      },
+      "activated": true
+    },
+    "model_state": {}
+  },
+  "created_at": "2026-07-26T13:32:28.289968+00:00",
+  "updated_at": "2026-07-26T13:32:37.543617+00:00"
+}

@@ -1,0 +1,33 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "了解しました。writer が下書きを生成しました。\n\n**[手順1 完了]** 下書き生成 (120字)\n> 弊社は本日、新製品『SkyLine X1』を発表いたします。SkyLine X1は最先端のテクノロジーを搭載し、高い性能と優れた使いやすさを兼ね備えた製品です。革新的な機能と洗練されたデザインにより、お客様の期待を超える体験をご提供します。\n\n続いて手順2として、static_check を実行してキーワードと字数の機械チェックを行います。"
+      },
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "run_static_check",
+          "input": {}
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 3011,
+        "outputTokens": 463,
+        "totalTokens": 3474
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 5142
+      }
+    },
+    "tracking_id": "c405e916-e908-415b-aa34-b8c4b072ec79"
+  },
+  "message_id": 3,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:48:41.370150+00:00",
+  "updated_at": "2026-07-26T13:48:41.370157+00:00"
+}

@@ -1,0 +1,15 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "text": "Apply the change with id 'CHG-42'."
+      }
+    ],
+    "tracking_id": "bc723029-e9cc-4096-8fda-d10e9180252a"
+  },
+  "message_id": 0,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:32:28.291341+00:00",
+  "updated_at": "2026-07-26T13:32:28.291344+00:00"
+}

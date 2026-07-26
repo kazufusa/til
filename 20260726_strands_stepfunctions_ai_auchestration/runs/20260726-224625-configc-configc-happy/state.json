@@ -1,0 +1,34 @@
+{
+  "draft": "新製品SkyLine X1を発表いたします。最新の技術と洗練されたデザインを融合させたSkyLine X1は、お客様のライフスタイルをより豊かにします。この革新的な製品の登場をお楽しみにお待ちください。",
+  "final": "新製品SkyLine X1を発表いたします。最新の技術と洗練されたデザインを融合させたSkyLine X1は、お客様のライフスタイルをより豊かにします。この革新的な製品の登場をお楽しみにお待ちください。\n---\n本件に関するお問い合わせ: 株式会社Example 広報部 (pr@example.com)",
+  "writer_calls": 1,
+  "events": [
+    {
+      "ts": "2026-07-26T22:47:02",
+      "tool": "run_writer",
+      "instruction": "",
+      "draft_len": 101
+    },
+    {
+      "ts": "2026-07-26T22:47:09",
+      "tool": "run_static_check",
+      "verdict": "OK"
+    },
+    {
+      "ts": "2026-07-26T22:47:18",
+      "tool": "run_checker",
+      "verdict": "OK",
+      "forced": false
+    },
+    {
+      "ts": "2026-07-26T22:47:43",
+      "tool": "request_human_review",
+      "verdict": "APPROVED: 人間レビューで承認された。finalizer に進んでよい。"
+    },
+    {
+      "ts": "2026-07-26T22:47:48",
+      "tool": "run_finalizer",
+      "final_len": 152
+    }
+  ]
+}

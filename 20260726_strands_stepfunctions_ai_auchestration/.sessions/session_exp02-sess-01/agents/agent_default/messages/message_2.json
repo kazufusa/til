@@ -1,0 +1,15 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "text": "What is my favorite secret keyword? Answer with the keyword only."
+      }
+    ],
+    "tracking_id": "ad596fd0-86e3-4d64-9fc3-8d5768974d71"
+  },
+  "message_id": 2,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:31:44.324508+00:00",
+  "updated_at": "2026-07-26T13:31:44.324514+00:00"
+}

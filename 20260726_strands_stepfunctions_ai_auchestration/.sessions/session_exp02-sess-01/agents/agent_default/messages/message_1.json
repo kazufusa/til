@@ -1,0 +1,26 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "Got it. I've noted your keyword: AOZORA-1234."
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 187,
+        "outputTokens": 121,
+        "totalTokens": 308
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 3834
+      }
+    },
+    "tracking_id": "e169c191-7e4f-4619-93d6-2b3b70716909"
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:31:42.980837+00:00",
+  "updated_at": "2026-07-26T13:31:42.980841+00:00"
+}

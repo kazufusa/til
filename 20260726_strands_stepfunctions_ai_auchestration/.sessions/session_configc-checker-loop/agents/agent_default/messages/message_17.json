@@ -1,0 +1,33 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "**[差戻し 2/3 - 手順2 完了]** 静的チェック合格（キーワード・字数 OK）\n\n続いて手順3として、checker エージェントを実行して内容審査を行います。"
+      },
+      {
+        "toolUse": {
+          "toolUseId": "call_0",
+          "name": "run_checker",
+          "input": {}
+        }
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 167,
+        "totalTokens": 177
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 3125
+      }
+    },
+    "tracking_id": "ce590671-5683-4af7-a60b-d108684535f8"
+  },
+  "message_id": 17,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:52:15.505913+00:00",
+  "updated_at": "2026-07-26T13:52:15.505958+00:00"
+}

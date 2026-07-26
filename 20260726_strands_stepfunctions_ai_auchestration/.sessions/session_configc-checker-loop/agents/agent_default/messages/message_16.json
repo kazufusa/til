@@ -1,0 +1,23 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "toolResult": {
+          "toolUseId": "call_0",
+          "status": "success",
+          "content": [
+            {
+              "text": "OK"
+            }
+          ]
+        }
+      }
+    ],
+    "tracking_id": "98a1fc4d-4cc1-4cb8-b4c0-f2125f0bf4c2"
+  },
+  "message_id": 16,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:52:11.484737+00:00",
+  "updated_at": "2026-07-26T13:52:11.484754+00:00"
+}

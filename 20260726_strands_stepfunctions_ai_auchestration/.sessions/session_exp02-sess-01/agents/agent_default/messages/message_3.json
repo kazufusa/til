@@ -1,0 +1,26 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "AOZORA-1234"
+      }
+    ],
+    "metadata": {
+      "usage": {
+        "inputTokens": 251,
+        "outputTokens": 298,
+        "totalTokens": 549
+      },
+      "metrics": {
+        "latencyMs": 0,
+        "timeToFirstByteMs": 5711
+      }
+    },
+    "tracking_id": "ab7dbb66-ad1c-4c62-abe1-8d14efcea2f7"
+  },
+  "message_id": 3,
+  "redact_message": null,
+  "created_at": "2026-07-26T13:31:50.721712+00:00",
+  "updated_at": "2026-07-26T13:31:50.721716+00:00"
+}
