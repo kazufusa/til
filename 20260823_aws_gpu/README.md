@@ -1220,3 +1220,44 @@ Future
 ```
 
 **この構成なら「Animaを動かす最低限のGPUサーバ」ではなく、「個人用の画像＋小説生成ワークステーション」として育てられます。**
+
+---
+
+# 進捗ログ
+
+## 2026-08-24 Phase 1ほぼ完了
+
+### 完了した項目
+
+1. AWSアカウント作成
+   - 旧アカウントで使ったメールは再利用できないため、Gmailの`+`エイリアスで新規作成しました
+   - rootにMFA(パスキー)を設定し、以後rootは使いません
+2. IAM Identity Center(東京リージョン、組織インスタンス)
+   - 2026年以降の新規インスタンスは、アクセスポータルURLが`https://<instance>.portal.ap-northeast-1.app.aws`形式です
+   - 管理者ユーザーを作成し、AdministratorAccess許可セットを管理アカウントに割り当てました
+   - ログイン先はアクセスポータルURLのみです。アカウントID+IAMユーザー名を聞く画面は使いません
+3. AWS CLI v2(WSL2)
+   - `~/.local/share/aws-cli`配下の2.36系を使用し、`/usr/local`の古い2.7系は削除しました
+   - `aws configure sso`でSSO連携し、`aws sts get-caller-identity`で疎通を確認しました
+4. session-manager-plugin
+   - sudo不要にするため、debを展開して`~/.local/share/session-manager-plugin`に配置し、`~/bin`へリンクしました
+5. EC2用IAM Role `anima-ec2-role`
+   - 信頼先はec2.amazonaws.comです
+   - ポリシーはAmazonSSMManagedInstanceCoreのみです
+   - 同名のインスタンスプロファイルも作成済みです
+
+### 承認待ちの項目
+
+- EC2クォータ「Running On-Demand G and VT instances」の0から16への引き上げ申請
+- 状態はCASE_OPENED(サポート審査中)、申請は2026-08-24 00:55 JSTです
+
+### 次にやること
+
+クォータ承認後、セクション4以降のとおりEC2(g6e.2xlarge + DLAMI + EBS gp3 500GB + `anima-ec2-role`)を作成します。
+
+### つまずきメモ
+
+- 解約済みアカウントのメールアドレスは永久に再利用できません
+- Identity Centerの有効化で聞かれるマルチリージョンインスタンスは、個人利用では不要です(KMSのカスタマーマネージドキーが必要で月額課金もあります)
+- ポータルにログインできても中身が空の場合は、許可セットの割り当て(マルチアカウント許可)が未完了です
+- ConsoleのリージョンがSydneyになっていることがあるため、最初に東京へ切り替えます
