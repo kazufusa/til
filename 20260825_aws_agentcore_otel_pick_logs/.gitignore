@@ -1,0 +1,12 @@
+out/
+tmp/
+app/.bedrock_agentcore/
+app/.bedrock_agentcore.yaml
+app/.venv/
+__pycache__/
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfplan
+terraform/lambda/gate_dump.zip
