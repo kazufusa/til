@@ -243,6 +243,13 @@ uv run --project app scripts/local_run.py --gate fail --payload-lines 3
 
 ダンプの回収は`aws s3 sync`で行います（`./tmp/`以下に取得済み）。
 
-## 残作業
+## 削除の記録（2026-08-26）
 
-- 削除手順の実施と確認（`agentcore destroy`、`terraform destroy`、ロググループの手動削除の順）
+次の順で全リソースを削除し、残存ゼロを確認しました。
+
+1. `agentcore destroy --force`: Runtimeとコードzipを削除。terraform管理の実行ロールもtoolkitが先に削除した（configureで渡したロールも削除対象になる挙動）
+2. `terraform destroy`: 残る11リソース（バケット3つ、Lambda、ロール、サブスクリプションフィルタなど）を削除。先に消えたロールは「既に無い」として整合した
+3. 手動削除: ロググループ3つ（Runtime用、Lambda用、`aws/spans`）を削除し、X-Rayのスパン送信先を既定のXRayへ戻した
+
+確認: Runtime、バケット、ロール、ロググループ、Lambdaのいずれも、実験のprefixでの検索結果が空であることを確認済みです。
+ローカルの`./tmp/`に全jsonlの写しが残っています。
