@@ -161,7 +161,21 @@ CloudWatchに届いていない記録は、復元経路でも復元できませ�
 
 ### 推奨構成
 
-CloudWatch中心の構成で要件を満たせます。
+最終形は「OTEL → CloudWatch → 失敗フラグ付きトレースをS3へ保持 → 後日検証」です。
+
+```
+OTEL計装(Strands、1本だけ)
+  → CloudWatch(スパン=aws/spans、本文=otel-rt-logs)
+      ├─ 平常時: GenAI Observability UIで人間が調査
+      └─ gate FAILスパン検知 → Lambda → traceId単位のjsonl → S3(後日検証用)
+```
+
+記録の形は、人間が読む場合もプログラムが読む場合もOTELで統一します。
+OTELは業界標準で、UI(CloudWatchやLangfuse)も後段のプログラムも同じデータを読めます。
+自前スキーマの並行記録は作りません。
+足りない情報(gateの判定、Graphのエッジ)は、スパンのカスタム属性としてOTELの内側に足します。
+gateの`gate.*`属性がS3のjsonlとUIの両方へそのまま届いたことが、この方式の実証です。
+
 成立条件は次の3つで、いずれも本検証で実証済みです。
 
 - Transaction SearchがACTIVEであること
