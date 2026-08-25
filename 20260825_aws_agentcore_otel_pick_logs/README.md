@@ -48,12 +48,20 @@ GenAI Observabilityコンソールの表示は、この2つのデータで描か
 課題: トレースからGraphのエッジを復元できません。
 `invoke_graph`にもノードスパンにも、エッジ定義を表す属性はありません。
 直列なら時間の隣接から実行順を推定できますが、並行分岐やfan-inでは兄弟スパンの時間が重なるため、構造の復元は不可能です。
+しかもStrandsの実装（`_is_node_ready_with_conditions`）は、入エッジのどれか1本の条件が成立した時点でノードをreadyにして、どのエッジで発火したかを記録しません。
+複数入エッジのケースでは、事後推定が原理的に成り立ちません。
 
-解決方法案: エッジを構造化データとしてスパンへ自分で書き込みます。
+Strandsの実行系自体は、エッジ定義（`Graph.edges`）も実行順（`GraphState.execution_order`）もエッジ通過イベント（`MultiAgentHandoffEvent`）も持っています。
+スパンへ渡していないだけです。
 
-- 静的グラフ: エッジ定義のJSONを、Graphのスパン属性として定義時に1回書く
-- 動的グラフ: ルーティング確定時に、依存ノード名リストをノードスパンの属性へ書く（Strandsでは入力組み立て処理への介入が必要）
-- 既存の受け皿: OpenInference規約の`graph.node.id`と`graph.node.parent_id`（AutoGen等が自動付与、ただしfan-inは窮屈）。OTEL本家も`gen_ai.workflow.*`を策定中（Developmentステータス）。Strandsはどちらにも未対応で、当面は自前付与が現実解
+解決方法案: 宣言したグラフと実際に通った経路を分けて、カスタムテレメトリとしてOTELの内側に足します。
+
+- グラフ定義: ルートスパンのイベント`graph.definition`に、そのリクエストで生成したnodesとedgesを1回書く
+- 実走経路: エッジ通過が確定した瞬間に、イベント`edge.traversed(from, to)`を書く。捕捉の継ぎ目には`MultiAgentHandoffEvent`が使える
+- ノードスパンには`workflow.node.id`と実行回数カウンタを付け、ループ時の実行インスタンスを区別する
+
+この2点を足せば、実行時グラフをトレースだけからほぼ完全に復元できます。
+既存規約ではOpenInferenceの`graph.node.id`/`graph.node.parent_id`（fan-inは窮屈）と、策定中の`gen_ai.workflow.*`があり、将来はそちらへ寄せます。
 
 ### S3への保持の2パターン
 
