@@ -1276,6 +1276,21 @@ GPU代はg6e.2xlargeで1時間約3 USDで、起動中だけかかります。
 500GB + 月20〜30時間稼働で合計100〜135 USD程度になる想定です。
 これに合わせてBudgetの月額上限は150 USDに設定しています。
 
+### クォータ承認待ちの間に準備したリソース
+
+- Security Group `anima-sg` (sg-097e7d8b948edd66a): Inboundなし、Outbound全許可
+- DLAMI: Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) 20260821 (ami-011e1058004b1e945)
+- 起動テンプレート `anima` (lt-0ae5f7269c074e375): 上記AMI + g6e.2xlarge + EBS gp3 500GB(DeleteOnTermination無効) + `anima-ec2-role` + IMDSv2必須
+- t3.microでSSM接続の予行演習を実施: SSM Online確認 → RunCommandでテストHTTPサーバー起動 → ポートフォワード経由でlocalhostから応答取得 → terminateまで確認
+
+クォータ承認後は次の一発で本番を起動できます。
+
+```bash
+aws ec2 run-instances \
+  --region ap-northeast-1 \
+  --launch-template LaunchTemplateName=anima
+```
+
 ### つまずきメモ
 
 - 解約済みアカウントのメールアドレスは永久に再利用できません
