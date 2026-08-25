@@ -54,13 +54,18 @@ GenAI Observabilityコンソールの表示は、この2つのデータで描か
 Strandsの実行系自体は、エッジ定義（`Graph.edges`）も実行順（`GraphState.execution_order`）もエッジ通過イベント（`MultiAgentHandoffEvent`）も持っています。
 スパンへ渡していないだけです。
 
-解決方法案: 宣言したグラフと実際に通った経路を分けて、カスタムテレメトリとしてOTELの内側に足します。
+動的fan-out（実行中に見つけた仕事の数だけWorkerを生やす形）まで含めると、復元対象は「事前のGraph定義」ではなく「実行時に展開されたexecution graph」になります。
+その場合も、次の設計でOTELだけから復元できます。
 
-- グラフ定義: ルートスパンのイベント`graph.definition`に、そのリクエストで生成したnodesとedgesを1回書く
-- 実走経路: エッジ通過が確定した瞬間に、イベント`edge.traversed(from, to)`を書く。捕捉の継ぎ目には`MultiAgentHandoffEvent`が使える
-- ノードスパンには`workflow.node.id`と実行回数カウンタを付け、ループ時の実行インスタンスを区別する
+解決方法案: スパンとスパンリンク、構造化ログの3点でexecution graphを記録します。
 
-この2点を足せば、実行時グラフをトレースだけからほぼ完全に復元できます。
+- 論理ノードと実行インスタンスを分ける。ノードスパンに`workflow.run.id`、`node.logical_id`（worker）、`node.instance_id`（worker-001）、実行回数カウンタを付ける
+- fan-inを親子で表現しない。スパンの親は1つしか持てないため、Aggregatorを特定Workerの子にすると嘘のツリーになる。複数の先行スパンとの因果はスパンリンク（OTELがscatter/gather向けに推奨する複数参照）で張る
+- トポロジの変化（グラフ定義、エッジ通過、`fanout.created`とその対象リスト)は、スパンに相関付けた構造化ログとして記録する。Span Events APIは廃止方向で、新規設計はLogs APIイベントが推奨のため（既存のspan eventsデータは有効のまま）
+- 捕捉の継ぎ目には、Strandsの`MultiAgentHandoffEvent`（`from_node_ids`と`to_node_ids`を持つ）が使える
+
+この3点が揃うと、事前に完全なGraph定義を吐かなくても、実行しながら成長するDAGを後から復元できます。
+同じデータを逐次読めば、実行中のグラフが伸びていく進捗UIにもなります。
 既存規約ではOpenInferenceの`graph.node.id`/`graph.node.parent_id`（fan-inは窮屈）と、策定中の`gen_ai.workflow.*`があり、将来はそちらへ寄せます。
 
 ### S3への保持の2パターン
