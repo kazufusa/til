@@ -23,8 +23,8 @@ WAIT_SECONDS = int(os.environ.get("WAIT_SECONDS", "75"))
 LOOKBACK_MS = 2 * 60 * 60 * 1000
 
 
-def _collect(group: str, trace_id: str, start_ms: int) -> list[str]:
-    lines = []
+def _collect(group: str, trace_id: str, start_ms: int) -> list[dict]:
+    records = []
     token = None
     while True:
         kwargs = {
@@ -40,14 +40,35 @@ def _collect(group: str, trace_id: str, start_ms: int) -> list[str]:
                 message = json.loads(ev["message"])
             except json.JSONDecodeError:
                 message = ev["message"]
-            lines.append(
-                json.dumps(
-                    {"logGroup": group, "message": message}, ensure_ascii=False
-                )
-            )
+            records.append({"logGroup": group, "message": message})
         token = resp.get("nextToken")
         if not token:
-            return lines
+            return records
+
+
+def _is_app_record(record: dict) -> bool:
+    """アプリ由来の記録だけを残す判定。
+
+    基盤側のシステムスパン(AgentCore.Runtime.Invoke、POST /invocations等)、
+    bedrock-runtime自動計装の重複記録、平文ログを落とす。
+    """
+    message = record["message"]
+    if not isinstance(message, dict):
+        return False
+    if "aws/spans" in record["logGroup"]:
+        attrs = message.get("attributes", {})
+        return (
+            attrs.get("gen_ai.system") == "strands-agents"
+            or "gate.result" in attrs
+        )
+    scope = message.get("scope", {}).get("name", "")
+    return scope.startswith("strands.")
+
+
+def _to_jsonl(records: list[dict]) -> bytes:
+    return (
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n"
+    ).encode("utf-8")
 
 
 def handler(event, context):
@@ -70,17 +91,23 @@ def handler(event, context):
 
     dumped = []
     for tid in trace_ids:
-        lines = []
+        records = []
         for group in (SPANS_GROUP, RUNTIME_GROUP):
-            lines.extend(_collect(group, tid, start_ms))
-        key = time.strftime("%Y-%m-%d/") + f"{tid}.jsonl"
-        s3.put_object(
-            Bucket=BUCKET,
-            Key=key,
-            Body=("\n".join(lines) + "\n").encode("utf-8"),
-            ContentType="application/x-ndjson",
+            records.extend(_collect(group, tid, start_ms))
+        app_records = [r for r in records if _is_app_record(r)]
+
+        # raw(全量の証跡)とapp(システム記録を削った閲覧用)の2ファイルを書く
+        prefix = time.strftime("%Y-%m-%d/")
+        for suffix, target in (("jsonl", records), ("app.jsonl", app_records)):
+            s3.put_object(
+                Bucket=BUCKET,
+                Key=f"{prefix}{tid}.{suffix}",
+                Body=_to_jsonl(target),
+                ContentType="application/x-ndjson",
+            )
+        dumped.append(
+            {"traceId": tid, "raw": len(records), "app": len(app_records)}
         )
-        dumped.append({"traceId": tid, "key": key, "records": len(lines)})
 
     print(json.dumps({"dumped": dumped}, ensure_ascii=False))
     return {"dumped": dumped}
