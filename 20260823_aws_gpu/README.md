@@ -1291,6 +1291,25 @@ aws ec2 run-instances \
   --launch-template LaunchTemplateName=anima
 ```
 
+## 2026-08-27 初画像生成に成功
+
+クォータが8で承認されました(申請16に対し、返信で提示した譲歩案どおりの部分承認です)。
+その後、以下を実施してセクション19までを完走しました。
+
+1. 起動テンプレート`anima`からg6e.2xlarge起動、SSM Online、`nvidia-smi`でL40S確認
+2. ComfyUIをvenv+pipで導入し、PyTorch 2.13.0+cu130からGPU認識を確認
+3. ComfyUIをsystemdサービス化(インスタンス起動時に自動起動)
+4. Anima Base v1.0 + Qwen3 0.6B text encoder + Qwen Image VAEを配置
+5. SSMポートフォワード経由でWindowsブラウザからComfyUIを操作し、初の二次元キャラ生成に成功
+
+### 追加のつまずきメモ
+
+- Anima配布ファイルはHugging Face `circlestone-labs/Anima` の `split_files/` 配下にあります
+- 古いテンプレは`anima-preview3-base`を指すため、UNET Loaderで`anima-base-v1.0`に差し替えます
+- ComfyUI初回ページロードはSSMトンネル越しだと1〜2分かかります(2回目以降はキャッシュで高速)
+- RunCommandでバックグラウンドプロセスを起動すると終了扱いにならないため、常駐はsystemdにします
+- uvではなくvenv+pipを使います(ComfyUI-Managerがvenv内のpip前提のため)
+
 ### つまずきメモ
 
 - 解約済みアカウントのメールアドレスは永久に再利用できません
