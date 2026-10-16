@@ -36,7 +36,7 @@ namespace の作成も deployer が行います。
 NLB (terraform 管理, public subnet, SG 付き)
    │  listener :80 → target group (instance, port 30080)
    ▼
-EKS managed node group (t3.medium x2, private subnet)
+EKS managed node group (t3.medium x1, private subnet)
    │  NodePort 30080
    ▼
 Pod (deployer が作る namespace, image は ECR)
@@ -76,7 +76,7 @@ remote state の参照は使いません。
 - VPC(10.0.0.0/16)、public subnet 2 つ、private subnet 2 つ、IGW、NAT Gateway 1 台、route table
 - EKS クラスタ。認証モードは `API`。クラスタ作成者への管理者権限自動付与は有効。コントロールプレーンのログは全て無効
 - EKS クラスタ用 IAM ロール(`AmazonEKSClusterPolicy`)
-- managed node group。t3.medium、desired 2、private subnet 配置
+- managed node group。t3.medium、desired 1、private subnet 配置。実験目的のため冗長化しません
 - node 用 IAM ロール(`AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryPullOnly`)
 - ECR リポジトリ `app`。`force_delete = true`。イメージスキャンは無効
 - NLB(internet-facing)、NLB 用 SG(80/tcp を 0.0.0.0/0 から許可)
@@ -222,7 +222,7 @@ destroy 後に残ることを許容するもの。
 | 項目 | 単価(USD/時) |
 | --- | --- |
 | EKS クラスタ | 0.10 |
-| t3.medium x2 | 0.11 |
+| t3.medium x1 | 0.054 |
 | NAT Gateway | 0.062 |
 | NLB | 0.0243 |
 
