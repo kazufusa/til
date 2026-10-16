@@ -25,7 +25,7 @@ deployer はその人物です。ECR に image を push し、kubectl で EKS �
 アクセスキーは発行しません。
 deployer の権限も同じ terraform で管理します。
 
-実験では、自分の `administrator` プロファイルから `app-deployer` にスイッチして deployer 役を演じます。
+実験では、自分の `default` プロファイルから `app-deployer` にスイッチして deployer 役を演じます。
 本番では、信頼ポリシーの「誰がスイッチできるか」をその人物のログイン identity に変えるだけです。
 
 terraform のコードは実験と本番で同一にします。
@@ -56,9 +56,9 @@ Kubernetes 側はクラウド資源を作りません。
 deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 
 リージョンは ap-northeast-1、アカウントは個人アカウントです。
-認証は IAM Identity Center の `administrator` プロファイルを使います。
+認証は IAM Identity Center の `default` プロファイル(SSO、AdministratorAccess)を使います。
 `~/.aws/config` に次の 2 プロファイルを足します。
-いずれも `source_profile = administrator` からのスイッチロールです。
+いずれも `source_profile = default` からのスイッチロールです。
 
 - `builder`: `tf-builder` ロール(申請候補の権限)
 - `deployer`: `app-deployer` ロール(deployer の権限)
@@ -105,7 +105,7 @@ DynamoDB は使いません。
 バケットは terraform の管理外です。
 作成は `scripts/create-state-bucket.sh` で行います。
 本番ではこのスクリプトをマネージャーに渡して実行してもらいます。
-実験では自分が `administrator` で実行します。
+実験では自分が `default` プロファイルで実行します。
 
 バケットの設定は、バージョニング有効、パブリックアクセス全遮断、SSE-S3 です。
 名前は `tfstate-<アカウントID>-eks-exp` とします。
@@ -180,7 +180,7 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 
 `builder/` ディレクトリでこの候補を持つ IAM ロール `tf-builder` を作ります。
 信頼ポリシーは自アカウントの principal からの assume を許可します。
-`~/.aws/config` に `role_arn` と `source_profile = administrator` のプロファイル `builder` を足します。
+`~/.aws/config` に `role_arn` と `source_profile = default` のプロファイル `builder` を足します。
 
 `tf-builder` は実験の道具です。
 自分の SSO ユーザーは AdministratorAccess を持つため、候補権限だけで足りるかを試せません。
@@ -199,7 +199,7 @@ README の申請文は次の形にします。
 ## 実験手順
 
 第 0 段は state バケットの作成です。
-`administrator` で `create-state-bucket.sh` を 1 回実行します。
+`default` プロファイルで `create-state-bucket.sh` を 1 回実行します。
 以後の全ての周回でこのバケットを使い回します。
 
 第 1 段は管理者権限での通し確認です。
