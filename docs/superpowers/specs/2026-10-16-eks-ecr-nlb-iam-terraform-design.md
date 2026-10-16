@@ -75,12 +75,16 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 │   ├── nlb.tf           # NLB, target group, listener, SG
 │   ├── deployer.tf      # deployer の IAM role, policy, Access Entry
 │   ├── variables.tf
-│   └── outputs.tf
+│   ├── outputs.tf
+│   ├── backend.tf       # backend "s3" の宣言(バケット名は書かない)
+│   └── backend.hcl.example
 ├── builder/             # 実験専用: 申請候補の権限だけを持つ IAM ロール
 ├── app/                 # deployer 役が使う Dockerfile と manifest
 └── scripts/
-    ├── check-leftovers.sh   # destroy 後の残骸チェック
-    └── preflight-destroy.sh # destroy 前の k8s 側 LoadBalancer チェック
+    ├── create-state-bucket.sh  # state 用 S3 バケット作成(管理者が実行)
+    ├── delete-state-bucket.sh  # 実験終了時にバケットを全バージョンごと削除
+    ├── check-leftovers.sh      # destroy 後の残骸チェック
+    └── preflight-destroy.sh    # destroy 前の k8s 側 LoadBalancer チェック
 ```
 
 `terraform/` が本番に持っていく本体で、state は 1 つです。
@@ -88,9 +92,25 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 builder ロールは builder 自身では作れないため、管理者が先に作ります。
 本番ではその役をマネージャーが担います。
 
-state は各ディレクトリのローカルファイルです。
-アカウント ID が state に入るため、`*.tfstate*` を `.gitignore` に追加します。
-remote state の参照は使いません。
+state は S3 に置きます。
+`terraform/` と `builder/` は同じバケットを使い、key を分けます。
+ロックは `use_lockfile = true`(Terraform 1.10 以降)で S3 だけで完結させます。
+DynamoDB は使いません。
+
+バケット名とリージョンは `backend.hcl` で渡します。
+`terraform init -backend-config=backend.hcl` で初期化します。
+`backend.hcl` は環境ごとに違うため、`.gitignore` に入れ、`backend.hcl.example` を置きます。
+`.terraform/` と `*.tfstate*` も `.gitignore` に入れます。
+
+バケットは terraform の管理外です。
+作成は `scripts/create-state-bucket.sh` で行います。
+本番ではこのスクリプトをマネージャーに渡して実行してもらいます。
+実験では自分が `administrator` で実行します。
+
+バケットの設定は、バージョニング有効、パブリックアクセス全遮断、SSE-S3 です。
+名前は `tfstate-<アカウントID>-eks-exp` とします。
+apply と destroy を何周してもバケットは残します。
+実験の最後にだけ `scripts/delete-state-bucket.sh` で全バージョンを含めて削除します。
 
 全資源に共通タグ `Project = eks-exp` を付けます。
 残骸チェックはこのタグで検索します。
@@ -155,6 +175,7 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 - elasticloadbalancing: load balancer、target group、listener の作成・削除・属性変更・参照
 - autoscaling: target group の attach/detach、ASG の参照
 - iam: role、policy の作成・削除・参照、信頼ポリシーの更新、`iam:PassRole`(EKS 用ロールに限定)、`iam:CreateServiceLinkedRole`
+- s3: state バケットに限定して `ListBucket`、`GetObject`、`PutObject`、`DeleteObject`
 - sts: `GetCallerIdentity`
 
 `builder/` ディレクトリでこの候補を持つ IAM ロール `tf-builder` を作ります。
@@ -163,16 +184,21 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 
 README の申請文は次の形にします。
 
-- 依頼内容: IAM ロール `tf-builder` を 1 つ作り、添付のポリシーを付けて、自分のログイン identity からスイッチロールできるようにしてほしい
-- 添付: 検証済みのポリシー JSON
+- 依頼内容 1: 添付のスクリプトで state 用 S3 バケットを作ってほしい
+- 依頼内容 2: IAM ロール `tf-builder` を 1 つ作り、添付のポリシーを付けて、自分のログイン identity からスイッチロールできるようにしてほしい
+- 添付: `create-state-bucket.sh`、検証済みのポリシー JSON
 - 範囲の説明: このポリシーで作れるもの、作れないもの、リソース名の prefix による限定
 - 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
 
 ## 実験手順
 
+第 0 段は state バケットの作成です。
+`administrator` で `create-state-bucket.sh` を 1 回実行します。
+以後の全ての周回でこのバケットを使い回します。
+
 第 1 段は管理者権限での通し確認です。
 
-1. `terraform/` を apply(約 20 分)
+1. `terraform/` を `backend.hcl` 付きで init し、apply(約 20 分)
 2. output の ロール ARN を `~/.aws/config` のプロファイル `deployer` に登録
 3. deployer 役として `app/` の image を build して ECR に push
 4. deployer 役として kubeconfig を生成し、namespace、Deployment、Service(NodePort 30080)を apply
@@ -199,7 +225,8 @@ README の申請文は次の形にします。
 - `aws ecr create-repository --repository-name other`
 - `aws iam list-roles`
 
-最後に全ディレクトリを destroy し、`check-leftovers.sh` を通して終了します。
+最後に全ディレクトリを destroy し、`check-leftovers.sh` を通します。
+その後 `delete-state-bucket.sh` でバケットを削除して終了します。
 
 ## 可逆性の規則
 
@@ -214,7 +241,8 @@ README の申請文は次の形にします。
 destroy 後に残ることを許容するもの。
 
 - サービスリンクロール(`AWSServiceRoleForAmazonEKS`、`AWSServiceRoleForAmazonEKSNodegroup`、`AWSServiceRoleForElasticLoadBalancing`、`AWSServiceRoleForAutoScaling`)。自動生成され、課金はありません
-- `~/.aws/config` と `~/.aws/credentials` に足したプロファイル。手で消せます
+- `~/.aws/config` に足したプロファイル。手で消せます
+- state 用 S3 バケット。実験の周回中は意図して残し、最後に `delete-state-bucket.sh` で消します
 
 `check-leftovers.sh` は次を確認します。
 
@@ -222,6 +250,9 @@ destroy 後に残ることを許容するもの。
 - EKS クラスタ、ECR リポジトリ、ELB、ASG、NAT Gateway、EIP、VPC(default 以外)がゼロ
 - IAM ロール `app-deployer`、`tf-builder`、`eks-exp-*` がゼロ
 - CloudWatch ロググループ `/aws/eks/` 配下がゼロ
+
+state バケットは周回中は残すため、`check-leftovers.sh` の対象から除きます。
+`delete-state-bucket.sh` は全オブジェクトバージョンと削除マーカーを消してからバケットを削除します。
 
 ## 検証項目
 
@@ -237,12 +268,12 @@ destroy 後に残ることを許容するもの。
 - AWS Load Balancer Controller、Ingress
 - オートスケール、監視、ログ基盤
 - 複数環境(dev/prod)の切り替え
-- remote state(S3 backend)
+- state バケットの terraform 管理(管理者がスクリプトで作る)
 
 ## 成果物
 
 - `20261016_eks_ecr_nlb_iam_terraform/` 一式(terraform、builder、scripts、app)
-- README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台、実験ログ
+- README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台(バケット作成スクリプトの渡し方を含む)、実験ログ
 
 ## コストと所要時間
 
