@@ -32,9 +32,15 @@ terraform のコードは実験と本番で同一にします。
 差は変数(アカウント、プロファイル、ノード数)だけです。
 destroy は実験の操作であり、本番では行いません。
 
-EKS クラスタはこの作業専用です。
-そのため deployer には Kubernetes 側の全権(cluster-admin)を渡します。
-namespace の作成も deployer が行います。
+役割分担は AWS の推奨に合わせます。
+cluster-admin は platform(builder)だけが持ちます。
+deployer は namespace `app` に限定した edit 権限を持ちます。
+namespace と ResourceQuota は builder が terraform で作ります。
+
+IAM の方針も推奨に合わせます。
+IAM ユーザーではなくロールを使い、長期キーは発行しません。
+資源名の接頭辞(`eks-exp-*`、`app-*`)で IAM の対象を限定します。
+EKS の認可は aws-auth ConfigMap ではなく Access Entry で行います。
 
 ## 構成
 
@@ -48,7 +54,7 @@ NLB (terraform 管理, public subnet, SG 付き)
 EKS managed node group (t3.medium x1, private subnet)
    │  NodePort 30080
    ▼
-Pod (deployer が作る namespace, image は ECR)
+Pod (namespace app, image は ECR)
 ```
 
 NLB、target group、SG は全て terraform が持ちます。
@@ -74,6 +80,7 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 │   ├── ecr.tf           # ECR repository
 │   ├── nlb.tf           # NLB, target group, listener, SG
 │   ├── deployer.tf      # deployer の IAM role, policy, Access Entry
+│   ├── namespace.tf     # namespace app と ResourceQuota(kubernetes provider)
 │   ├── variables.tf
 │   ├── outputs.tf
 │   ├── backend.tf       # backend "s3" の宣言(バケット名は書かない)
@@ -138,7 +145,12 @@ KMS のカスタマーキーは使いません。削除に待機期間がある�
 - IAM ロール `app-deployer`。信頼ポリシーは変数 `deployer_trusted_principals` に列挙した ARN からの `sts:AssumeRole` を許可
 - カスタマー管理ポリシー `app-deployer-policy`(下記)をロールにアタッチ
 - EKS Access Entry(principal は上記ロール)
-- Access Policy の関連付け。`AmazonEKSClusterAdminPolicy`、スコープは cluster
+- Access Policy の関連付け。`AmazonEKSEditPolicy`、スコープは namespace(変数 `deployer_namespaces`、既定 `["app"]`)
+- namespace `app`(kubernetes provider で作成。認証は `aws eks get-token` の exec)
+- namespace `app` の ResourceQuota。`services.loadbalancers = 0`、`persistentvolumeclaims = 0`
+
+ResourceQuota は、deployer が terraform 外のクラウド資源(ELB、EBS)を作れないようにする仕組みです。
+edit 権限では ResourceQuota を変更できません。
 
 実験では `deployer_trusted_principals` に自分の administrator ロールの ARN を入れます。
 本番ではその人物のログイン identity(SSO のロールまたは IAM ユーザー)の ARN に変えます。
@@ -155,9 +167,8 @@ deployer の IAM ポリシーは次の 3 文です。
 deployer は AWS 側ではこれ以外の操作ができません。
 ノード、NLB、VPC の変更はできません。
 
-Kubernetes 側は cluster-admin のため、Service type=LoadBalancer で ELB を作れてしまいます。
-これは terraform 外の資源になり、destroy を妨げます。
-対策として、README に禁止事項として明記し、destroy 前に `preflight-destroy.sh` で検出します。
+Service type=LoadBalancer は ResourceQuota で namespace `app` では作れません。
+cluster-admin である builder 自身が他の namespace で作る事故に備え、destroy 前に `preflight-destroy.sh` で検出します。
 
 output は `app-deployer` ロールの ARN です。
 deployer にはこの ARN を渡し、スイッチロール先として設定してもらいます。
@@ -230,6 +241,11 @@ README の申請文は次の形にします。
 - `aws eks list-clusters`(DescribeCluster は許可、List は不許可)
 - `aws ecr create-repository --repository-name other`
 - `aws iam list-roles`
+- `kubectl get namespaces`、`kubectl create namespace x`
+- `kubectl -n kube-system get pods`
+- `kubectl -n app expose deploy web --type=LoadBalancer`(ResourceQuota 超過で拒否)
+
+同時に、namespace `app` での Deployment と Service(NodePort)の作成は許可されることを確認します。
 
 最後に全ディレクトリを destroy し、`check-leftovers.sh` を通します。
 その後 `delete-state-bucket.sh` でバケットを削除して終了します。
@@ -264,7 +280,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 - NLB の URL に curl して Pod の応答が返る
 - プロファイル `deployer` で ECR push と kubectl apply が成功する
-- プロファイル `deployer` で第 4 段の操作が全て AccessDenied になる
+- プロファイル `deployer` で第 4 段の AWS 操作が全て AccessDenied、Kubernetes 操作が Forbidden または quota 超過になる
 - プロファイル `builder` で `terraform/` の apply と destroy が最後まで通る
 - destroy 後に `check-leftovers.sh` が異常ゼロで終わる
 
