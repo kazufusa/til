@@ -85,22 +85,26 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 │   ├── outputs.tf
 │   ├── backend.tf       # backend "s3" の宣言(バケット名は書かない)
 │   └── backend.hcl.example
-├── builder/             # 実験専用: 申請候補の権限だけを持つ IAM ロール
+├── bootstrap/           # マネージャーに渡す一式。aws コマンドだけで terraform を使わない
+│   ├── tf-builder-policy.json  # builder に付与する権限(実験で確定した JSON)
+│   ├── create-state-bucket.sh  # state 用 S3 バケット作成
+│   ├── create-builder-role.sh  # ポリシー作成、tf-builder ロール作成、信頼ポリシー、アタッチ
+│   ├── delete-builder-role.sh  # ロールとポリシーの撤去
+│   └── delete-state-bucket.sh  # バケットを全バージョンごと削除
 ├── app/                 # deployer 役が使う Dockerfile と manifest
-└── scripts/
-    ├── create-state-bucket.sh  # state 用 S3 バケット作成(管理者が実行)
-    ├── delete-state-bucket.sh  # 実験終了時にバケットを全バージョンごと削除
+└── scripts/             # 実験専用
     ├── check-leftovers.sh      # destroy 後の残骸チェック
     └── preflight-destroy.sh    # destroy 前の k8s 側 LoadBalancer チェック
 ```
 
 `terraform/` が本番に持っていく本体で、state は 1 つです。
-`builder/` だけ別 state です。
-builder ロールは builder 自身では作れないため、管理者が先に作ります。
-本番ではその役をマネージャーが担います。
+
+`bootstrap/` は段 0(ブートストラップ)です。
+terraform を回すロールとその state の置き場は、terraform 自身では作れません。
+マネージャーは terraform を使えないため、段 0 は全て aws コマンドのスクリプトにします。
+実験では自分が管理者としてこのスクリプトを実行し、本番で渡すものと同じ手順を検証します。
 
 state は S3 に置きます。
-`terraform/` と `builder/` は同じバケットを使い、key を分けます。
 ロックは `use_lockfile = true`(Terraform 1.10 以降)で S3 だけで完結させます。
 DynamoDB は使いません。
 
@@ -110,14 +114,14 @@ DynamoDB は使いません。
 `.terraform/` と `*.tfstate*` も `.gitignore` に入れます。
 
 バケットは terraform の管理外です。
-作成は `scripts/create-state-bucket.sh` で行います。
+作成は `bootstrap/create-state-bucket.sh` で行います。
 本番ではこのスクリプトをマネージャーに渡して実行してもらいます。
 実験では自分が `default` プロファイルで実行します。
 
 バケットの設定は、バージョニング有効、パブリックアクセス全遮断、SSE-S3 です。
 名前は `tfstate-<アカウントID>-eks-exp` とします。
 apply と destroy を何周してもバケットは残します。
-実験の最後にだけ `scripts/delete-state-bucket.sh` で全バージョンを含めて削除します。
+実験の最後にだけ `bootstrap/delete-state-bucket.sh` で全バージョンを含めて削除します。
 
 全資源に共通タグ `Project = eks-exp` を付けます。
 残骸チェックはこのタグで検索します。
@@ -189,8 +193,9 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 - s3: state バケットに限定して `ListBucket`、`GetObject`、`PutObject`、`DeleteObject`
 - sts: `GetCallerIdentity`
 
-`builder/` ディレクトリでこの候補を持つ IAM ロール `tf-builder` を作ります。
-信頼ポリシーは自アカウントの principal からの assume を許可します。
+`bootstrap/create-builder-role.sh` でこの候補を持つ IAM ロール `tf-builder` を作ります。
+引数はスイッチを許可する principal の ARN です。
+スクリプトは `tf-builder-policy.json` からカスタマー管理ポリシーを作り、ロールを作り、アタッチします。
 `~/.aws/config` に `role_arn` と `source_profile = default` のプロファイル `builder` を足します。
 
 `tf-builder` は実験の道具です。
@@ -201,9 +206,9 @@ terraform のコードはどちらでも同じで、認証プロファイルの�
 
 README の申請文は次の形にします。
 
-- 依頼内容 1: 添付のスクリプトで state 用 S3 バケットを作ってほしい
-- 依頼内容 2: 添付のポリシーを自分に付けてほしい。自分のログイン identity への直接付与でも、スイッチロール先のロール新設でもよい
-- 添付: `create-state-bucket.sh`、検証済みのポリシー JSON
+- 依頼内容 1: `create-state-bucket.sh` を実行してバケットを作ってほしい
+- 依頼内容 2: `create-builder-role.sh <自分の identity の ARN>` を実行して `tf-builder` ロールを作ってほしい。ロールを作らず自分の identity に `tf-builder-policy.json` を直接付けてもよい
+- 添付: `bootstrap/` 一式(スクリプト 4 本と検証済みのポリシー JSON)
 - 範囲の説明: このポリシーで作れるもの、作れないもの、リソース名の prefix による限定
 - 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
 
@@ -229,7 +234,7 @@ README の申請文は次の形にします。
 
 第 3 段は builder 権限の検証です。
 
-1. 管理者で `builder/` を apply し、プロファイル `builder` を用意
+1. 管理者で `bootstrap/create-builder-role.sh` を実行し、プロファイル `builder` を用意
 2. プロファイル `builder` で第 1 段と第 2 段を繰り返す
 3. AccessDenied が出たら候補ポリシーに Action を足して再試行
 4. 通ったポリシー JSON を README に確定版として載せる
@@ -247,7 +252,7 @@ README の申請文は次の形にします。
 
 同時に、namespace `app` での Deployment と Service(NodePort)の作成は許可されることを確認します。
 
-最後に全ディレクトリを destroy し、`check-leftovers.sh` を通します。
+最後に `terraform/` を destroy し、`delete-builder-role.sh` でロールを消し、`check-leftovers.sh` を通します。
 その後 `delete-state-bucket.sh` でバケットを削除して終了します。
 
 ## 可逆性の規則
@@ -294,7 +299,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 ## 成果物
 
-- `20261016_eks_ecr_nlb_iam_terraform/` 一式(terraform、builder、scripts、app)
+- `20261016_eks_ecr_nlb_iam_terraform/` 一式(terraform、bootstrap、scripts、app)
 - README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台(バケット作成スクリプトの渡し方を含む)、実験ログ
 
 ## コストと所要時間
