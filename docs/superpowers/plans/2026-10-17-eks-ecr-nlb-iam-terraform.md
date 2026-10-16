@@ -4,7 +4,7 @@
 
 **Goal:** terraform で EKS、ECR、NLB、deployer ロールを作る本番同等のコードと、実験で検証済みの権限リスト 2 つ(builder の申請用、deployer の付与用)を作ります。
 
-**Architecture:** 1 つの terraform ルート(`terraform/`)が VPC、EKS、node group、ECR、NLB、deployer の IAM ロールと Access Entry を持ちます。state は管理者がスクリプトで作る S3 バケットに置きます。実験専用の `builder/` が申請候補の権限だけを持つロールを作り、そのロールで本体を apply/destroy して権限を確定させます。
+**Architecture:** 1 つの terraform ルート(`terraform/`)が VPC、EKS、node group、ECR、NLB、deployer の IAM ロール、Access Entry、namespace と ResourceQuota を持ちます。段 0(state バケットと、terraform を回す `tf-builder` ロール)は terraform を使えないマネージャー向けに aws コマンドのスクリプト(`bootstrap/`)にし、実験では自分が管理者として同じスクリプトを実行して検証します。`tf-builder` で本体を apply/destroy して申請権限を確定させます。
 
 **Tech Stack:** Terraform 1.15(backend s3 + use_lockfile)、hashicorp/aws provider 6 系、hashicorp/kubernetes provider 2 系、AWS CLI v2(SSO)、kubectl 1.34、docker、jq、bash
 
@@ -20,6 +20,7 @@
 - deployer の Kubernetes 権限は `AmazonEKSEditPolicy` を namespace `app` に限定。namespace と ResourceQuota(`services.loadbalancers=0`、`persistentvolumeclaims=0`)は terraform が作る
 - cluster-admin は builder(クラスタ作成者)だけ。deployer に cluster スコープの権限を付けない
 - state バケット名は `tfstate-<アカウントID>-eks-exp`、タグは `Project = eks-exp-state`(残骸チェックの対象外にするため値を変える)
+- `bootstrap/` は aws コマンドだけで書く(マネージャーは terraform を使えない)。`terraform/` は本番と実験で同一
 - EKS コントロールプレーンログは全て無効、KMS カスタマーキーは使わない、アカウント設定・Service Quotas・Identity Center・Organizations・CloudTrail・AWS Config は触らない
 - 日本語文書は `~/.claude/CLAUDE.md` の規約(ですます調、一文 60 字目安、強調表現なし、見出しは体言止め)に従う
 - commit に Co-Authored-By と Generated with は書かない
@@ -29,8 +30,8 @@
 
 - NLB のヘルスチェックが node SG の「NLB SG 参照」ルールで通らず、curl がタイムアウトする。期待は target が `healthy` になること。Task 10 の Step 7 で `describe-target-health` を確認し、`unhealthy` のときは Task 4 の代替ルール(VPC CIDR からの 30080 許可)に切り替える
 - `deployer_trusted_principals` に `arn:aws:sts::...:assumed-role/...` を渡すと IAM が `Invalid principal` で失敗する。期待は plan 時に分かりやすく落ちること。Task 5 の変数 validation で `arn:aws:iam::` 始まりを強制し、Task 10 の Step 3 で ARN 変換を手順化する
-- `create-state-bucket.sh` を 2 回実行すると `BucketAlreadyOwnedByYou` で落ちる。期待は冪等に成功すること。Task 7 の Step 1 で `head-bucket` による存在確認を入れる
-- `preflight-destroy.sh` が別クラスタの kubeconfig を見て「問題なし」と答える。期待は対象クラスタ以外なら拒否すること。Task 7 の Step 4 で current-context の ARN にクラスタ名が含まれることを確認する
+- `create-state-bucket.sh` を 2 回実行すると `BucketAlreadyOwnedByYou` で落ちる。期待は冪等に成功すること。Task 6 の Step 2 で `head-bucket` による存在確認を入れる
+- `preflight-destroy.sh` が別クラスタの kubeconfig を見て「問題なし」と答える。期待は対象クラスタ以外なら拒否すること。Task 7 の Step 2 で current-context の ARN にクラスタ名が含まれることを確認する
 - ECR に image が残ったまま destroy すると `RepositoryNotEmptyException` で止まる。期待は `force_delete = true` で消えること。Task 11 の Step 3 は image を push したまま destroy して確認する
 - kubernetes provider がクラスタ作成前の plan で接続先不明のまま namespace を計画し、apply 中に認証エラーで止まる。期待は 1 回の apply で通ること。Task 10 の Step 6 に、失敗時は `-target=aws_eks_cluster.main` で先にクラスタだけ作ってから全体を apply する回避手順を置く
 
@@ -825,52 +826,20 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: deployerロール(namespace�
 
 ---
 
-### Task 6: builder ロール(実験専用)
+### Task 6: bootstrap(マネージャーに渡す段 0 の一式)
 
 **Files:**
-- Create: `20261016_eks_ecr_nlb_iam_terraform/builder/versions.tf`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/builder/backend.tf`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/builder/backend.hcl.example`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/builder/main.tf`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/builder/policy.json`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/builder/terraform.tfvars.example`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/create-state-bucket.sh`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/delete-state-bucket.sh`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/create-builder-role.sh`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/delete-builder-role.sh`
 
 **Interfaces:**
-- Consumes: なし(管理者が単独で apply する)
-- Produces: IAM ロール `tf-builder`、output `builder_role_arn`。`policy.json` は README に貼る申請用 JSON の原本
+- Consumes: 環境変数 `AWS_PROFILE`(未指定なら `default`)、`AWS_REGION`(未指定なら `ap-northeast-1`)。terraform は使わない
+- Produces: `create-state-bucket.sh` はバケット名を stdout に出す。`create-builder-role.sh <principal-arn>...` は `tf-builder` のロール ARN を stdout に出す。どちらも 2 回実行しても成功する(冪等)。`tf-builder-policy.json` は README に貼る申請用 JSON の原本
 
-- [ ] **Step 1: versions.tf、backend.tf、backend.hcl.example を作る**
-
-```hcl
-# builder/versions.tf
-terraform {
-  required_version = ">= 1.10"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.0"
-    }
-  }
-}
-```
-
-```hcl
-# builder/backend.tf
-terraform {
-  backend "s3" {}
-}
-```
-
-```hcl
-# builder/backend.hcl.example
-bucket       = "tfstate-<ACCOUNT_ID>-eks-exp"
-key          = "builder/terraform.tfstate"
-region       = "ap-northeast-1"
-use_lockfile = true
-```
-
-- [ ] **Step 2: policy.json を作る(申請候補の初版)**
+- [ ] **Step 1: tf-builder-policy.json を作る(申請候補の初版)**
 
 ```json
 {
@@ -1060,105 +1029,8 @@ use_lockfile = true
 }
 ```
 
-- [ ] **Step 3: main.tf と terraform.tfvars.example を作る**
 
-```hcl
-# builder/main.tf
-provider "aws" {
-  region = "ap-northeast-1"
-
-  default_tags {
-    tags = {
-      Project = "eks-exp"
-    }
-  }
-}
-
-variable "trusted_principals" {
-  description = "tf-builder にスイッチできる IAM principal の ARN"
-  type        = list(string)
-
-  validation {
-    condition = alltrue([
-      for arn in var.trusted_principals :
-      can(regex("^arn:aws:iam::[0-9]{12}:(role|user)/", arn))
-    ])
-    error_message = "各要素は arn:aws:iam::<account>:role/... または :user/... の形式にしてください。"
-  }
-}
-
-data "aws_iam_policy_document" "assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "AWS"
-      identifiers = var.trusted_principals
-    }
-  }
-}
-
-resource "aws_iam_role" "builder" {
-  name               = "tf-builder"
-  description        = "Candidate permissions for running terraform/ (experiment only)"
-  assume_role_policy = data.aws_iam_policy_document.assume.json
-}
-
-resource "aws_iam_policy" "builder" {
-  name   = "tf-builder-policy"
-  policy = file("${path.module}/policy.json")
-}
-
-resource "aws_iam_role_policy_attachment" "builder" {
-  role       = aws_iam_role.builder.name
-  policy_arn = aws_iam_policy.builder.arn
-}
-
-output "builder_role_arn" {
-  value = aws_iam_role.builder.arn
-}
-```
-
-```hcl
-# builder/terraform.tfvars.example
-trusted_principals = [
-  "arn:aws:iam::<ACCOUNT_ID>:role/<ROLE_NAME>",
-]
-```
-
-- [ ] **Step 4: JSON の構文と validate を通す**
-
-Run:
-```bash
-cd 20261016_eks_ecr_nlb_iam_terraform/builder
-jq empty policy.json && echo "json ok"
-terraform init -backend=false
-terraform fmt -check -recursive && terraform validate
-```
-Expected: `json ok` と `Success! The configuration is valid.`
-
-- [ ] **Step 5: commit**
-
-```bash
-git add 20261016_eks_ecr_nlb_iam_terraform/builder/
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: 申請候補の権限を持つtf-builderロール(実験用)を追加"
-```
-
----
-
-### Task 7: 運用スクリプト
-
-**Files:**
-- Create: `20261016_eks_ecr_nlb_iam_terraform/scripts/create-state-bucket.sh`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/scripts/delete-state-bucket.sh`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/scripts/check-leftovers.sh`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/scripts/preflight-destroy.sh`
-
-**Interfaces:**
-- Consumes: 環境変数 `AWS_PROFILE`(未指定なら `default`)、`AWS_REGION`(未指定なら `ap-northeast-1`)
-- Produces: `create-state-bucket.sh` はバケット名を stdout に出す。`check-leftovers.sh` と `preflight-destroy.sh` は残骸があれば終了コード 1
-
-- [ ] **Step 1: create-state-bucket.sh を作る(冪等)**
+- [ ] **Step 2: create-state-bucket.sh を作る(冪等)**
 
 ```bash
 #!/usr/bin/env bash
@@ -1202,7 +1074,8 @@ aws s3api put-bucket-tagging \
 echo "$BUCKET"
 ```
 
-- [ ] **Step 2: delete-state-bucket.sh を作る(全バージョン削除)**
+
+- [ ] **Step 3: delete-state-bucket.sh を作る(全バージョン削除)**
 
 ```bash
 #!/usr/bin/env bash
@@ -1236,7 +1109,126 @@ aws s3api delete-bucket --bucket "$BUCKET"
 echo "deleted bucket: $BUCKET"
 ```
 
-- [ ] **Step 3: check-leftovers.sh を作る**
+
+- [ ] **Step 4: create-builder-role.sh を作る(冪等。ポリシーは新バージョンとして更新)**
+
+```bash
+#!/usr/bin/env bash
+# terraform を回すロール tf-builder を作る。マネージャーが管理者権限で実行する。
+# 使い方: bootstrap/create-builder-role.sh <スイッチを許可する principal の ARN> [ARN...]
+#   例: bootstrap/create-builder-role.sh arn:aws:iam::123456789012:role/aws-reserved/sso.amazonaws.com/ap-northeast-1/AWSReservedSSO_Foo_abc
+# 2 回目以降は、ポリシーを新バージョンに更新し、信頼ポリシーを置き換える。
+set -euo pipefail
+
+[[ $# -ge 1 ]] || { echo "usage: $0 <principal-arn> [principal-arn...]" >&2; exit 1; }
+DIR="$(cd "$(dirname "$0")" && pwd)"
+ROLE="tf-builder"
+POLICY="tf-builder-policy"
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY}"
+
+principals="$(printf '"%s",' "$@")"
+trust="$(cat <<EOF
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":[${principals%,}]},"Action":"sts:AssumeRole"}]}
+EOF
+)"
+
+if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+  # カスタマー管理ポリシーはバージョンを 5 つまでしか持てないので、古い非既定版を 1 つ消してから足す
+  n="$(aws iam list-policy-versions --policy-arn "$POLICY_ARN" --query 'length(Versions)' --output text)"
+  if [[ "$n" -ge 5 ]]; then
+    old="$(aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+      --query 'Versions[?IsDefaultVersion==`false`] | sort_by(@, &CreateDate) | [0].VersionId' --output text)"
+    aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$old"
+  fi
+  aws iam create-policy-version --policy-arn "$POLICY_ARN" \
+    --policy-document "file://${DIR}/tf-builder-policy.json" --set-as-default >/dev/null
+  echo "updated policy: $POLICY_ARN" >&2
+else
+  aws iam create-policy --policy-name "$POLICY" \
+    --policy-document "file://${DIR}/tf-builder-policy.json" \
+    --tags Key=Project,Value=eks-exp >/dev/null
+  echo "created policy: $POLICY_ARN" >&2
+fi
+
+if aws iam get-role --role-name "$ROLE" >/dev/null 2>&1; then
+  aws iam update-assume-role-policy --role-name "$ROLE" --policy-document "$trust"
+  echo "updated trust policy: $ROLE" >&2
+else
+  aws iam create-role --role-name "$ROLE" \
+    --assume-role-policy-document "$trust" \
+    --description "Runs terraform/ for eks-exp" \
+    --tags Key=Project,Value=eks-exp >/dev/null
+  echo "created role: $ROLE" >&2
+fi
+
+aws iam attach-role-policy --role-name "$ROLE" --policy-arn "$POLICY_ARN"
+echo "arn:aws:iam::${ACCOUNT_ID}:role/${ROLE}"
+```
+
+- [ ] **Step 5: delete-builder-role.sh を作る**
+
+```bash
+#!/usr/bin/env bash
+# tf-builder ロールとポリシーを消す。無ければ何もしない。
+set -euo pipefail
+
+ROLE="tf-builder"
+POLICY="tf-builder-policy"
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY}"
+
+if aws iam get-role --role-name "$ROLE" >/dev/null 2>&1; then
+  for arn in $(aws iam list-attached-role-policies --role-name "$ROLE" \
+      --query 'AttachedPolicies[].PolicyArn' --output text); do
+    aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$arn"
+  done
+  aws iam delete-role --role-name "$ROLE"
+  echo "deleted role: $ROLE" >&2
+fi
+
+if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+  for v in $(aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+      --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text); do
+    aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$v"
+  done
+  aws iam delete-policy --policy-arn "$POLICY_ARN"
+  echo "deleted policy: $POLICY_ARN" >&2
+fi
+```
+
+- [ ] **Step 6: 構文チェック**
+
+Run:
+```bash
+cd 20261016_eks_ecr_nlb_iam_terraform/bootstrap
+chmod +x ./*.sh
+jq empty tf-builder-policy.json && echo "json ok"
+for f in ./*.sh; do bash -n "$f" && echo "syntax ok: $f"; done
+./create-builder-role.sh; echo "exit=$?"
+```
+Expected: `json ok`、4 本とも `syntax ok`、引数なしの `create-builder-role.sh` は usage を出して `exit=1`(AWS は叩かない)。
+
+- [ ] **Step 7: commit**
+
+```bash
+git add 20261016_eks_ecr_nlb_iam_terraform/bootstrap/
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: マネージャーに渡すbootstrap一式(stateバケット、tf-builderロール)を追加"
+```
+
+---
+
+### Task 7: 実験用スクリプト
+
+**Files:**
+- Create: `20261016_eks_ecr_nlb_iam_terraform/scripts/check-leftovers.sh`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/scripts/preflight-destroy.sh`
+
+**Interfaces:**
+- Consumes: 環境変数 `AWS_PROFILE`、`AWS_REGION`、kubeconfig の current-context
+- Produces: どちらも残骸があれば終了コード 1
+
+- [ ] **Step 1: check-leftovers.sh を作る**
 
 ```bash
 #!/usr/bin/env bash
@@ -1303,7 +1295,8 @@ fi
 echo "RESULT: clean"
 ```
 
-- [ ] **Step 4: preflight-destroy.sh を作る**
+
+- [ ] **Step 2: preflight-destroy.sh を作る**
 
 ```bash
 #!/usr/bin/env bash
@@ -1336,7 +1329,8 @@ fi
 echo "preflight ok: no LoadBalancer services, no PVCs"
 ```
 
-- [ ] **Step 5: 実行権限と構文チェック**
+
+- [ ] **Step 3: 実行権限と構文チェック**
 
 Run:
 ```bash
@@ -1344,9 +1338,9 @@ cd 20261016_eks_ecr_nlb_iam_terraform/scripts
 chmod +x ./*.sh
 for f in ./*.sh; do bash -n "$f" && echo "syntax ok: $f"; done
 ```
-Expected: 4 本とも `syntax ok`。
+Expected: 2 本とも `syntax ok`。
 
-- [ ] **Step 6: check-leftovers.sh を現状のアカウントで実行する(クリーンであることの基準点)**
+- [ ] **Step 4: check-leftovers.sh を現状のアカウントで実行する(クリーンであることの基準点)**
 
 この step から AWS を叩きます。先に `aws sso login` を済ませます。
 
@@ -1358,11 +1352,11 @@ scripts/check-leftovers.sh
 ```
 Expected: 全行 `ok`、最後に `RESULT: clean`。前回の実験(20260823_aws_gpu)の残骸が出たら、それは本実験の対象外なので README の実験ログに「実験前から存在」と記録し、`check-leftovers.sh` の結果の比較基準にします。
 
-- [ ] **Step 7: commit**
+- [ ] **Step 5: commit**
 
 ```bash
 git add 20261016_eks_ecr_nlb_iam_terraform/scripts/
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: stateバケット作成/削除、残骸チェック、destroy前チェックのスクリプトを追加"
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: 残骸チェックとdestroy前チェックのスクリプトを追加"
 ```
 
 ---
@@ -1524,11 +1518,14 @@ terraform 1.10 以上、aws cli v2、kubectl、docker、jq
 
 ## 手順(builder)
 
-### 0. state バケット
+### 0. 段 0(マネージャーが実行)
 
 ```bash
-scripts/create-state-bucket.sh
+bootstrap/create-state-bucket.sh
+bootstrap/create-builder-role.sh <builder のログイン identity の ARN>
 ```
+
+バケット名とロール ARN を builder に伝えてもらいます。
 
 ### 1. backend と tfvars
 
@@ -1585,18 +1582,20 @@ namespace `app` の外は見えません。namespace の作成、ノードの参
 Service type=LoadBalancer と PersistentVolumeClaim は ResourceQuota で 0 に制限されています。
 terraform の外にクラウド資源ができるのを防ぐためです。
 
-## 片付け(builder、実験のみ)
+## 片付け(実験のみ)
 
 ```bash
 aws eks update-kubeconfig --name eks-exp
 scripts/preflight-destroy.sh
-cd terraform && terraform destroy
+(cd terraform && terraform destroy)
+bootstrap/delete-builder-role.sh
 scripts/check-leftovers.sh
+bootstrap/delete-state-bucket.sh
 ```
 
 ## builder の権限(申請用)
 
-(Task 12 で確定版の JSON に差し替える。初版は builder/policy.json と同じ)
+(Task 12 で確定版の JSON に差し替える。初版は bootstrap/tf-builder-policy.json と同じ)
 
 ## deployer の権限(terraform 管理)
 
@@ -1659,8 +1658,8 @@ Expected: `RESULT: clean`(Task 7 Step 6 と同じ結果)。
 
 Run:
 ```bash
-scripts/create-state-bucket.sh
-scripts/create-state-bucket.sh   # 2 回目は "bucket already exists" で成功する
+bootstrap/create-state-bucket.sh
+bootstrap/create-state-bucket.sh   # 2 回目は "bucket already exists" で成功する
 ```
 Expected: 2 回ともバケット名が stdout に出て終了コード 0。
 
@@ -1873,31 +1872,24 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第2段(可逆性の確認)�
 ### Task 12: 第 3 段(builder 権限の検証と確定)
 
 **Files:**
-- Modify: `20261016_eks_ecr_nlb_iam_terraform/builder/policy.json`(足りない Action を追記)
+- Modify: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json`(足りない Action を追記)
 - Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(確定版 JSON、実験ログ)
-- Create(gitignore 済): `builder/backend.hcl`、`builder/terraform.tfvars`
 - Modify: `~/.aws/config`(プロファイル `builder` を追加)
 
 **Interfaces:**
-- Consumes: Task 6 の `builder/`、Task 10〜11 の手順
-- Produces: 検証済みの `builder/policy.json`、README の「builder の権限(申請用)」確定版
+- Consumes: Task 6 の `bootstrap/`、Task 10〜11 の手順
+- Produces: 検証済みの `bootstrap/tf-builder-policy.json`、README の「builder の権限(申請用)」確定版
 
-- [ ] **Step 1: 管理者で builder/ を apply する**
+- [ ] **Step 1: 管理者(マネージャー役)で tf-builder を作る**
 
 Run:
 ```bash
-cd 20261016_eks_ecr_nlb_iam_terraform/builder
+cd 20261016_eks_ecr_nlb_iam_terraform
 export AWS_PROFILE=default
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-sed "s/<ACCOUNT_ID>/${ACCOUNT_ID}/" backend.hcl.example > backend.hcl
-cat > terraform.tfvars <<EOF
-trusted_principals = ["<Task 10 Step 3 の IAM ロール ARN>"]
-EOF
-terraform init -backend-config=backend.hcl
-terraform apply
-terraform output -raw builder_role_arn
+bootstrap/create-builder-role.sh "<Task 10 Step 3 の IAM ロール ARN>"
+bootstrap/create-builder-role.sh "<同じ ARN>"   # 2 回目は updated で成功する(冪等の確認)
 ```
-Expected: `arn:aws:iam::<ACCOUNT_ID>:role/tf-builder`。
+Expected: 2 回とも最後に `arn:aws:iam::<ACCOUNT_ID>:role/tf-builder` が出る。1 回目は `created`、2 回目は `updated`。
 
 - [ ] **Step 2: builder プロファイルを足して確認する**
 
@@ -1918,7 +1910,7 @@ Expected: `arn:aws:sts::<ACCOUNT_ID>:assumed-role/tf-builder/...`。
 
 Run:
 ```bash
-cd ../terraform
+cd terraform
 export AWS_PROFILE=builder
 terraform init -backend-config=backend.hcl -reconfigure
 terraform apply 2>&1 | tee /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/builder-apply-1.log
@@ -1928,11 +1920,11 @@ Expected: 理想は `Apply complete!`。AccessDenied が出たら、`not authori
 
 - [ ] **Step 4: 足りない Action を policy.json に足して再試行**
 
-Step 3 で出た Action を、該当する Sid の `Action` 配列に追加します(IAM 系はリソースを `eks-exp-*` / `app-deployer` に限定したまま)。その後:
+Step 3 で出た Action を、`bootstrap/tf-builder-policy.json` の該当する Sid の `Action` 配列に追加します(IAM 系はリソースを `eks-exp-*` / `app-deployer` に限定したまま)。その後、マネージャー役でポリシーを更新し、builder で続きを apply します。
 
 ```bash
-cd ../builder && AWS_PROFILE=default terraform apply
-cd ../terraform && AWS_PROFILE=builder terraform apply
+(cd .. && AWS_PROFILE=default bootstrap/create-builder-role.sh "<IAM ロール ARN>")
+AWS_PROFILE=builder terraform apply
 ```
 
 `Apply complete!` が出るまで Step 3〜4 を繰り返します。IAM の反映に数秒かかるので、同じエラーが続いたら 10 秒待って再実行します。
@@ -1954,14 +1946,14 @@ terraform destroy 2>&1 | tee /tmp/claude-1000/-home-kazufusa-src-github-com-kazu
 grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' "$_" | sort -u
 AWS_PROFILE=default ../scripts/check-leftovers.sh
 ```
-Expected: `Destroy complete!`、残骸チェックは `tf-builder` ロールと `tf-builder-policy` だけが `LEFTOVER`(次の Step で消す)。AccessDenied が出たら Step 4 と同じ要領で足し、管理者で残りを destroy してから Step 3 からやり直します。
+Expected: `Destroy complete!`、残骸チェックは `tf-builder` ロールと `tf-builder-policy`(タグ Project=eks-exp を持つ)だけが `LEFTOVER`(Task 13 で消す)。AccessDenied が出たら Step 4 と同じ要領で足し、管理者で残りを destroy してから Step 3 からやり直します。
 
-- [ ] **Step 7: policy.json を確定版として README に転記する**
+- [ ] **Step 7: tf-builder-policy.json を確定版として README に転記する**
 
 Run:
 ```bash
-cd ../builder
-jq . policy.json > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/policy-final.json
+cd ../bootstrap
+jq . tf-builder-policy.json > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/policy-final.json
 ```
 
 README の「builder の権限(申請用)」を、この JSON のコードブロックと、次の 3 項目の説明に差し替えます。
@@ -1976,7 +1968,7 @@ README の「builder の権限(申請用)」を、この JSON のコードブロ
 
 ```bash
 cd /home/kazufusa/src/github.com/kazufusa/til
-git add 20261016_eks_ecr_nlb_iam_terraform/builder/policy.json 20261016_eks_ecr_nlb_iam_terraform/README.md
+git add 20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json 20261016_eks_ecr_nlb_iam_terraform/README.md
 git commit -m "20261016_eks_ecr_nlb_iam_terraform: builder権限をtf-builderロールで検証し確定版をREADMEに記載"
 ```
 
@@ -2050,16 +2042,16 @@ export AWS_PROFILE=builder
 aws eks update-kubeconfig --name eks-exp --alias eks-exp-builder
 ../scripts/preflight-destroy.sh
 terraform destroy
-cd ../builder && AWS_PROFILE=default terraform destroy
-cd .. && AWS_PROFILE=default scripts/check-leftovers.sh
+cd .. && AWS_PROFILE=default bootstrap/delete-builder-role.sh
+AWS_PROFILE=default scripts/check-leftovers.sh
 ```
-Expected: 2 回とも `Destroy complete!`、`RESULT: clean`。
+Expected: `Destroy complete!`、`deleted role: tf-builder`、`deleted policy: ...`、`RESULT: clean`。
 
 - [ ] **Step 5: state バケットを消す**
 
 Run:
 ```bash
-AWS_PROFILE=default scripts/delete-state-bucket.sh
+AWS_PROFILE=default bootstrap/delete-state-bucket.sh
 aws s3 ls --profile default | grep -c tfstate || echo "no state bucket"
 ```
 Expected: `deleted bucket: tfstate-<ACCOUNT_ID>-eks-exp`、`no state bucket`。
@@ -2080,7 +2072,7 @@ kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-id
 次を書き加えます。
 
 - 実験ログ: 第 4 段の結果(Step 2〜3 の出力)、最終 destroy とバケット削除の結果
-- 申請文のたたき台: 依頼 1(`scripts/create-state-bucket.sh` を実行してバケット名を教えてほしい)、依頼 2(確定版 JSON を自分に付与してほしい。直接付与でもスイッチロール先のロール新設でもよい)、範囲の説明、期間と撤去
+- 申請文のたたき台: 依頼 1(`bootstrap/create-state-bucket.sh` を実行してバケット名を教えてほしい)、依頼 2(`bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行してロール ARN を教えてほしい。ロールを作らず `tf-builder-policy.json` を自分の identity に直接付けてもよい)、範囲の説明、期間と撤去(`delete-builder-role.sh` で消せる)
 - deployer への引き渡し文: `deployer_role_arn` と手順(deployer)の節への案内
 
 文書規約の確認:
