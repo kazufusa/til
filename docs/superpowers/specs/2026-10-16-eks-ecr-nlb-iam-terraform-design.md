@@ -182,10 +182,16 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 信頼ポリシーは自アカウントの principal からの assume を許可します。
 `~/.aws/config` に `role_arn` と `source_profile = administrator` のプロファイル `builder` を足します。
 
+`tf-builder` は実験の道具です。
+自分の SSO ユーザーは AdministratorAccess を持つため、候補権限だけで足りるかを試せません。
+Identity Center は触らないと決めたので、候補権限だけを持つロールを別に作って検証します。
+本番でロールを作るか、自分の identity に直接付与するかは、マネージャーの流儀に任せます。
+terraform のコードはどちらでも同じで、認証プロファイルの設定だけが変わります。
+
 README の申請文は次の形にします。
 
 - 依頼内容 1: 添付のスクリプトで state 用 S3 バケットを作ってほしい
-- 依頼内容 2: IAM ロール `tf-builder` を 1 つ作り、添付のポリシーを付けて、自分のログイン identity からスイッチロールできるようにしてほしい
+- 依頼内容 2: 添付のポリシーを自分に付けてほしい。自分のログイン identity への直接付与でも、スイッチロール先のロール新設でもよい
 - 添付: `create-state-bucket.sh`、検証済みのポリシー JSON
 - 範囲の説明: このポリシーで作れるもの、作れないもの、リソース名の prefix による限定
 - 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
