@@ -6,7 +6,7 @@
 
 **Architecture:** 1 つの terraform ルート(`terraform/`)が VPC、EKS、node group、ECR、NLB、deployer の IAM ロールと Access Entry を持ちます。state は管理者がスクリプトで作る S3 バケットに置きます。実験専用の `builder/` が申請候補の権限だけを持つロールを作り、そのロールで本体を apply/destroy して権限を確定させます。
 
-**Tech Stack:** Terraform 1.15(backend s3 + use_lockfile)、hashicorp/aws provider 6 系、AWS CLI v2(SSO)、kubectl 1.34、docker、jq、bash
+**Tech Stack:** Terraform 1.15(backend s3 + use_lockfile)、hashicorp/aws provider 6 系、hashicorp/kubernetes provider 2 系、AWS CLI v2(SSO)、kubectl 1.34、docker、jq、bash
 
 **Spec:** `docs/superpowers/specs/2026-10-16-eks-ecr-nlb-iam-terraform-design.md`
 
@@ -17,6 +17,8 @@
 - 全資源に `Project = eks-exp` タグ(provider の `default_tags`)
 - クラスタ名 `eks-exp`、IAM ロール名は `eks-exp-cluster`、`eks-exp-node`、`app-deployer`、`tf-builder`、ポリシー名は `app-deployer-policy`、`tf-builder-policy`
 - ECR リポジトリ名 `app`、NodePort は `30080`、ノードは `t3.medium` x1
+- deployer の Kubernetes 権限は `AmazonEKSEditPolicy` を namespace `app` に限定。namespace と ResourceQuota(`services.loadbalancers=0`、`persistentvolumeclaims=0`)は terraform が作る
+- cluster-admin は builder(クラスタ作成者)だけ。deployer に cluster スコープの権限を付けない
 - state バケット名は `tfstate-<アカウントID>-eks-exp`、タグは `Project = eks-exp-state`(残骸チェックの対象外にするため値を変える)
 - EKS コントロールプレーンログは全て無効、KMS カスタマーキーは使わない、アカウント設定・Service Quotas・Identity Center・Organizations・CloudTrail・AWS Config は触らない
 - 日本語文書は `~/.claude/CLAUDE.md` の規約(ですます調、一文 60 字目安、強調表現なし、見出しは体言止め)に従う
@@ -29,7 +31,8 @@
 - `deployer_trusted_principals` に `arn:aws:sts::...:assumed-role/...` を渡すと IAM が `Invalid principal` で失敗する。期待は plan 時に分かりやすく落ちること。Task 5 の変数 validation で `arn:aws:iam::` 始まりを強制し、Task 10 の Step 3 で ARN 変換を手順化する
 - `create-state-bucket.sh` を 2 回実行すると `BucketAlreadyOwnedByYou` で落ちる。期待は冪等に成功すること。Task 7 の Step 1 で `head-bucket` による存在確認を入れる
 - `preflight-destroy.sh` が別クラスタの kubeconfig を見て「問題なし」と答える。期待は対象クラスタ以外なら拒否すること。Task 7 の Step 4 で current-context の ARN にクラスタ名が含まれることを確認する
-- ECR に image が残ったまま destroy すると `RepositoryNotEmptyException` で止まる。期待は `force_delete = true` で消えること。Task 11 の Step 2 は image を push したまま destroy して確認する
+- ECR に image が残ったまま destroy すると `RepositoryNotEmptyException` で止まる。期待は `force_delete = true` で消えること。Task 11 の Step 3 は image を push したまま destroy して確認する
+- kubernetes provider がクラスタ作成前の plan で接続先不明のまま namespace を計画し、apply 中に認証エラーで止まる。期待は 1 回の apply で通ること。Task 10 の Step 6 に、失敗時は `-target=aws_eks_cluster.main` で先にクラスタだけ作ってから全体を apply する回避手順を置く
 
 ---
 
@@ -45,7 +48,7 @@
 
 **Interfaces:**
 - Consumes: なし
-- Produces: 変数 `region`、`cluster_name`、`node_count`、`ecr_repository_name`、`deployer_trusted_principals`。`locals.name_prefix = var.cluster_name`。data `aws_caller_identity.current`、`aws_availability_zones.available`
+- Produces: 変数 `region`、`cluster_name`、`node_count`、`ecr_repository_name`、`deployer_trusted_principals`、`deployer_namespaces`。`locals.name_prefix = var.cluster_name`。data `aws_caller_identity.current`、`aws_availability_zones.available`。provider `kubernetes`(Task 3 の `aws_eks_cluster.main` を参照するので、main.tf の provider ブロックは Task 3 で有効になる)
 
 - [ ] **Step 1: .gitignore を作る**
 
@@ -71,6 +74,10 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 6.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.35"
     }
   }
 }
@@ -139,6 +146,17 @@ variable "deployer_trusted_principals" {
     error_message = "各要素は arn:aws:iam::<account>:role/... または :user/... の形式にしてください。"
   }
 }
+
+variable "deployer_namespaces" {
+  description = "deployer が edit 権限を持つ namespace。terraform がこの namespace と ResourceQuota を作る"
+  type        = list(string)
+  default     = ["app"]
+
+  validation {
+    condition     = length(var.deployer_namespaces) >= 1
+    error_message = "deployer_namespaces は 1 つ以上必要です。"
+  }
+}
 ```
 
 - [ ] **Step 5: main.tf を作る**
@@ -171,6 +189,8 @@ locals {
   azs         = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 ```
+
+kubernetes provider のブロックは `aws_eks_cluster.main` を参照するため、Task 3 で eks.tf と同時に main.tf に追記します(この Task では書かない)。
 
 - [ ] **Step 6: init(backend なし)と validate を通す**
 
@@ -430,20 +450,38 @@ resource "aws_eks_node_group" "main" {
 }
 ```
 
-- [ ] **Step 2: validate を通す**
+- [ ] **Step 2: main.tf に kubernetes provider を追記する**
+
+```hcl
+# terraform/main.tf に追記
+# builder はクラスタ作成者として cluster-admin を持つので、そのまま namespace を作れる
+provider "kubernetes" {
+  host                   = aws_eks_cluster.main.endpoint
+  cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.main.name, "--region", var.region]
+  }
+}
+```
+
+- [ ] **Step 3: validate を通す**
 
 Run:
 ```bash
 cd 20261016_eks_ecr_nlb_iam_terraform/terraform
+terraform init -backend=false -upgrade
 terraform fmt -check -recursive && terraform validate
 ```
-Expected: `Success! The configuration is valid.`
+Expected: `Success! The configuration is valid.`(kubernetes provider が追加されるので `-upgrade` 付きで init し直す)
 
-- [ ] **Step 3: commit**
+- [ ] **Step 4: commit**
 
 ```bash
-git add 20261016_eks_ecr_nlb_iam_terraform/terraform/eks.tf
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: EKSクラスタとmanaged node groupを追加"
+git add 20261016_eks_ecr_nlb_iam_terraform/terraform/eks.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/main.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/.terraform.lock.hcl
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: EKSクラスタとmanaged node group、kubernetes providerを追加"
 ```
 
 ---
@@ -588,16 +626,17 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: ECRとNLB(NodePort向けtarge
 
 ---
 
-### Task 5: deployer ロールと output
+### Task 5: deployer ロール、namespace、output
 
 **Files:**
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/deployer.tf`
+- Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/namespace.tf`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/outputs.tf`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/terraform.tfvars.example`
 
 **Interfaces:**
-- Consumes: `var.deployer_trusted_principals`、`aws_ecr_repository.app.arn`、`aws_eks_cluster.main.arn`
-- Produces: `aws_iam_role.deployer.arn`、output `cluster_name`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`region`
+- Consumes: `var.deployer_trusted_principals`、`var.deployer_namespaces`、`aws_ecr_repository.app.arn`、`aws_eks_cluster.main.arn`、provider `kubernetes`
+- Produces: `aws_iam_role.deployer.arn`、`kubernetes_namespace.deployer[*]`、output `cluster_name`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_namespaces`、`region`、`node_port`
 
 - [ ] **Step 1: deployer.tf を作る**
 
@@ -667,20 +706,60 @@ resource "aws_eks_access_entry" "deployer" {
   type          = "STANDARD"
 }
 
+# namespace 限定の edit。RBAC や ResourceQuota の変更はできない
 resource "aws_eks_access_policy_association" "deployer" {
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = aws_iam_role.deployer.arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
 
   access_scope {
-    type = "cluster"
+    type       = "namespace"
+    namespaces = var.deployer_namespaces
   }
 
   depends_on = [aws_eks_access_entry.deployer]
 }
 ```
 
-- [ ] **Step 2: outputs.tf を作る**
+- [ ] **Step 2: namespace.tf を作る**
+
+```hcl
+# terraform/namespace.tf
+# deployer の namespace は platform(builder)が作る。
+# ResourceQuota で、terraform 外にクラウド資源(ELB、EBS)ができる経路を塞ぐ。
+resource "kubernetes_namespace" "deployer" {
+  for_each = toset(var.deployer_namespaces)
+
+  metadata {
+    name = each.value
+
+    labels = {
+      "managed-by" = "terraform"
+    }
+  }
+
+  # node group より先に消そうとすると API が応答しない場合があるため、cluster 本体に依存させる
+  depends_on = [aws_eks_node_group.main]
+}
+
+resource "kubernetes_resource_quota" "no_cloud_resources" {
+  for_each = toset(var.deployer_namespaces)
+
+  metadata {
+    name      = "no-cloud-resources"
+    namespace = kubernetes_namespace.deployer[each.key].metadata[0].name
+  }
+
+  spec {
+    hard = {
+      "services.loadbalancers"  = "0"
+      "persistentvolumeclaims"  = "0"
+    }
+  }
+}
+```
+
+- [ ] **Step 3: outputs.tf を作る**
 
 ```hcl
 # terraform/outputs.tf
@@ -710,9 +789,14 @@ output "node_port" {
   description = "deployer の Service が使う nodePort"
   value       = local.node_port
 }
+
+output "deployer_namespaces" {
+  description = "deployer が edit 権限を持つ namespace"
+  value       = var.deployer_namespaces
+}
 ```
 
-- [ ] **Step 3: terraform.tfvars.example を作る**
+- [ ] **Step 4: terraform.tfvars.example を作る**
 
 ```hcl
 # terraform/terraform.tfvars.example
@@ -723,7 +807,7 @@ deployer_trusted_principals = [
 ]
 ```
 
-- [ ] **Step 4: validate を通す**
+- [ ] **Step 5: validate を通す**
 
 Run:
 ```bash
@@ -732,11 +816,11 @@ terraform fmt -check -recursive && terraform validate
 ```
 Expected: `Success! The configuration is valid.`
 
-- [ ] **Step 5: commit**
+- [ ] **Step 6: commit**
 
 ```bash
-git add 20261016_eks_ecr_nlb_iam_terraform/terraform/deployer.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/outputs.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/terraform.tfvars.example
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: deployerロール/ポリシー/Access Entryとoutputを追加"
+git add 20261016_eks_ecr_nlb_iam_terraform/terraform/deployer.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/namespace.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/outputs.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/terraform.tfvars.example
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: deployerロール(namespace限定edit)、namespaceとResourceQuota、outputを追加"
 ```
 
 ---
@@ -1292,7 +1376,7 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: stateバケット作成/削�
 
 **Interfaces:**
 - Consumes: output `ecr_repository_url`(image 名の置換に使う)
-- Produces: コンテナは 8080 で HTTP 応答。manifest は namespace `app`、Deployment `web`、Service `web`(NodePort 30080)。image は `IMAGE_PLACEHOLDER` を sed で置換する
+- Produces: コンテナは 8080 で HTTP 応答。manifest は Deployment `web` と Service `web`(NodePort 30080)。namespace `app` は terraform が作るので manifest に含めない。image は `IMAGE_PLACEHOLDER` を sed で置換する
 
 - [ ] **Step 1: Dockerfile と index.html を作る**
 
@@ -1319,11 +1403,7 @@ CMD ["httpd", "-f", "-p", "8080", "-h", "/www"]
 # app/k8s.yaml
 # apply 前に IMAGE_PLACEHOLDER を ECR の image URL に置換する:
 #   sed "s|IMAGE_PLACEHOLDER|${IMAGE}|" app/k8s.yaml | kubectl apply -f -
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: app
----
+# namespace app は terraform(namespace.tf)が作る。deployer は namespace を作れない。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1385,7 +1465,7 @@ Run:
 cd 20261016_eks_ecr_nlb_iam_terraform
 sed "s|IMAGE_PLACEHOLDER|example.invalid/app:v1|" app/k8s.yaml | kubectl apply --dry-run=client -f - 
 ```
-Expected: `namespace/app created (dry run)`、`deployment.apps/web created (dry run)`、`service/web created (dry run)` の 3 行。kubeconfig が無いと失敗するので、その場合は `kubectl apply --dry-run=client --validate=false` ではなく、Task 10 の Step 9 で実クラスタに対して確認する。
+Expected: `deployment.apps/web created (dry run)`、`service/web created (dry run)` の 2 行。kubeconfig が無いと失敗するので、その場合は `kubectl apply --dry-run=client --validate=false` ではなく、Task 10 の Step 9 で実クラスタに対して確認する。
 
 - [ ] **Step 5: commit**
 
@@ -1418,10 +1498,21 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: deployer役が使うサンプ
 
 ## 役割
 
-| 役割 | 誰 | やること | 認証 |
-| --- | --- | --- | --- |
-| builder | 自分 | terraform apply/destroy | 本番: 申請した権限 / 実験: `tf-builder` にスイッチ |
-| deployer | その人物 | ECR push、kubectl apply | `app-deployer` にスイッチ |
+| 役割 | 誰 | やること | AWS 側の権限 | Kubernetes 側の権限 |
+| --- | --- | --- | --- | --- |
+| platform(builder) | 自分 | terraform apply/destroy、namespace と quota の管理 | 申請した権限(実験では `tf-builder`) | cluster-admin(クラスタ作成者) |
+| deployer | その人物 | ECR push、namespace `app` への kubectl apply | ECR `app` への push と `eks:DescribeCluster` | namespace `app` の edit |
+
+## 設計の方針
+
+AWS の推奨に合わせた点を列挙します。
+
+- IAM ユーザーではなくロールを使い、長期のアクセスキーを発行しない
+- 権限は最小にし、IAM の対象は資源名の接頭辞(`eks-exp-*`、`app-*`)で限定する
+- EKS の認可は aws-auth ConfigMap ではなく Access Entry で行う
+- cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
+- namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
+- deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
 
 ## 構成
 
@@ -1488,10 +1579,11 @@ sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -f -
 kubectl -n app rollout status deploy/web
 ```
 
-### 4. 禁止事項
+### 4. できないこと
 
-Service type=LoadBalancer と PersistentVolumeClaim は作らないでください。
-terraform の外にクラウド資源ができ、builder が環境を戻せなくなります。
+namespace `app` の外は見えません。namespace の作成、ノードの参照、他 namespace の Pod の参照は Forbidden になります。
+Service type=LoadBalancer と PersistentVolumeClaim は ResourceQuota で 0 に制限されています。
+terraform の外にクラウド資源ができるのを防ぐためです。
 
 ## 片付け(builder、実験のみ)
 
@@ -1620,7 +1712,16 @@ terraform plan -out=tfplan
 terraform apply tfplan
 terraform output
 ```
-Expected: 約 15〜20 分で完了。output に `cluster_name = "eks-exp"`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`node_port = 30080` が出る。
+Expected: 約 15〜20 分で完了。output に `cluster_name = "eks-exp"`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_namespaces = ["app"]`、`node_port = 30080` が出る。
+
+kubernetes provider の接続エラー(`Unauthorized`、`connection refused`、`cluster has no endpoint`)で止まった場合は、クラスタだけ先に作ってから全体を apply します。
+
+```bash
+terraform apply -target=aws_eks_cluster.main
+terraform apply
+```
+
+この回避を使ったかどうかを実験ログに書きます。
 
 - [ ] **Step 7: NLB の target が登録されていることを確認する**
 
@@ -1666,12 +1767,13 @@ Run:
 ```bash
 export AWS_PROFILE=deployer
 aws eks update-kubeconfig --name eks-exp --alias eks-exp-deployer
-kubectl get nodes
-sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -f -
+kubectl get nodes; echo "exit=$?"
+kubectl -n app get resourcequota
+sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
 kubectl -n app rollout status deploy/web --timeout=120s
 kubectl -n app get pod,svc
 ```
-Expected: `kubectl get nodes` でノード 1 台が `Ready`。`deployment "web" successfully rolled out`。Service `web` の `PORT(S)` が `80:30080/TCP`。
+Expected: `kubectl get nodes` は `Forbidden` で `exit=1`(deployer は cluster スコープを見られない)。ResourceQuota `no-cloud-resources` が表示される。`deployment "web" successfully rolled out`。Service `web` の `PORT(S)` が `80:30080/TCP`。
 
 - [ ] **Step 11: 外部 URL で応答を確認する**
 
@@ -1716,17 +1818,21 @@ Expected: `preflight ok: no LoadBalancer services, no PVCs`。
 
 - [ ] **Step 2: preflight が LoadBalancer を検出することを確認する(陰性対照)**
 
+namespace `app` は ResourceQuota で LoadBalancer を作れないので、quota の無い `default` namespace に管理者として作ります。
+
 Run:
 ```bash
-kubectl -n app expose deploy web --name=web-lb --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n app expose deploy web --name=web-lb --type=LoadBalancer --port=80 --target-port=8080; echo "exit=$?"
+kubectl -n default create deploy nc --image=public.ecr.aws/docker/library/busybox:1.36 -- sleep 3600
+kubectl -n default expose deploy nc --name=nc-lb --type=LoadBalancer --port=80
 sleep 5
 scripts/preflight-destroy.sh; echo "exit=$?"
-kubectl -n app delete svc web-lb
+kubectl -n default delete svc nc-lb deploy nc
 sleep 60   # in-tree controller が CLB を消すのを待つ
 aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerName' --output text
 aws elb describe-load-balancers --query 'LoadBalancerDescriptions[].LoadBalancerName' --output text
 ```
-Expected: preflight が `app/web-lb` を出して `exit=1`。削除後、elbv2 には `eks-exp-nlb` のみ、elb(classic)は空。classic が残っていれば `aws elb delete-load-balancer --load-balancer-name <name>` で消し、実験ログに記録する。
+Expected: 最初の `expose` は `exceeded quota: no-cloud-resources` で `exit=1`(quota が効いている)。preflight が `default/nc-lb` を出して `exit=1`。削除後、elbv2 には `eks-exp-nlb` のみ、elb(classic)は空。classic が残っていれば `aws elb delete-load-balancer --load-balancer-name <name>` で消し、実験ログに記録する。
 
 - [ ] **Step 3: image を残したまま destroy する**
 
@@ -1913,16 +2019,28 @@ aws eks describe-cluster --name eks-exp --query cluster.status --output text
 ```
 Expected: 5 つとも `AccessDenied` か `UnauthorizedOperation` か `not authorized`。最後だけ `ACTIVE`。
 
-- [ ] **Step 3: deployer が Kubernetes では全権であることを確認する**
+- [ ] **Step 3: deployer の Kubernetes 側の境界を確認する**
 
 Run:
 ```bash
 aws eks update-kubeconfig --name eks-exp --alias eks-exp-deployer
+echo "--- 許可されるべき"
+kubectl -n app auth can-i create deployments
+kubectl -n app auth can-i create services
+kubectl -n app auth can-i delete pods
+echo "--- 拒否されるべき"
 kubectl auth can-i create namespaces
-kubectl auth can-i '*' '*' --all-namespaces
-kubectl create namespace scratch && kubectl delete namespace scratch
+kubectl auth can-i list nodes
+kubectl -n kube-system auth can-i list pods
+kubectl -n app auth can-i update resourcequotas
+kubectl -n app auth can-i create rolebindings
+kubectl get namespaces; echo "exit=$?"
+echo "--- quota で拒否されるべき"
+kubectl -n app create deploy nc --image=public.ecr.aws/docker/library/busybox:1.36 -- sleep 3600
+kubectl -n app expose deploy nc --name=nc-lb --type=LoadBalancer --port=80; echo "exit=$?"
+kubectl -n app delete deploy nc
 ```
-Expected: `yes`、`yes`、namespace の作成と削除が成功。
+Expected: 許可側は 3 つとも `yes`。拒否側は 5 つとも `no`、`kubectl get namespaces` は `Forbidden` で `exit=1`。quota 側は `exceeded quota: no-cloud-resources` で `exit=1`。
 
 - [ ] **Step 4: builder で destroy し、残骸チェックを通す**
 
