@@ -1035,7 +1035,7 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: deployerロール(namespace�
 ```bash
 #!/usr/bin/env bash
 # state 用 S3 バケットを作る。2 回実行しても成功する。
-# 使い方: scripts/create-state-bucket.sh [bucket-name]
+# 使い方: bootstrap/create-state-bucket.sh [bucket-name]
 set -euo pipefail
 
 REGION="${AWS_REGION:-ap-northeast-1}"
@@ -1080,7 +1080,7 @@ echo "$BUCKET"
 ```bash
 #!/usr/bin/env bash
 # state 用 S3 バケットを、全オブジェクトバージョンと削除マーカーごと消す。
-# 使い方: scripts/delete-state-bucket.sh [bucket-name]
+# 使い方: bootstrap/delete-state-bucket.sh [bucket-name]
 set -euo pipefail
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
