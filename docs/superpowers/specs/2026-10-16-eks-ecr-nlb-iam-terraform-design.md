@@ -21,7 +21,11 @@ builder は自分です。terraform apply/destroy で環境を作り、壊しま
 
 deployer はその人物です。ECR に image を push し、kubectl で EKS を操作します。
 本番では IAM ユーザーとアクセスキーを渡す運用を想定します。
-deployer の権限は terraform(`access/`)で全て管理します。
+deployer の権限も同じ terraform で管理します。
+
+terraform のコードは実験と本番で同一にします。
+差は変数(アカウント、プロファイル、ノード数)だけです。
+destroy は実験の操作であり、本番では行いません。
 
 EKS クラスタはこの作業専用です。
 そのため deployer には Kubernetes 側の全権(cluster-admin)を渡します。
@@ -54,24 +58,34 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 ```
 20261016_eks_ecr_nlb_iam_terraform/
 ├── README.md            # 手順、権限リスト、申請文
-├── builder/             # 検証用: 申請候補の権限だけを持つ IAM ロール
-├── platform/            # VPC, EKS, node group, ECR, NLB
-├── access/              # deployer の IAM ユーザー, ポリシー, Access Entry
+├── terraform/           # 本番に持っていく本体(1 つの state)
+│   ├── network.tf       # VPC, subnet, IGW, NAT, route table
+│   ├── eks.tf           # EKS cluster, node group, IAM role
+│   ├── ecr.tf           # ECR repository
+│   ├── nlb.tf           # NLB, target group, listener, SG
+│   ├── deployer.tf      # deployer の IAM user, policy, Access Entry
+│   ├── variables.tf
+│   └── outputs.tf
+├── builder/             # 実験専用: 申請候補の権限だけを持つ IAM ロール
 ├── app/                 # deployer 役が使う Dockerfile と manifest
 └── scripts/
     ├── check-leftovers.sh   # destroy 後の残骸チェック
     └── preflight-destroy.sh # destroy 前の k8s 側 LoadBalancer チェック
 ```
 
+`terraform/` が本番に持っていく本体で、state は 1 つです。
+`builder/` だけ別 state です。
+builder ロールは builder 自身では作れないため、管理者が先に作ります。
+本番ではその役をマネージャーが担います。
+
 state は各ディレクトリのローカルファイルです。
 アクセスキーが state に入るため、`*.tfstate*` を `.gitignore` に追加します。
-ディレクトリ間の受け渡しは、クラスタ名などの固定値を変数で揃えます。
 remote state の参照は使いません。
 
 全資源に共通タグ `Project = eks-exp` を付けます。
 残骸チェックはこのタグで検索します。
 
-## platform の資源
+## 基盤の資源
 
 - VPC(10.0.0.0/16)、public subnet 2 つ、private subnet 2 つ、IGW、NAT Gateway 1 台、route table
 - EKS クラスタ。認証モードは `API`。クラスタ作成者への管理者権限自動付与は有効。コントロールプレーンのログは全て無効
@@ -89,7 +103,7 @@ output はクラスタ名、NLB の DNS 名、ECR リポジトリ URL です。
 コントロールプレーンのログを無効にするのは、CloudWatch ロググループを残さないためです。
 KMS のカスタマーキーは使いません。削除に待機期間があるためです。
 
-## access の資源
+## deployer の資源
 
 - IAM ユーザー `app-deployer` とアクセスキー 1 組
 - カスタマー管理ポリシー `app-deployer-policy`(下記)をユーザーにアタッチ
@@ -144,17 +158,16 @@ README の申請文は次の形にします。
 
 第 1 段は管理者権限での通し確認です。
 
-1. `platform/` を apply(約 20 分)
-2. `access/` を apply
-3. deployer のキーを `~/.aws/credentials` のプロファイル `deployer` に登録
-4. deployer 役として `app/` の image を build して ECR に push
-5. deployer 役として kubeconfig を生成し、namespace、Deployment、Service(NodePort 30080)を apply
-6. NLB の URL に curl し、Pod の応答を確認
+1. `terraform/` を apply(約 20 分)
+2. deployer のキーを `~/.aws/credentials` のプロファイル `deployer` に登録
+3. deployer 役として `app/` の image を build して ECR に push
+4. deployer 役として kubeconfig を生成し、namespace、Deployment、Service(NodePort 30080)を apply
+5. NLB の URL に curl し、Pod の応答を確認
 
 第 2 段は可逆性の確認です。
 
 1. `preflight-destroy.sh` で k8s 側の LoadBalancer が無いことを確認
-2. `access/` を destroy、次に `platform/` を destroy
+2. `terraform/` を destroy
 3. `check-leftovers.sh` で残骸が無いことを確認
 
 第 3 段は builder 権限の検証です。
@@ -201,7 +214,7 @@ destroy 後に残ることを許容するもの。
 - NLB の URL に curl して Pod の応答が返る
 - deployer のキーで ECR push と kubectl apply が成功する
 - deployer のキーで第 4 段の操作が全て AccessDenied になる
-- プロファイル `builder` で platform/access の apply と destroy が最後まで通る
+- プロファイル `builder` で `terraform/` の apply と destroy が最後まで通る
 - destroy 後に `check-leftovers.sh` が異常ゼロで終わる
 
 ## 対象外
@@ -214,7 +227,7 @@ destroy 後に残ることを許容するもの。
 
 ## 成果物
 
-- `20261016_eks_ecr_nlb_iam_terraform/` 一式(terraform、scripts、app)
+- `20261016_eks_ecr_nlb_iam_terraform/` 一式(terraform、builder、scripts、app)
 - README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台、実験ログ
 
 ## コストと所要時間
