@@ -135,16 +135,35 @@
         "iam:UpdateAssumeRolePolicy",
         "iam:TagRole",
         "iam:UntagRole",
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy",
-        "iam:PutRolePolicy",
-        "iam:DeleteRolePolicy",
         "iam:PassRole"
       ],
       "Resource": [
         "arn:aws:iam::*:role/eks-exp-*",
         "arn:aws:iam::*:role/app-deployer"
       ]
+    },
+    {
+      "Sid": "IamAttachOnlyKnownPolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/eks-exp-*",
+        "arn:aws:iam::*:role/app-deployer"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+            "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+            "arn:aws:iam::*:policy/app-deployer-policy"
+          ]
+        }
+      }
     },
     {
       "Sid": "IamPoliciesScoped",
