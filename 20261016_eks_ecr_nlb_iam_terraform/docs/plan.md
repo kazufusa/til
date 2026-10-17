@@ -8,7 +8,7 @@
 
 **Tech Stack:** Terraform 1.15(backend s3 + use_lockfile)、hashicorp/aws provider 6 系、hashicorp/kubernetes provider 2 系、AWS CLI v2(SSO)、kubectl 1.34、docker、jq、bash
 
-**Spec:** `docs/superpowers/specs/2026-10-16-eks-ecr-nlb-iam-terraform-design.md`
+**Spec:** `20261016_eks_ecr_nlb_iam_terraform/docs/design.md`
 
 ## Global Constraints
 
