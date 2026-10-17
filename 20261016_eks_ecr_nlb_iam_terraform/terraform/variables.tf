@@ -51,3 +51,9 @@ variable "deployer_namespaces" {
     error_message = "deployer_namespaces は 1 つ以上必要です。"
   }
 }
+
+variable "aws_profile" {
+  description = "AWS CLI プロファイル名。null なら環境の既定を使う。実験で builder を指定するために使う"
+  type        = string
+  default     = null
+}

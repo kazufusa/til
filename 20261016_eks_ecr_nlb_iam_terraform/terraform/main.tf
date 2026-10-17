@@ -1,5 +1,6 @@
 provider "aws" {
-  region = var.region
+  region  = var.region
+  profile = var.aws_profile
 
   default_tags {
     tags = {
@@ -44,6 +45,9 @@ provider "kubernetes" {
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", aws_eks_cluster.main.name, "--region", var.region]
+    args = concat(
+      ["eks", "get-token", "--cluster-name", aws_eks_cluster.main.name, "--region", var.region],
+      var.aws_profile == null ? [] : ["--profile", var.aws_profile],
+    )
   }
 }
