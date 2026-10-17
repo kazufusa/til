@@ -8,6 +8,7 @@ AWS 上に次の環境を terraform で組み、何度でも完全に戻せる�
 
 - 外部から HTTP で到達できる URL(NLB の DNS 名)
 - その URL で応答する EKS 上の Pod
+- Pod からインターネットへのアウトバウンド通信(NAT Gateway 経由、送信元は固定 EIP)
 - Pod の image を置く ECR リポジトリ
 - 特定の人物が image を push し、kubectl でデプロイできる権限
 
@@ -59,6 +60,9 @@ Pod (namespace app, image は ECR)
 
 NLB、target group、SG は全て terraform が持ちます。
 Kubernetes 側はクラウド資源を作りません。
+
+Pod の外向き通信は private subnet のルートテーブルで NAT Gateway に向けます。
+送信元 IP は NAT Gateway の EIP に固定されるため、通信先で許可リストに入れられます。
 deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 
 リージョンは ap-northeast-1、アカウントは個人アカウントです。
@@ -225,6 +229,7 @@ README の申請文は次の形にします。
 3. deployer 役として `app/` の image を build して ECR に push
 4. deployer 役として kubeconfig を生成し、namespace、Deployment、Service(NodePort 30080)を apply
 5. NLB の URL に curl し、Pod の応答を確認
+6. Pod の中から外部サイトに接続し、送信元 IP が NAT Gateway の EIP と一致することを確認
 
 第 2 段は可逆性の確認です。
 
@@ -284,6 +289,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 ## 検証項目
 
 - NLB の URL に curl して Pod の応答が返る
+- Pod の中から `checkip.amazonaws.com` に到達でき、返る IP が NAT Gateway の EIP と一致する
 - プロファイル `deployer` で ECR push と kubectl apply が成功する
 - プロファイル `deployer` で第 4 段の AWS 操作が全て AccessDenied、Kubernetes 操作が Forbidden または quota 超過になる
 - プロファイル `builder` で `terraform/` の apply と destroy が最後まで通る

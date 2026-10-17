@@ -28,6 +28,7 @@
 
 ## Review Focus
 
+- Pod からの外向き通信が失敗する(private route table の既定経路漏れ、NAT が `available` になる前にノードが起動)。期待は Pod から `checkip.amazonaws.com` に到達し NAT の EIP が返ること。Task 10 の Step 11b で確認する
 - NLB のヘルスチェックが node SG の「NLB SG 参照」ルールで通らず、curl がタイムアウトする。期待は target が `healthy` になること。Task 10 の Step 7 で `describe-target-health` を確認し、`unhealthy` のときは Task 4 の代替ルール(VPC CIDR からの 30080 許可)に切り替える
 - `deployer_trusted_principals` に `arn:aws:sts::...:assumed-role/...` を渡すと IAM が `Invalid principal` で失敗する。期待は plan 時に分かりやすく落ちること。Task 5 の変数 validation で `arn:aws:iam::` 始まりを強制し、Task 10 の Step 3 で ARN 変換を手順化する
 - `create-state-bucket.sh` を 2 回実行すると `BucketAlreadyOwnedByYou` で落ちる。期待は冪等に成功すること。Task 6 の Step 2 で `head-bucket` による存在確認を入れる
@@ -637,7 +638,7 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: ECRとNLB(NodePort向けtarge
 
 **Interfaces:**
 - Consumes: `var.deployer_trusted_principals`、`var.deployer_namespaces`、`aws_ecr_repository.app.arn`、`aws_eks_cluster.main.arn`、provider `kubernetes`
-- Produces: `aws_iam_role.deployer.arn`、`kubernetes_namespace.deployer[*]`、output `cluster_name`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_namespaces`、`region`、`node_port`
+- Produces: `aws_iam_role.deployer.arn`、`kubernetes_namespace.deployer[*]`、output `cluster_name`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_namespaces`、`region`、`node_port`、`nat_public_ip`
 
 - [ ] **Step 1: deployer.tf を作る**
 
@@ -794,6 +795,11 @@ output "node_port" {
 output "deployer_namespaces" {
   description = "deployer が edit 権限を持つ namespace"
   value       = var.deployer_namespaces
+}
+
+output "nat_public_ip" {
+  description = "Pod の外向き通信の送信元 IP(通信先の許可リスト用)"
+  value       = aws_eip.nat.public_ip
 }
 ```
 
@@ -1784,9 +1790,21 @@ curl -s --max-time 10 "http://${NLB}/" | grep -o 'hello from eks-exp'
 ```
 Expected: `healthy`、`hello from eks-exp`。`unhealthy` のままで curl がタイムアウトする場合は、Task 4 Step 2 の代替ルール(VPC CIDR からの 30080 許可)に差し替えて `terraform apply` し、再確認する。NLB の DNS 伝播で最初の 1〜2 分は名前解決に失敗することがある。
 
+- [ ] **Step 11b: Pod からのアウトバウンド通信を確認する**
+
+Run:
+```bash
+export AWS_PROFILE=deployer
+NAT_IP=$(cd terraform && AWS_PROFILE=default terraform output -raw nat_public_ip)
+POD_IP=$(kubectl -n app exec deploy/web -- wget -qO- -T 5 http://checkip.amazonaws.com/)
+echo "nat=${NAT_IP} seen_from_pod=${POD_IP}"
+[[ "$NAT_IP" == "$POD_IP" ]] && echo "outbound ok via NAT"
+```
+Expected: `outbound ok via NAT`。busybox の `wget` は HTTP のみ対応なので `http://` を使う。失敗したら private route table の `0.0.0.0/0 → nat` と NAT Gateway の `available` を確認する。
+
 - [ ] **Step 12: 実験ログを README に追記して commit**
 
-README の「実験ログ」に、日付、apply の所要時間、Step 7 と Step 11 の結果、SG ルールを差し替えたかどうかを書きます。
+README の「実験ログ」に、日付、apply の所要時間、Step 7 と Step 11 と Step 11b の結果、SG ルールを差し替えたかどうかを書きます。
 
 ```bash
 git add README.md
@@ -1931,7 +1949,7 @@ AWS_PROFILE=builder terraform apply
 
 - [ ] **Step 5: builder で第 1 段の deployer 手順を通す**
 
-Task 10 の Step 8〜11 を、`terraform output` の読み取りを `AWS_PROFILE=builder` で行って繰り返します。deployer 役の操作は `AWS_PROFILE=deployer` のままです。
+Task 10 の Step 8〜11b を、`terraform output` の読み取りを `AWS_PROFILE=builder` で行って繰り返します。deployer 役の操作は `AWS_PROFILE=deployer` のままです。
 
 Expected: curl で `hello from eks-exp`。
 
