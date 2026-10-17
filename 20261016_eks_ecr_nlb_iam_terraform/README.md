@@ -16,9 +16,11 @@ AWS 上に EKS、ECR、NLB を terraform で組み、何度でも完全に戻せ
 | deployer | その人物 | ECR への push、namespace `app` への kubectl apply | ECR `app` への push と `eks:DescribeCluster` | namespace `app` の edit(`AmazonEKSEditPolicy`) |
 
 deployer の実体は IAM ロール `app-deployer` で、アクセスキーは発行しません。
-本番の組織は SSO ログイン後にスイッチロールする運用なので、信頼ポリシーの相手をその人物のログイン identity にするだけで移せます。
+本番の組織では、SSO ログイン後にスイッチロールして作業します。
+本番へ移すときは、信頼ポリシーの相手をその人物のログイン identity に変えます。
 
-実験では管理者の `default` プロファイル(SSO)を使い、`builder` と `deployer` の 2 プロファイルがそこからスイッチロールします。
+実験では、管理者の `default` プロファイル(SSO)を使います。
+`builder` と `deployer` の 2 プロファイルは、`default` からスイッチロールします。
 どちらも `role_arn` と `source_profile = default` で定義します。
 
 ## 設計の方針
@@ -64,26 +66,43 @@ terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
 
 ## 手順(builder)
 
-### 0. 段 0(マネージャーが実行)
+以降の builder の操作は、実験では `AWS_PROFILE=builder` で実行します。
+本番では、マネージャーが付与した identity で実行します。
+
+### 0-a. ロール作成(マネージャー)
 
 terraform を回すロールは、terraform 自身では作れません。
-そのため、マネージャーが aws コマンドのスクリプトで 1 本だけ実行します。
-実験では自分が管理者として同じスクリプトを実行します。
+そのため、マネージャーが aws コマンドのスクリプトを 1 本だけ実行します。
+実験では、自分が管理者としてこのスクリプトを実行します。
 
 ```bash
 bootstrap/create-builder-role.sh <SSO_ROLE_ARN>
 ```
 
-ロール ARN を builder に伝えてもらいます。
-その後、builder が付与された権限で state 用のバケットを作ります。
+マネージャーは、できあがったロールの ARN を builder に伝えます。
+
+### 0-b. state バケット作成(builder)
+
+builder は `~/.aws/config` に `builder` プロファイルを足します。
+
+```ini
+[profile builder]
+role_arn       = <tf-builder のロール ARN>
+source_profile = default
+region         = ap-northeast-1
+```
+
+プロファイルを切り替えてから、付与された権限で state 用のバケットを作ります。
 
 ```bash
+export AWS_PROFILE=builder
 bootstrap/create-state-bucket.sh
 ```
 
 ### 1. 固有値と init
 
-本番では `terraform/variables.tf` の `deployer_trusted_principals` の `default` に、その人物の identity の ARN を書いて commit します。
+本番では、その人物の identity の ARN を書いて commit します。
+書く場所は `terraform/variables.tf` の `deployer_trusted_principals` の `default` です。
 空のままだと terraform を実行した本人が deployer になります(実験用)。
 tfvars と backend.hcl は使いません。
 
@@ -103,7 +122,14 @@ terraform output
 
 ### 3. deployer への引き渡し
 
-渡すものは `deployer_role_arn`、`ecr_repository_url`、`cluster_name`、`region`、`node_port` の 5 つです。
+渡すものは次の 6 つです。
+
+- `deployer_role_arn`
+- `ecr_repository_url`
+- `cluster_name`
+- `region`
+- `node_port`
+- `nlb_dns_name`
 
 ## 手順(deployer)
 
@@ -137,8 +163,7 @@ sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -f -
 kubectl -n app rollout status deploy/web
 ```
 
-NLB の DNS 名は builder が `terraform output nlb_dns_name` で確認できます。
-`http://<nlb_dns_name>/` に curl すると Pod の応答が返ります。
+引き渡された `nlb_dns_name` に対して、`http://<nlb_dns_name>/` へ curl すると Pod の応答が返ります。
 
 ### 4. できないこと
 
@@ -405,11 +430,16 @@ state バケットは周回の間は残し、最後に一度だけ削除しま�
 作れるものは、ネットワーク、EKS、ECR、ELB、`eks-exp-*` と `app-deployer` の IAM ロールです。
 名前が `tfstate-*-eks-exp` の S3 バケットの作成、設定、削除もできます。
 
-次の 3 点を、申請文でそのまま説明します。
+次の 4 点を、申請文でそのまま説明します。
 
-1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、AWS 管理の EKS と ECR のポリシー 4 つと `app-deployer-policy` に限っています。builder が作るロールに `AdministratorAccess` を付けることはできません。
-2. builder は `app-deployer-policy` の中身(`CreatePolicyVersion`)と、`app-deployer` の信頼ポリシーを書き換えられます。この候補は厳密な境界ではありません。組織が境界を求めるなら、マネージャーに Permissions Boundary の付与を依頼します。
-3. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
+1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
+   AWS 管理の EKS と ECR のポリシー 4 つと `app-deployer-policy` だけです。
+   builder が作るロールに `AdministratorAccess` は付けられません。
+2. builder は `app-deployer-policy` の中身(`CreatePolicyVersion`)を書き換えられます。
+   `app-deployer` の信頼ポリシーも書き換えられます。
+   この候補は厳密な境界ではありません。
+3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
+4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
 
 ## deployer の権限(terraform 管理)
 
@@ -460,9 +490,10 @@ Kubernetes 側の権限は、Access Policy `AmazonEKSEditPolicy` を namespace `
 
 マネージャーへの依頼は 1 件です。
 
-- 依頼内容: `bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行して、`tf-builder` ロールを作ってほしい。ロールを作らず、自分の identity に `tf-builder-policy.json` を直接付けてもかまわない
+- 依頼内容: `create-builder-role.sh <自分の identity の ARN>` を実行して、ロール `tf-builder` を作ってほしい
+- 代案: ロールを作らず、自分の identity に `tf-builder-policy.json` を直接付けてもかまわない
 - 添付: `create-builder-role.sh`、`delete-builder-role.sh`、`tf-builder-policy.json` の 3 つ
-- 範囲の説明: このポリシーで作れるもの、作れないもの、資源名の接頭辞による限定。上の「作れるものと作れないもの」の 3 点を含める
+- 範囲の説明: このポリシーで作れるもの、作れないもの、資源名の接頭辞による限定。上の「作れるものと作れないもの」の 4 点を含める
 - 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
 
 state 用のバケットは、付与された権限で自分が作ります。
@@ -478,12 +509,20 @@ state 用のバケットは、付与された権限で自分が作ります。
 - KMS のカスタマーマネージドキー
 - CloudTrail と AWS Config
 
-destroy 後に残ることを許容するものは次のとおりです。
-サービスリンクロール(`AWSServiceRoleForAmazonEKS`、`AWSServiceRoleForAmazonEKSNodegroup`、`AWSServiceRoleForElasticLoadBalancing`、`AWSServiceRoleForAutoScaling`)は自動生成され、課金されません。
-`~/.aws/config` に足したプロファイルは、手で消せます。
-state 用 S3 バケットは周回中は残し、最後に `delete-state-bucket.sh` で消します。
+destroy 後に残ることを許容するものは 3 種類です。
+1 つ目は、次の 4 つのサービスリンクロールです。
 
-`scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源と、EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC がゼロかを確かめます。
+- `AWSServiceRoleForAmazonEKS`
+- `AWSServiceRoleForAmazonEKSNodegroup`
+- `AWSServiceRoleForElasticLoadBalancing`
+- `AWSServiceRoleForAutoScaling`
+
+どれも自動生成され、課金されません。
+2 つ目は、`~/.aws/config` に足したプロファイルです。手で消せます。
+3 つ目は、state 用 S3 バケットです。周回中は残し、最後に `delete-state-bucket.sh` で消します。
+
+`scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
+EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
 IAM ロール(`app-deployer`、`tf-builder`、`eks-exp-*`)と、`/aws/eks/` 配下のロググループも対象です。
 
 ## 実験ログ
