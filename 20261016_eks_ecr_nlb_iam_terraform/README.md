@@ -31,6 +31,7 @@ AWS の推奨に合わせた点は次のとおりです。
 - cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
 - namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
 - deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
+- 段 0 でマネージャーに頼むのは terraform 実行ロールの作成 1 件だけにし、残りは builder の権限内で完結させる
 
 ## 構成
 
@@ -65,16 +66,20 @@ terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
 
 ### 0. 段 0(マネージャーが実行)
 
-terraform を回すロールと state の置き場は、terraform 自身では作れません。
-そのため、マネージャーが aws コマンドのスクリプトで用意します。
+terraform を回すロールは、terraform 自身では作れません。
+そのため、マネージャーが aws コマンドのスクリプトで 1 本だけ実行します。
 実験では自分が管理者として同じスクリプトを実行します。
 
 ```bash
-bootstrap/create-state-bucket.sh
 bootstrap/create-builder-role.sh <SSO_ROLE_ARN>
 ```
 
-バケット名とロール ARN を builder に伝えてもらいます。
+ロール ARN を builder に伝えてもらいます。
+その後、builder が付与された権限で state 用のバケットを作ります。
+
+```bash
+bootstrap/create-state-bucket.sh
+```
 
 ### 1. 固有値と init
 
@@ -159,6 +164,7 @@ bootstrap/delete-state-bucket.sh
 
 destroy に約 15 分かかります。
 state バケットは周回の間は残し、最後に一度だけ削除します。
+`delete-state-bucket.sh` は builder の権限で実行できます。
 
 ## builder の権限(申請用)
 
@@ -353,9 +359,23 @@ state バケットは周回の間は残し、最後に一度だけ削除しま�
       "Resource": "*"
     },
     {
-      "Sid": "StateBucketList",
+      "Sid": "StateBucketAdmin",
       "Effect": "Allow",
-      "Action": "s3:ListBucket",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging"
+      ],
       "Resource": "arn:aws:s3:::tfstate-*-eks-exp"
     },
     {
@@ -363,16 +383,27 @@ state バケットは周回の間は残し、最後に一度だけ削除しま�
       "Effect": "Allow",
       "Action": [
         "s3:GetObject",
+        "s3:GetObjectVersion",
         "s3:PutObject",
-        "s3:DeleteObject"
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
       ],
       "Resource": "arn:aws:s3:::tfstate-*-eks-exp/*"
+    },
+    {
+      "Sid": "StateBucketDiscovery",
+      "Effect": "Allow",
+      "Action": "s3:ListAllMyBuckets",
+      "Resource": "*"
     }
   ]
 }
 ```
 
 ### 作れるものと作れないもの
+
+作れるものは、ネットワーク、EKS、ECR、ELB、`eks-exp-*` と `app-deployer` の IAM ロールです。
+名前が `tfstate-*-eks-exp` の S3 バケットの作成、設定、削除もできます。
 
 次の 3 点を、申請文でそのまま説明します。
 
@@ -427,15 +458,15 @@ Kubernetes 側の権限は、Access Policy `AmazonEKSEditPolicy` を namespace `
 
 ## 申請文のたたき台
 
-マネージャーに次を依頼します。
+マネージャーへの依頼は 1 件です。
 
-- 依頼内容 1: `bootstrap/create-state-bucket.sh` を実行して、state 用のバケットを作ってほしい
-- 依頼内容 2: `bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行して、`tf-builder` ロールを作ってほしい。ロールを作らず、自分の identity に `tf-builder-policy.json` を直接付けてもかまわない
-- 添付: `bootstrap/` 一式(スクリプト 4 本と、検証済みのポリシー JSON)
+- 依頼内容: `bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行して、`tf-builder` ロールを作ってほしい。ロールを作らず、自分の identity に `tf-builder-policy.json` を直接付けてもかまわない
+- 添付: `create-builder-role.sh`、`delete-builder-role.sh`、`tf-builder-policy.json` の 3 つ
 - 範囲の説明: このポリシーで作れるもの、作れないもの、資源名の接頭辞による限定。上の「作れるものと作れないもの」の 3 点を含める
 - 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
 
-マネージャーは terraform を使えない前提なので、段 0 は全て aws コマンドのスクリプトにしています。
+state 用のバケットは、付与された権限で自分が作ります。
+マネージャーは terraform を使えない前提なので、段 0 は aws コマンドのスクリプトにしています。
 
 ## 可逆性
 
