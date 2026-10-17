@@ -2012,6 +2012,17 @@ cd .. && AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
 ```
 Expected: `y` を入力後、`deleted bucket: tfstate-<ACCOUNT_ID>-eks-exp`。対話入力が使えない場合は `yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh`。
 
+- [ ] **Step 2b: builder でバケットを作り直して消す(CreateBucket の検証)**
+
+第 0〜1 段ではバケットが管理者作成済みだったため、builder の `s3:CreateBucket` は未検証です。ここで一度作って消します。
+
+Run:
+```bash
+AWS_PROFILE=builder bootstrap/create-state-bucket.sh
+yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
+```
+Expected: `created: tfstate-<ACCOUNT_ID>-eks-exp` の後にバケット名、続いて `deleted bucket: ...`。AccessDenied なら `StateBucketAdmin` に Action を足し、管理者が `create-builder-role.sh` を再実行して再試行する。S3 は削除直後の同名再作成が数秒〜数分遅れることがあるので、`OperationAborted` が出たら 1 分待って再実行する。
+
 - [ ] **Step 3: 管理者で tf-builder を消し、残骸チェックを通す**
 
 Run:
