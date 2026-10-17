@@ -1712,86 +1712,78 @@ AWS_PROFILE=builder bootstrap/create-state-bucket.sh   # 2 回目は already exi
 ```
 Expected: 2 回ともバケット名が出て終了コード 0。AccessDenied が出たら Step 7 の要領で `StateBucket*` に Action を足す。
 
-- [ ] **Step 5: builder で init と validation 確認**
+- [ ] **Step 5: プロファイルをコマンド引数で渡せるようにする(小さなコード変更)**
+
+許可ルール `Bash(terraform apply:*)` は前置き一致なので、環境変数を前に置いた形は一致しません。
+backend には init 時の `-backend-config="profile=..."`、provider には `-var aws_profile=...` で渡せるようにします。
+既定値は `null` なので、本番では何も指定せずに済み、コードは変わりません。
+
+`terraform/variables.tf` に追記:
+```hcl
+variable "aws_profile" {
+  description = "AWS CLI プロファイル名。null なら環境の既定を使う。実験で builder を指定するために使う"
+  type        = string
+  default     = null
+}
+```
+
+`terraform/main.tf` の `provider "aws"` に `profile = var.aws_profile` を追加し、`provider "kubernetes"` の exec args を次に変更:
+```hcl
+    args = concat(
+      ["eks", "get-token", "--cluster-name", aws_eks_cluster.main.name, "--region", var.region],
+      var.aws_profile == null ? [] : ["--profile", var.aws_profile],
+    )
+```
+
+`20261016_eks_ecr_nlb_iam_terraform/.gitignore` に `tfplan` を追記します。
 
 Run:
 ```bash
 cd terraform
-AWS_PROFILE=builder terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
-AWS_PROFILE=builder terraform plan -var 'deployer_trusted_principals=["arn:aws:sts::123456789012:assumed-role/x/y"]' 2>&1 | grep -c 'arn:aws:iam::<account>:role'
-AWS_PROFILE=builder terraform plan -out=tfplan 2>&1 | tail -3
+terraform fmt -check -recursive && terraform validate
+git add variables.tf main.tf ../.gitignore && git commit -m "20261016_eks_ecr_nlb_iam_terraform: aws_profile変数を追加(実験でbuilderプロファイルを引数で渡すため)"
 ```
-Expected: init 成功。validation の grep は `1`。plan は `Plan: N to add, 0 to change, 0 to destroy`。plan は読み取り系 API だけなので、ここで AccessDenied が出たら `ReadOnlyDiscovery` に Action を足す。
+Expected: validate 成功、commit 完了。
 
-`deployer_trusted_principals` を空にしているので、`aws_iam_session_context` は builder の帽子(`tf-builder`)を deployer の信頼先にする。実験では builder 自身が deployer 役を兼ねるため、これで足りる。
+- [ ] **Step 6: builder で init、validation 確認、plan**
 
-- [ ] **Step 6: builder で apply(AccessDenied の収集)**
-
-`cd` は済んでいる前提で、コマンド先頭を `terraform apply` にします。`AWS_PROFILE` は前置きできないので、builder プロファイルは `terraform` が読む環境変数ではなく、`~/.aws/config` の `[profile builder]` を `AWS_PROFILE` に設定した別シェルで…ではなく、次の方法で渡します。
-
+Run:
 ```bash
-export AWS_PROFILE=builder   # Bash ツールは環境変数を保持しないため、apply と同じ呼び出しの中で先頭に置けない
+terraform init -backend-config="profile=builder" -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
+terraform plan -var aws_profile=builder -var 'deployer_trusted_principals=["arn:aws:sts::123456789012:assumed-role/x/y"]' 2>&1 | grep -c 'arn:aws:iam::<account>:role'
+terraform plan -var aws_profile=builder -out=tfplan 2>&1 | tail -3
 ```
+Expected: init 成功。validation の grep は `1`。plan は `Plan: N to add, 0 to change, 0 to destroy`。plan は読み取り系 API だけなので、ここで AccessDenied が出たら `ReadOnlyDiscovery` に Action を足す(Step 7b)。
 
-そのため apply は次のように 1 行で書き、`terraform apply` が先頭になるよう `env` を使わずプロファイルを terraform 側に渡します。AWS provider は `AWS_PROFILE` の代わりに `AWS_DEFAULT_PROFILE` も読み、backend も同様です。どちらも前置きになるため、代わりに `~/.aws/config` に `builder` を `[default]` の上書きとして書くのではなく、apply 専用の小さなラッパーを使います。
+`deployer_trusted_principals` が空なので、`aws_iam_session_context` は実行者の帽子 `tf-builder` を deployer の信頼先にします。実験では builder が deployer 役を兼ねるのでこれで足ります。plan の出力で `deployer_trusted_principals` が `tf-builder` の ARN になっていることを確認します。
 
-```bash
-cat > ../scripts/tf-builder.sh <<'EOF'
-#!/usr/bin/env bash
-# builder プロファイルで terraform を実行する。許可ルールの前置き一致のため、呼び出しは `terraform apply` で始める必要がある。
-# 使い方: scripts/tf-builder.sh <terraform の引数...>
-export AWS_PROFILE=builder
-exec terraform "$@"
-EOF
-chmod +x ../scripts/tf-builder.sh
-```
+- [ ] **Step 7: builder で apply(AccessDenied の収集)**
 
-このラッパーはコマンド先頭が `../scripts/tf-builder.sh` になるため許可ルールに一致しません。したがって apply と destroy は、ユーザーに `Bash(../scripts/tf-builder.sh:*)` を許可してもらうか、`terraform apply` を先頭にして `-var`・`-backend-config` 以外の方法でプロファイルを渡す必要があります。terraform の AWS provider はプロファイルを `provider "aws" { profile = var.profile }` でも受け取れますが、backend は変数を使えません。
-
-採用する方法: backend と provider の両方に効く `AWS_PROFILE` を、Bash ツールの「作業ディレクトリは保持されるが環境変数は保持されない」制約の外で与えるため、`~/.aws/config` の `[default]` は触らず、`terraform apply` の引数で完結しない部分(認証)は `credential_process` ではなく次の 1 行で解決します。
-
+Run(`cd terraform` 済みの状態で、コマンド先頭を `terraform apply` にする。`run_in_background` で実行):
 ```bash
 terraform apply -auto-approve tfplan > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task10-apply.log 2>&1
-```
-
-ただし上の 1 行は `default`(管理者)で動いてしまいます。これを避けるため、apply の直前に Step 5 の init を `AWS_PROFILE=builder` 付きで行った上で、apply 自体は次の形にします。
-
-```bash
-terraform apply -auto-approve -lock-timeout=60s tfplan
-```
-
-これでも認証は環境変数に依存します。結論として、本タスクでは apply と destroy を次の形で実行します。
-
-```bash
-AWS_PROFILE=builder terraform apply -auto-approve tfplan
-```
-
-この形は許可ルール `Bash(terraform apply:*)` に一致しないため、実行者(teammate)は controller に報告し、controller はユーザーに `Bash(AWS_PROFILE=builder terraform apply:*)` と `Bash(AWS_PROFILE=builder terraform destroy:*)` の 2 ルール追加を依頼します。ルールが入るまで apply は実行しません。
-
-Run(ルール追加後):
-```bash
-AWS_PROFILE=builder terraform apply -auto-approve tfplan > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task10-apply.log 2>&1
 grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task10-apply.log | sort -u
 ```
-Expected: 理想は `Apply complete!`(15〜20 分)。AccessDenied が出たら Step 7 へ。kubernetes provider の接続エラーなら `AWS_PROFILE=builder terraform apply -target=aws_eks_cluster.main -auto-approve` の後に全体を apply し、回避を使ったことを記録する。
+Expected: 理想は `Apply complete!`(15〜20 分)。AccessDenied が出たら Step 7b へ。kubernetes provider の接続エラーなら `terraform apply -var aws_profile=builder -target=aws_eks_cluster.main -auto-approve` の後に全体を apply し直し、回避を使ったことを記録する。
 
-- [ ] **Step 7: 足りない Action を候補ポリシーに足して再試行**
+- [ ] **Step 7b: 足りない Action を候補ポリシーに足して再試行**
 
-`not authorized to perform: <service>:<Action>` の一覧を、`bootstrap/tf-builder-policy.json` の該当 Sid の `Action` 配列に足します(IAM 系は Resource を `eks-exp-*` / `app-deployer` に限定したまま。`iam:AttachRolePolicy` の対象ポリシーは `IamAttachOnlyKnownPolicies` の条件に足す)。その後:
+`not authorized to perform: <service>:<Action>` の一覧を、`bootstrap/tf-builder-policy.json` の該当 Sid の `Action` 配列に足します(IAM 系は Resource を `eks-exp-*` / `app-deployer` に限定したまま。attach 対象のポリシーが増えたら `IamAttachOnlyKnownPolicies` の条件に足す)。その後:
 
 ```bash
 (cd .. && bootstrap/create-builder-role.sh "$SSO_ROLE_ARN")   # 管理者。ポリシーの新バージョンを既定にする
-sleep 10                                                       # IAM の反映待ち
-AWS_PROFILE=builder terraform plan -out=tfplan >/dev/null && AWS_PROFILE=builder terraform apply -auto-approve tfplan
+sleep 10
+terraform plan -var aws_profile=builder -out=tfplan >/dev/null
+terraform apply -auto-approve tfplan
 ```
 
-`Apply complete!` が出るまで繰り返します。足した Action は 1 回ごとに実験ログへ記録します。ポリシー JSON の変更はその都度 commit します。
+`Apply complete!` が出るまで繰り返します。足した Action は 1 回ごとに実験ログへ記録し、JSON の変更はその都度 commit します。
 
 - [ ] **Step 8: output と NLB target の確認**
 
 Run:
 ```bash
-AWS_PROFILE=builder terraform output
+terraform output
 TG=$(aws elbv2 describe-target-groups --names eks-exp-nodeport --profile builder --query 'TargetGroups[0].TargetGroupArn' --output text)
 aws elbv2 describe-target-health --target-group-arn "$TG" --profile builder
 ```
@@ -1819,7 +1811,7 @@ Expected: `arn:aws:sts::<ACCOUNT_ID>:assumed-role/app-deployer/...`。
 Run:
 ```bash
 cd /home/kazufusa/src/github.com/kazufusa/til/20261016_eks_ecr_nlb_iam_terraform
-ECR=$(cd terraform && AWS_PROFILE=builder terraform output -raw ecr_repository_url)
+ECR=$(cd terraform && terraform output -raw ecr_repository_url)
 aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
 docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
@@ -1844,10 +1836,10 @@ Expected: `get nodes` は `Forbidden` で `exit=1`。quota `no-cloud-resources` 
 
 Run:
 ```bash
-NLB=$(cd terraform && AWS_PROFILE=builder terraform output -raw nlb_dns_name)
+NLB=$(cd terraform && terraform output -raw nlb_dns_name)
 aws elbv2 describe-target-health --target-group-arn "$TG" --profile builder --query 'TargetHealthDescriptions[].TargetHealth.State' --output text
 curl -s --max-time 10 "http://${NLB}/" | grep -o 'hello from eks-exp'
-NAT_IP=$(cd terraform && AWS_PROFILE=builder terraform output -raw nat_public_ip)
+NAT_IP=$(cd terraform && terraform output -raw nat_public_ip)
 POD_IP=$(kubectl --context eks-exp-deployer -n app exec deploy/web -- wget -qO- -T 5 http://checkip.amazonaws.com/)
 echo "nat=${NAT_IP} seen_from_pod=${POD_IP}"
 ```
@@ -1855,7 +1847,7 @@ Expected: `healthy`、`hello from eks-exp`、2 つの IP が一致。`unhealthy`
 
 - [ ] **Step 13: 実験ログを README に追記して commit**
 
-日付、Step 2 の信頼ポリシーの可否、Step 6〜7 で足した Action、apply の所要時間、Step 8/12 の結果、回避策の有無。アカウント ID と ARN は書かない。
+日付、Step 2 の信頼ポリシーの可否、Step 6〜7b で足した Action、apply の所要時間、Step 8/12 の結果、回避策の有無。アカウント ID と ARN は書かない。
 
 ```bash
 grep -rn "$(aws sts get-caller-identity --query Account --output text)" 20261016_eks_ecr_nlb_iam_terraform/ || echo clean
@@ -1908,10 +1900,10 @@ Run:
 ```bash
 scripts/preflight-destroy.sh
 cd terraform
-AWS_PROFILE=builder terraform destroy -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task11-destroy.log 2>&1
+terraform destroy -var aws_profile=builder -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task11-destroy.log 2>&1
 grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task11-destroy.log | sort -u
 ```
-Expected: `Destroy complete!`。AccessDenied が出たら Task 10 Step 7 の要領で足して `destroy` を再実行する。所要時間を記録する。
+Expected: `Destroy complete!`。AccessDenied が出たら Task 10 Step 7b の要領で足して `destroy` を再実行する。所要時間を記録する。
 
 - [ ] **Step 4: 残骸チェック**
 
@@ -1948,7 +1940,7 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第2段(builderでdestroyし�
 Run:
 ```bash
 cd 20261016_eks_ecr_nlb_iam_terraform/terraform
-AWS_PROFILE=builder terraform apply -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task12-apply.log 2>&1; tail -3 "$_"
+terraform apply -var aws_profile=builder -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task12-apply.log 2>&1; tail -3 "$_"
 ```
 Expected: `Apply complete!`(確定した権限だけで通る)。
 
@@ -2008,7 +2000,7 @@ Run:
 ```bash
 cd 20261016_eks_ecr_nlb_iam_terraform
 kubectl config use-context eks-exp-builder && scripts/preflight-destroy.sh
-cd terraform && AWS_PROFILE=builder terraform destroy -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task13-destroy.log 2>&1; tail -3 "$_"
+cd terraform && terraform destroy -var aws_profile=builder -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task13-destroy.log 2>&1; tail -3 "$_"
 ```
 Expected: `Destroy complete!`。
 
