@@ -16,7 +16,8 @@
         "autoscaling:Describe*",
         "iam:Get*",
         "iam:List*",
-        "sts:GetCallerIdentity"
+        "sts:GetCallerIdentity",
+        "ec2:GetSecurityGroupsForVpc"
       ],
       "Resource": "*"
     },
