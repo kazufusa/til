@@ -128,8 +128,10 @@ tfvars は使いません。
 
 バケットは terraform の管理外です。
 作成は `bootstrap/create-state-bucket.sh` で行います。
-本番ではこのスクリプトをマネージャーに渡して実行してもらいます。
-実験では自分が `default` プロファイルで実行します。
+builder の権限に、名前を `tfstate-*-eks-exp` に限定したバケットの作成・設定・削除を含めます。
+そのため本番でもこのスクリプトは builder 自身が実行します。
+マネージャーに実行してもらうのは `create-builder-role.sh` の 1 本だけです。
+実験では第 0 段で管理者として作り、第 3 段で builder として同じスクリプトを再実行して権限を検証します。
 
 バケットの設定は、バージョニング有効、パブリックアクセス全遮断、SSE-S3 です。
 名前は `tfstate-<アカウントID>-eks-exp` とします。
@@ -203,7 +205,7 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 - elasticloadbalancing: load balancer、target group、listener の作成・削除・属性変更・参照
 - autoscaling: target group の attach/detach、ASG の参照
 - iam: role、policy の作成・削除・参照、信頼ポリシーの更新、`iam:PassRole`(EKS 用ロールに限定)、`iam:CreateServiceLinkedRole`
-- s3: state バケットに限定して `ListBucket`、`GetObject`、`PutObject`、`DeleteObject`
+- s3: 名前 `tfstate-*-eks-exp` のバケットに限定して、作成・削除・バージョニング・公開ブロック・暗号化・タグの設定、`ListBucket`、`ListBucketVersions`、オブジェクトとバージョンの読み書き削除
 - sts: `GetCallerIdentity`
 
 `bootstrap/create-builder-role.sh` でこの候補を持つ IAM ロール `tf-builder` を作ります。
@@ -219,9 +221,9 @@ terraform のコードはどちらでも同じで、認証プロファイルの�
 
 README の申請文は次の形にします。
 
-- 依頼内容 1: `create-state-bucket.sh` を実行してバケットを作ってほしい
-- 依頼内容 2: `create-builder-role.sh <自分の identity の ARN>` を実行して `tf-builder` ロールを作ってほしい。ロールを作らず自分の identity に `tf-builder-policy.json` を直接付けてもよい
-- 添付: `bootstrap/` 一式(スクリプト 4 本と検証済みのポリシー JSON)
+- 依頼内容: `create-builder-role.sh <自分の identity の ARN>` を実行して `tf-builder` ロールを作ってほしい。ロールを作らず自分の identity に `tf-builder-policy.json` を直接付けてもよい
+- 添付: `bootstrap/create-builder-role.sh`、`bootstrap/delete-builder-role.sh`、検証済みの `tf-builder-policy.json`
+- 補足: state 用 S3 バケットは、付与された権限の範囲で自分が `create-state-bucket.sh` を実行して作る
 - 範囲の説明: このポリシーで作れるもの、作れないもの、リソース名の prefix による限定
 - 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
 

@@ -1903,6 +1903,16 @@ bootstrap/create-builder-role.sh "<同じ ARN>"   # 2 回目は updated で成�
 ```
 Expected: 2 回とも最後に `arn:aws:iam::<ACCOUNT_ID>:role/tf-builder` が出る。1 回目は `created`、2 回目は `updated`。
 
+- [ ] **Step 1b: builder として state バケットのスクリプトを通す(権限検証)**
+
+バケットはすでに第 0 段で存在するので、冪等パス(`head-bucket` と 4 つの put 系)が builder の権限で通ることを確認します。
+
+Run:
+```bash
+AWS_PROFILE=builder bootstrap/create-state-bucket.sh
+```
+Expected: `bucket already exists` の後にバケット名が出て終了コード 0。AccessDenied が出たら Step 4 と同じ要領で `tf-builder-policy.json` の `StateBucket*` に Action を足す。
+
 - [ ] **Step 2: builder プロファイルを足して確認する**
 
 ```ini
@@ -2059,11 +2069,13 @@ AWS_PROFILE=default scripts/check-leftovers.sh
 ```
 Expected: `Destroy complete!`、`deleted role: tf-builder`、`deleted policy: ...`、`RESULT: clean`。
 
-- [ ] **Step 5: state バケットを消す**
+- [ ] **Step 5: state バケットを消す(builder の権限で)**
+
+builder がバケットを削除できることも検証対象なので、`builder` プロファイルで実行します。`tf-builder` ロールは Step 4 で消したので、ここだけ順序を入れ替え、Step 4 の `delete-builder-role.sh` より前に実行します。
 
 Run:
 ```bash
-AWS_PROFILE=default bootstrap/delete-state-bucket.sh
+AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
 aws s3 ls --profile default | grep -c tfstate || echo "no state bucket"
 ```
 Expected: `deleted bucket: tfstate-<ACCOUNT_ID>-eks-exp`、`no state bucket`。
@@ -2084,7 +2096,7 @@ kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-id
 次を書き加えます。
 
 - 実験ログ: 第 4 段の結果(Step 2〜3 の出力)、最終 destroy とバケット削除の結果
-- 申請文のたたき台: 依頼 1(`bootstrap/create-state-bucket.sh` を実行してバケット名を教えてほしい)、依頼 2(`bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行してロール ARN を教えてほしい。ロールを作らず `tf-builder-policy.json` を自分の identity に直接付けてもよい)、範囲の説明、期間と撤去(`delete-builder-role.sh` で消せる)
+- 申請文のたたき台: 依頼は 1 件(`bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行してロール ARN を教えてほしい。ロールを作らず `tf-builder-policy.json` を自分の identity に直接付けてもよい)、state バケットは自分で作る旨、範囲の説明、期間と撤去(`delete-builder-role.sh` で消せる)
 - deployer への引き渡し文: `deployer_role_arn` と手順(deployer)の節への案内
 
 文書規約の確認:
