@@ -229,47 +229,40 @@ README の申請文は次の形にします。
 
 ## 実験手順
 
-第 0 段は state バケットの作成です。
-`default` プロファイルで `create-state-bucket.sh` を 1 回実行します。
-以後の全ての周回でこのバケットを使い回します。
+管理者(`default`)が行うのは、残骸チェックの基準点取得と `create-builder-role.sh` だけです。
+それ以外は最初から `builder`(`tf-builder` にスイッチ)で行い、権限の検証と構築を同時に進めます。
+AccessDenied が出たら候補ポリシーに Action を足し、管理者が `create-builder-role.sh` を再実行して続けます。
 
-第 1 段は管理者権限での通し確認です。
+第 0 段は tf-builder の作成です。
 
-1. `terraform/` をバケット名付きで init し、apply(約 20 分)
-2. output の ロール ARN を `~/.aws/config` のプロファイル `deployer` に登録
-3. deployer 役として `app/` の image を build して ECR に push
-4. deployer 役として kubeconfig を生成し、namespace、Deployment、Service(NodePort 30080)を apply
-5. NLB の URL に curl し、Pod の応答を確認
-6. Pod の中から外部サイトに接続し、送信元 IP が NAT Gateway の EIP と一致することを確認
+1. 管理者で `check-leftovers.sh` を実行し、基準点が clean であることを確認
+2. 管理者で `create-builder-role.sh <自分の SSO ロール ARN>` を実行
+3. `~/.aws/config` に `builder` を追加し、`get-caller-identity` で帽子が `tf-builder` に替わったことを確認
+
+第 1 段は builder での構築と疎通確認です。
+
+1. builder で `create-state-bucket.sh`(S3 権限の検証)
+2. builder で `terraform init` と `terraform apply`(約 20 分)
+3. `deployer` プロファイル(`source_profile = builder`)を追加
+4. deployer 役で `app/` の image を build して ECR に push
+5. deployer 役で kubectl apply(Deployment と Service。NodePort 30080)
+6. NLB の URL に curl し、Pod の応答を確認
+7. Pod の中から外部サイトに接続し、送信元 IP が NAT Gateway の EIP と一致することを確認
 
 第 2 段は可逆性の確認です。
 
-1. `preflight-destroy.sh` で k8s 側の LoadBalancer が無いことを確認
-2. `terraform/` を destroy
-3. `check-leftovers.sh` で残骸が無いことを確認
+1. `preflight-destroy.sh` で k8s 側の LoadBalancer が無いことを確認(quota の陰性対照も行う)
+2. builder で `terraform destroy`(image を残したまま)
+3. `check-leftovers.sh` で、残るのが `tf-builder` と state バケットだけであることを確認
 
-第 3 段は builder 権限の検証です。
+第 3 段は deployer の境界確認です。
 
-1. 管理者で `bootstrap/create-builder-role.sh` を実行し、プロファイル `builder` を用意
-2. プロファイル `builder` で第 1 段と第 2 段を繰り返す
-3. AccessDenied が出たら候補ポリシーに Action を足して再試行
-4. 通ったポリシー JSON を README に確定版として載せる
+1. builder で再 apply
+2. プロファイル `deployer` で AWS 側の 5 操作が全て拒否されることを確認
+3. Kubernetes 側で namespace 外が Forbidden、quota で LoadBalancer が拒否、namespace 内の Deployment と Service は許可されることを確認
 
-第 4 段は deployer の境界確認です。
-プロファイル `deployer` で次を実行し、全て拒否されることを確認します。
-
-- `aws ec2 describe-instances`
-- `aws eks list-clusters`(DescribeCluster は許可、List は不許可)
-- `aws ecr create-repository --repository-name other`
-- `aws iam list-roles`
-- `kubectl get namespaces`、`kubectl create namespace x`
-- `kubectl -n kube-system get pods`
-- `kubectl -n app expose deploy web --type=LoadBalancer`(ResourceQuota 超過で拒否)
-
-同時に、namespace `app` での Deployment と Service(NodePort)の作成は許可されることを確認します。
-
-最後に `terraform/` を destroy し、`delete-builder-role.sh` でロールを消し、`check-leftovers.sh` を通します。
-その後 `delete-state-bucket.sh` でバケットを削除して終了します。
+片付けは、builder で destroy、builder で `delete-state-bucket.sh`、管理者で `delete-builder-role.sh`、`check-leftovers.sh` が clean、の順です。
+最後に確定版の `tf-builder-policy.json` と申請文を README に載せます。
 
 ## 可逆性の規則
 

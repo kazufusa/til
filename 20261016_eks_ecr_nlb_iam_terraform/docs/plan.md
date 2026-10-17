@@ -1647,96 +1647,164 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: READMEの初版(手順、権�
 
 ---
 
-### Task 10: 第 0〜1 段(管理者で通し確認)
+### Task 10: 第 0〜1 段(tf-builder を作り、builder として apply して疎通まで)
 
 **Files:**
+- Modify: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json`(AccessDenied が出た場合のみ Action を追記)
 - Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(実験ログ)
-- Modify: `~/.aws/config`(プロファイル `deployer` を追加)
+- Modify: `~/.aws/config`(プロファイル `builder` と `deployer` を追加)
 
 **Interfaces:**
 - Consumes: Task 1〜9 の全成果物
-- Produces: 稼働中の環境、`terraform output` の値、実験ログの第 1 段
+- Produces: `tf-builder` ロール、稼働中の環境(builder が作成者)、`terraform output` の値、実験ログの第 0〜1 段
 
-- [ ] **Step 1: SSO ログインと残骸チェック**
+管理者(`default`)が行うのは、残骸チェックの基準点取得と `create-builder-role.sh` だけです。
+それ以外の AWS 操作は全て `builder` か `deployer` で行います。
+許可ルールは前置き一致なので、`terraform apply` と `terraform destroy` はコマンド先頭に置き、`cd` は別の呼び出しで行います。
+プロファイルは `--profile` か、kubeconfig の alias で指定します。
 
-Run:
-```bash
-aws sso login
-aws sts get-caller-identity
-cd 20261016_eks_ecr_nlb_iam_terraform && scripts/check-leftovers.sh
-```
-Expected: `RESULT: clean`(Task 7 Step 6 と同じ結果)。
-
-- [ ] **Step 2: state バケットを作る**
-
-Run:
-```bash
-bootstrap/create-state-bucket.sh
-bootstrap/create-state-bucket.sh   # 2 回目は "bucket already exists" で成功する
-```
-Expected: 2 回ともバケット名が stdout に出て終了コード 0。
-
-- [ ] **Step 3: 自分の帽子(SSO ロール)の ARN を控える**
+- [ ] **Step 1: 管理者で基準点を取る**
 
 Run:
 ```bash
 aws sts get-caller-identity --query Arn --output text
-aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/ --query 'Roles[].Arn' --output text
+cd 20261016_eks_ecr_nlb_iam_terraform && scripts/check-leftovers.sh
 ```
-Expected: 1 行目は `arn:aws:sts::<ACCOUNT_ID>:assumed-role/AWSReservedSSO_AdministratorAccess_<hash>/<user>`、2 行目に対応する `arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/ap-northeast-1/AWSReservedSSO_AdministratorAccess_<hash>` が含まれる。後者を Task 12 で `create-builder-role.sh` の引数に使う。terraform 側は `aws_iam_session_context` が同じ値を自動で導くので、手で書かない。
+Expected: ARN が `AWSReservedSSO_AdministratorAccess_...` を含む。`RESULT: clean`。
 
-- [ ] **Step 4: init(バケット名だけ引数で渡す)**
+- [ ] **Step 2: 管理者で tf-builder を作る(マネージャー役)**
+
+Run:
+```bash
+SSO_ROLE_ARN=$(aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/ \
+  --query "Roles[?contains(RoleName,'AdministratorAccess')].Arn | [0]" --output text)
+bootstrap/create-builder-role.sh "$SSO_ROLE_ARN"
+bootstrap/create-builder-role.sh "$SSO_ROLE_ARN"   # 2 回目は updated で成功する(冪等の確認)
+```
+Expected: 2 回とも最後に `arn:aws:iam::<ACCOUNT_ID>:role/tf-builder`。1 回目は `created`、2 回目は `updated`。ARN はファイルに書かない。
+
+SSO ロール ARN(`aws-reserved` パス付き)が信頼ポリシーで `Invalid principal` と拒否された場合は、スクリプトの信頼ポリシーを「Principal は `arn:aws:iam::<ACCOUNT_ID>:root`、`Condition.ArnLike.aws:PrincipalArn` に引数の ARN」に変更して commit し、実験ログに記録する。
+
+- [ ] **Step 3: builder プロファイルを足し、帽子が替わったことを確認する**
+
+`~/.aws/config` の末尾に追記します(既存の節は触らない)。
+
+```ini
+[profile builder]
+role_arn       = <Step 2 の出力>
+source_profile = default
+region         = ap-northeast-1
+```
+
+Run:
+```bash
+aws sts get-caller-identity --profile builder --query Arn --output text
+aws iam list-users --profile builder 2>&1 | head -1
+```
+Expected: 1 行目は `arn:aws:sts::<ACCOUNT_ID>:assumed-role/tf-builder/...`。2 行目は `AccessDenied`(管理者権限が外れている証拠)。
+
+- [ ] **Step 4: builder で state バケットを作る(S3 権限の検証)**
+
+Run:
+```bash
+AWS_PROFILE=builder bootstrap/create-state-bucket.sh
+AWS_PROFILE=builder bootstrap/create-state-bucket.sh   # 2 回目は already exists
+```
+Expected: 2 回ともバケット名が出て終了コード 0。AccessDenied が出たら Step 7 の要領で `StateBucket*` に Action を足す。
+
+- [ ] **Step 5: builder で init と validation 確認**
 
 Run:
 ```bash
 cd terraform
-terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
+AWS_PROFILE=builder terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
+AWS_PROFILE=builder terraform plan -var 'deployer_trusted_principals=["arn:aws:sts::123456789012:assumed-role/x/y"]' 2>&1 | grep -c 'arn:aws:iam::<account>:role'
+AWS_PROFILE=builder terraform plan -out=tfplan 2>&1 | tail -3
 ```
-Expected: `Terraform has been successfully initialized!`。S3 に `terraform/terraform.tfstate` はまだ無い。
+Expected: init 成功。validation の grep は `1`。plan は `Plan: N to add, 0 to change, 0 to destroy`。plan は読み取り系 API だけなので、ここで AccessDenied が出たら `ReadOnlyDiscovery` に Action を足す。
 
-- [ ] **Step 5: 変数 validation と既定値の導出を確認する**
+`deployer_trusted_principals` を空にしているので、`aws_iam_session_context` は builder の帽子(`tf-builder`)を deployer の信頼先にする。実験では builder 自身が deployer 役を兼ねるため、これで足りる。
+
+- [ ] **Step 6: builder で apply(AccessDenied の収集)**
+
+`cd` は済んでいる前提で、コマンド先頭を `terraform apply` にします。`AWS_PROFILE` は前置きできないので、builder プロファイルは `terraform` が読む環境変数ではなく、`~/.aws/config` の `[profile builder]` を `AWS_PROFILE` に設定した別シェルで…ではなく、次の方法で渡します。
+
+```bash
+export AWS_PROFILE=builder   # Bash ツールは環境変数を保持しないため、apply と同じ呼び出しの中で先頭に置けない
+```
+
+そのため apply は次のように 1 行で書き、`terraform apply` が先頭になるよう `env` を使わずプロファイルを terraform 側に渡します。AWS provider は `AWS_PROFILE` の代わりに `AWS_DEFAULT_PROFILE` も読み、backend も同様です。どちらも前置きになるため、代わりに `~/.aws/config` に `builder` を `[default]` の上書きとして書くのではなく、apply 専用の小さなラッパーを使います。
+
+```bash
+cat > ../scripts/tf-builder.sh <<'EOF'
+#!/usr/bin/env bash
+# builder プロファイルで terraform を実行する。許可ルールの前置き一致のため、呼び出しは `terraform apply` で始める必要がある。
+# 使い方: scripts/tf-builder.sh <terraform の引数...>
+export AWS_PROFILE=builder
+exec terraform "$@"
+EOF
+chmod +x ../scripts/tf-builder.sh
+```
+
+このラッパーはコマンド先頭が `../scripts/tf-builder.sh` になるため許可ルールに一致しません。したがって apply と destroy は、ユーザーに `Bash(../scripts/tf-builder.sh:*)` を許可してもらうか、`terraform apply` を先頭にして `-var`・`-backend-config` 以外の方法でプロファイルを渡す必要があります。terraform の AWS provider はプロファイルを `provider "aws" { profile = var.profile }` でも受け取れますが、backend は変数を使えません。
+
+採用する方法: backend と provider の両方に効く `AWS_PROFILE` を、Bash ツールの「作業ディレクトリは保持されるが環境変数は保持されない」制約の外で与えるため、`~/.aws/config` の `[default]` は触らず、`terraform apply` の引数で完結しない部分(認証)は `credential_process` ではなく次の 1 行で解決します。
+
+```bash
+terraform apply -auto-approve tfplan > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task10-apply.log 2>&1
+```
+
+ただし上の 1 行は `default`(管理者)で動いてしまいます。これを避けるため、apply の直前に Step 5 の init を `AWS_PROFILE=builder` 付きで行った上で、apply 自体は次の形にします。
+
+```bash
+terraform apply -auto-approve -lock-timeout=60s tfplan
+```
+
+これでも認証は環境変数に依存します。結論として、本タスクでは apply と destroy を次の形で実行します。
+
+```bash
+AWS_PROFILE=builder terraform apply -auto-approve tfplan
+```
+
+この形は許可ルール `Bash(terraform apply:*)` に一致しないため、実行者(teammate)は controller に報告し、controller はユーザーに `Bash(AWS_PROFILE=builder terraform apply:*)` と `Bash(AWS_PROFILE=builder terraform destroy:*)` の 2 ルール追加を依頼します。ルールが入るまで apply は実行しません。
+
+Run(ルール追加後):
+```bash
+AWS_PROFILE=builder terraform apply -auto-approve tfplan > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task10-apply.log 2>&1
+grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task10-apply.log | sort -u
+```
+Expected: 理想は `Apply complete!`(15〜20 分)。AccessDenied が出たら Step 7 へ。kubernetes provider の接続エラーなら `AWS_PROFILE=builder terraform apply -target=aws_eks_cluster.main -auto-approve` の後に全体を apply し、回避を使ったことを記録する。
+
+- [ ] **Step 7: 足りない Action を候補ポリシーに足して再試行**
+
+`not authorized to perform: <service>:<Action>` の一覧を、`bootstrap/tf-builder-policy.json` の該当 Sid の `Action` 配列に足します(IAM 系は Resource を `eks-exp-*` / `app-deployer` に限定したまま。`iam:AttachRolePolicy` の対象ポリシーは `IamAttachOnlyKnownPolicies` の条件に足す)。その後:
+
+```bash
+(cd .. && bootstrap/create-builder-role.sh "$SSO_ROLE_ARN")   # 管理者。ポリシーの新バージョンを既定にする
+sleep 10                                                       # IAM の反映待ち
+AWS_PROFILE=builder terraform plan -out=tfplan >/dev/null && AWS_PROFILE=builder terraform apply -auto-approve tfplan
+```
+
+`Apply complete!` が出るまで繰り返します。足した Action は 1 回ごとに実験ログへ記録します。ポリシー JSON の変更はその都度 commit します。
+
+- [ ] **Step 8: output と NLB target の確認**
 
 Run:
 ```bash
-terraform plan -var 'deployer_trusted_principals=["arn:aws:sts::123456789012:assumed-role/x/y"]' 2>&1 | grep -c 'arn:aws:iam::<account>:role'
-terraform plan -no-color 2>/dev/null | grep -A3 'deployer_trusted_principals' | head -5
+AWS_PROFILE=builder terraform output
+TG=$(aws elbv2 describe-target-groups --names eks-exp-nodeport --profile builder --query 'TargetGroups[0].TargetGroupArn' --output text)
+aws elbv2 describe-target-health --target-group-arn "$TG" --profile builder
 ```
-Expected: 1 つ目は `1`(validation の error_message が出て plan が止まる)。2 つ目は output の予定値に Step 3 の 2 行目と同じ SSO ロール ARN が出る。
+Expected: output に `cluster_name`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_trusted_principals`(`tf-builder` の ARN)、`deployer_namespaces = ["app"]`、`node_port = 30080`、`nat_public_ip`。target は 1 台で `unhealthy`(まだ Pod が無い)。
 
-- [ ] **Step 6: apply**
+- [ ] **Step 9: deployer プロファイルを足す**
 
-Run:
-```bash
-terraform plan -out=tfplan
-terraform apply tfplan
-terraform output
-```
-Expected: 約 15〜20 分で完了。output に `cluster_name = "eks-exp"`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_trusted_principals`(自分の SSO ロール ARN)、`deployer_namespaces = ["app"]`、`node_port = 30080`、`nat_public_ip` が出る。
-
-kubernetes provider の接続エラー(`Unauthorized`、`connection refused`、`cluster has no endpoint`)で止まった場合は、クラスタだけ先に作ってから全体を apply します。
-
-```bash
-terraform apply -target=aws_eks_cluster.main
-terraform apply
-```
-
-この回避を使ったかどうかを実験ログに書きます。
-
-- [ ] **Step 7: NLB の target が登録されていることを確認する**
-
-Run:
-```bash
-TG=$(aws elbv2 describe-target-groups --names eks-exp-nodeport --query 'TargetGroups[0].TargetGroupArn' --output text)
-aws elbv2 describe-target-health --target-group-arn "$TG"
-```
-Expected: ノード 1 台が `State: unhealthy`(まだ 30080 で listen する Pod がない)。Step 11 で `healthy` になる。`Targets` が空なら `aws_autoscaling_attachment` を疑う。
-
-- [ ] **Step 8: deployer プロファイルを `~/.aws/config` に足す**
+`app-deployer` の信頼先は `tf-builder` なので、`source_profile = builder` にします(帽子の 2 段重ね)。
 
 ```ini
 [profile deployer]
-role_arn       = <terraform output -raw deployer_role_arn の値>
-source_profile = default
+role_arn       = <terraform output -raw deployer_role_arn>
+source_profile = builder
 region         = ap-northeast-1
 ```
 
@@ -1746,90 +1814,79 @@ aws sts get-caller-identity --profile deployer --query Arn --output text
 ```
 Expected: `arn:aws:sts::<ACCOUNT_ID>:assumed-role/app-deployer/...`。
 
-- [ ] **Step 9: deployer 役で image を push する**
+- [ ] **Step 10: deployer 役で image を push する**
 
 Run:
 ```bash
 cd /home/kazufusa/src/github.com/kazufusa/til/20261016_eks_ecr_nlb_iam_terraform
-export AWS_PROFILE=deployer
-ECR=$(cd terraform && AWS_PROFILE=default terraform output -raw ecr_repository_url)
-aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
+ECR=$(cd terraform && AWS_PROFILE=builder terraform output -raw ecr_repository_url)
+aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
 docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
-aws ecr describe-images --repository-name app --query 'imageDetails[].imageTags' --output text
+aws ecr describe-images --repository-name app --profile deployer --query 'imageDetails[].imageTags' --output text
 ```
-Expected: `Login Succeeded`、push が完了し、`v1` が表示される。
+Expected: `Login Succeeded`、push 完了、`v1`。
 
-- [ ] **Step 10: deployer 役で kubectl apply する**
+- [ ] **Step 11: deployer 役で kubectl apply する**
 
 Run:
 ```bash
-export AWS_PROFILE=deployer
-aws eks update-kubeconfig --name eks-exp --alias eks-exp-deployer
-kubectl get nodes; echo "exit=$?"
-kubectl -n app get resourcequota
-sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
-kubectl -n app rollout status deploy/web --timeout=120s
-kubectl -n app get pod,svc
+aws eks update-kubeconfig --name eks-exp --profile deployer --alias eks-exp-deployer
+kubectl --context eks-exp-deployer get nodes; echo "exit=$?"
+kubectl --context eks-exp-deployer -n app get resourcequota
+sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl --context eks-exp-deployer apply -n app -f -
+kubectl --context eks-exp-deployer -n app rollout status deploy/web --timeout=120s
+kubectl --context eks-exp-deployer -n app get pod,svc
 ```
-Expected: `kubectl get nodes` は `Forbidden` で `exit=1`(deployer は cluster スコープを見られない)。ResourceQuota `no-cloud-resources` が表示される。`deployment "web" successfully rolled out`。Service `web` の `PORT(S)` が `80:30080/TCP`。
+Expected: `get nodes` は `Forbidden` で `exit=1`。quota `no-cloud-resources` が見える。`successfully rolled out`。Service の `PORT(S)` が `80:30080/TCP`。
 
-- [ ] **Step 11: 外部 URL で応答を確認する**
+- [ ] **Step 12: 外部 URL と外向き通信を確認する**
 
 Run:
 ```bash
-NLB=$(cd terraform && AWS_PROFILE=default terraform output -raw nlb_dns_name)
-aws elbv2 describe-target-health --target-group-arn "$TG" --profile default --query 'TargetHealthDescriptions[].TargetHealth.State' --output text
+NLB=$(cd terraform && AWS_PROFILE=builder terraform output -raw nlb_dns_name)
+aws elbv2 describe-target-health --target-group-arn "$TG" --profile builder --query 'TargetHealthDescriptions[].TargetHealth.State' --output text
 curl -s --max-time 10 "http://${NLB}/" | grep -o 'hello from eks-exp'
-```
-Expected: `healthy`、`hello from eks-exp`。`unhealthy` のままで curl がタイムアウトする場合は、Task 4 Step 2 の代替ルール(VPC CIDR からの 30080 許可)に差し替えて `terraform apply` し、再確認する。NLB の DNS 伝播で最初の 1〜2 分は名前解決に失敗することがある。
-
-- [ ] **Step 11b: Pod からのアウトバウンド通信を確認する**
-
-Run:
-```bash
-export AWS_PROFILE=deployer
-NAT_IP=$(cd terraform && AWS_PROFILE=default terraform output -raw nat_public_ip)
-POD_IP=$(kubectl -n app exec deploy/web -- wget -qO- -T 5 http://checkip.amazonaws.com/)
+NAT_IP=$(cd terraform && AWS_PROFILE=builder terraform output -raw nat_public_ip)
+POD_IP=$(kubectl --context eks-exp-deployer -n app exec deploy/web -- wget -qO- -T 5 http://checkip.amazonaws.com/)
 echo "nat=${NAT_IP} seen_from_pod=${POD_IP}"
-[[ "$NAT_IP" == "$POD_IP" ]] && echo "outbound ok via NAT"
 ```
-Expected: `outbound ok via NAT`。busybox の `wget` は HTTP のみ対応なので `http://` を使う。失敗したら private route table の `0.0.0.0/0 → nat` と NAT Gateway の `available` を確認する。
+Expected: `healthy`、`hello from eks-exp`、2 つの IP が一致。`unhealthy` のまま curl がタイムアウトする場合は Task 4 の代替ルール(VPC CIDR からの 30080 許可)に差し替えて builder で apply し直し、commit と記録を行う。NLB の DNS 伝播で最初の 1〜2 分は失敗することがある。
 
-- [ ] **Step 12: 実験ログを README に追記して commit**
+- [ ] **Step 13: 実験ログを README に追記して commit**
 
-README の「実験ログ」に、日付、apply の所要時間、Step 7 と Step 11 と Step 11b の結果、SG ルールを差し替えたかどうかを書きます。
+日付、Step 2 の信頼ポリシーの可否、Step 6〜7 で足した Action、apply の所要時間、Step 8/12 の結果、回避策の有無。アカウント ID と ARN は書かない。
 
 ```bash
-git add README.md
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第1段(管理者で通し確認)の実験ログを追記"
+grep -rn "$(aws sts get-caller-identity --query Account --output text)" 20261016_eks_ecr_nlb_iam_terraform/ || echo clean
+git add 20261016_eks_ecr_nlb_iam_terraform/README.md 20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第0〜1段(tf-builderで構築し疎通確認)の実験ログを追記"
 ```
 
 ---
 
-### Task 11: 第 2 段(可逆性の確認)
+### Task 11: 第 2 段(builder で destroy し、戻ることを確認)
 
 **Files:**
 - Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(実験ログ)
+- Modify: `bootstrap/tf-builder-policy.json`(destroy で AccessDenied が出た場合のみ)
 
 **Interfaces:**
 - Consumes: Task 10 で稼働中の環境
-- Produces: 空のアカウント(state バケットのみ残る)、実験ログの第 2 段
+- Produces: 空のアカウント(`tf-builder` と state バケットのみ残る)、実験ログの第 2 段
 
-- [ ] **Step 1: destroy 前チェック**
+- [ ] **Step 1: builder の kubeconfig と destroy 前チェック**
 
 Run:
 ```bash
 cd 20261016_eks_ecr_nlb_iam_terraform
-export AWS_PROFILE=default
-aws eks update-kubeconfig --name eks-exp --alias eks-exp-admin
+aws eks update-kubeconfig --name eks-exp --profile builder --alias eks-exp-builder
+kubectl config use-context eks-exp-builder
 scripts/preflight-destroy.sh
 ```
 Expected: `preflight ok: no LoadBalancer services, no PVCs`。
 
-- [ ] **Step 2: preflight が LoadBalancer を検出することを確認する(陰性対照)**
-
-namespace `app` は ResourceQuota で LoadBalancer を作れないので、quota の無い `default` namespace に管理者として作ります。
+- [ ] **Step 2: quota と preflight の陰性対照**
 
 Run:
 ```bash
@@ -1839,186 +1896,66 @@ kubectl -n default expose deploy nc --name=nc-lb --type=LoadBalancer --port=80
 sleep 5
 scripts/preflight-destroy.sh; echo "exit=$?"
 kubectl -n default delete svc nc-lb deploy nc
-sleep 60   # in-tree controller が CLB を消すのを待つ
-aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerName' --output text
-aws elb describe-load-balancers --query 'LoadBalancerDescriptions[].LoadBalancerName' --output text
+sleep 60
+aws elbv2 describe-load-balancers --profile builder --query 'LoadBalancers[].LoadBalancerName' --output text
+aws elb describe-load-balancers --profile builder --query 'LoadBalancerDescriptions[].LoadBalancerName' --output text
 ```
-Expected: 最初の `expose` は `exceeded quota: no-cloud-resources` で `exit=1`(quota が効いている)。preflight が `default/nc-lb` を出して `exit=1`。削除後、elbv2 には `eks-exp-nlb` のみ、elb(classic)は空。classic が残っていれば `aws elb delete-load-balancer --load-balancer-name <name>` で消し、実験ログに記録する。
+Expected: 最初の expose は `exceeded quota: no-cloud-resources` で `exit=1`。preflight は `default/nc-lb` を出して `exit=1`。削除後、elbv2 は `eks-exp-nlb` のみ、classic は空。classic が残っていれば `aws elb delete-load-balancer --load-balancer-name <name> --profile default` で消して記録する。
 
-- [ ] **Step 3: image を残したまま destroy する**
+- [ ] **Step 3: image を残したまま builder で destroy する**
 
 Run:
 ```bash
 scripts/preflight-destroy.sh
-cd terraform && time terraform destroy
+cd terraform
+AWS_PROFILE=builder terraform destroy -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task11-destroy.log 2>&1
+grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task11-destroy.log | sort -u
 ```
-Expected: `Destroy complete!`。ECR は `force_delete` で image ごと消える。所要時間を記録する。
+Expected: `Destroy complete!`。AccessDenied が出たら Task 10 Step 7 の要領で足して `destroy` を再実行する。所要時間を記録する。
 
 - [ ] **Step 4: 残骸チェック**
 
 Run:
 ```bash
-cd .. && scripts/check-leftovers.sh
-aws s3 ls | grep tfstate
+cd .. && scripts/check-leftovers.sh; echo "exit=$?"
+aws s3 ls --profile builder | grep tfstate
 ```
-Expected: `RESULT: clean`。state バケットだけが残る。
+Expected: `LEFTOVER` は `tag Project=eks-exp`(tf-builder のロールとポリシー)、`iam roles`(tf-builder)、`iam policies`(tf-builder-policy)の 3 行だけで、他は全て `ok`。state バケットは残る。それ以外の LEFTOVER があれば原因を調べて記録する。
 
-- [ ] **Step 5: kubeconfig の後始末と実験ログの追記、commit**
+- [ ] **Step 5: 実験ログを追記して commit**
 
-Run:
+destroy の所要時間、残骸チェックの結果、陰性対照の結果、足した Action。
+
 ```bash
-kubectl config delete-context eks-exp-admin
 kubectl config delete-context eks-exp-deployer
-kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-identity --query Account --output text):cluster/eks-exp
-```
-
-README の「実験ログ」に、destroy の所要時間、残骸チェックの結果、Step 2 の陰性対照の結果を書きます。
-
-```bash
-git add README.md
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第2段(可逆性の確認)の実験ログを追記"
+git add README.md bootstrap/tf-builder-policy.json
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第2段(builderでdestroyし残骸なしを確認)の実験ログを追記"
 ```
 
 ---
 
-### Task 12: 第 3 段(builder 権限の検証と確定)
+### Task 12: 第 3 段(deployer の境界確認)
 
 **Files:**
-- Modify: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json`(足りない Action を追記)
-- Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(確定版 JSON、実験ログ)
-- Modify: `~/.aws/config`(プロファイル `builder` を追加)
+- Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(実験ログ)
 
 **Interfaces:**
-- Consumes: Task 6 の `bootstrap/`、Task 10〜11 の手順
-- Produces: 検証済みの `bootstrap/tf-builder-policy.json`、README の「builder の権限(申請用)」確定版
+- Consumes: Task 11 後の状態(`tf-builder` あり、環境なし)
+- Produces: 稼働中の環境(再構築)、deployer の境界確認の記録
 
-- [ ] **Step 1: 管理者(マネージャー役)で tf-builder を作る**
-
-Run:
-```bash
-cd 20261016_eks_ecr_nlb_iam_terraform
-export AWS_PROFILE=default
-bootstrap/create-builder-role.sh "<Task 10 Step 3 の IAM ロール ARN>"
-bootstrap/create-builder-role.sh "<同じ ARN>"   # 2 回目は updated で成功する(冪等の確認)
-```
-Expected: 2 回とも最後に `arn:aws:iam::<ACCOUNT_ID>:role/tf-builder` が出る。1 回目は `created`、2 回目は `updated`。
-
-- [ ] **Step 1b: builder として state バケットのスクリプトを通す(権限検証)**
-
-バケットはすでに第 0 段で存在するので、冪等パス(`head-bucket` と 4 つの put 系)が builder の権限で通ることを確認します。
-
-Run:
-```bash
-AWS_PROFILE=builder bootstrap/create-state-bucket.sh
-```
-Expected: `bucket already exists` の後にバケット名が出て終了コード 0。AccessDenied が出たら Step 4 と同じ要領で `tf-builder-policy.json` の `StateBucket*` に Action を足す。
-
-- [ ] **Step 2: builder プロファイルを足して確認する**
-
-```ini
-[profile builder]
-role_arn       = arn:aws:iam::<ACCOUNT_ID>:role/tf-builder
-source_profile = default
-region         = ap-northeast-1
-```
-
-Run:
-```bash
-aws sts get-caller-identity --profile builder --query Arn --output text
-```
-Expected: `arn:aws:sts::<ACCOUNT_ID>:assumed-role/tf-builder/...`。
-
-- [ ] **Step 3: builder で apply する(AccessDenied の収集)**
-
-Run:
-```bash
-cd terraform
-export AWS_PROFILE=builder
-terraform init -reconfigure -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
-terraform apply 2>&1 | tee /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/builder-apply-1.log
-grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' "$_" | sort -u
-```
-Expected: 理想は `Apply complete!`。AccessDenied が出たら、`not authorized to perform: <service>:<Action>` の一覧が出る。
-
-- [ ] **Step 4: 足りない Action を policy.json に足して再試行**
-
-Step 3 で出た Action を、`bootstrap/tf-builder-policy.json` の該当する Sid の `Action` 配列に追加します(IAM 系はリソースを `eks-exp-*` / `app-deployer` に限定したまま)。その後、マネージャー役でポリシーを更新し、builder で続きを apply します。
-
-```bash
-(cd .. && AWS_PROFILE=default bootstrap/create-builder-role.sh "<IAM ロール ARN>")
-AWS_PROFILE=builder terraform apply
-```
-
-`Apply complete!` が出るまで Step 3〜4 を繰り返します。IAM の反映に数秒かかるので、同じエラーが続いたら 10 秒待って再実行します。
-
-- [ ] **Step 5: builder で第 1 段の deployer 手順を通す**
-
-Task 10 の Step 8〜11b を、`terraform output` の読み取りを `AWS_PROFILE=builder` で行って繰り返します。deployer 役の操作は `AWS_PROFILE=deployer` のままです。
-
-Expected: curl で `hello from eks-exp`。
-
-- [ ] **Step 6: builder で destroy する**
-
-Run:
-```bash
-export AWS_PROFILE=builder
-aws eks update-kubeconfig --name eks-exp --alias eks-exp-builder
-../scripts/preflight-destroy.sh
-terraform destroy 2>&1 | tee /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/builder-destroy-1.log
-grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' "$_" | sort -u
-AWS_PROFILE=default ../scripts/check-leftovers.sh
-```
-Expected: `Destroy complete!`、残骸チェックは `tf-builder` ロールと `tf-builder-policy`(タグ Project=eks-exp を持つ)だけが `LEFTOVER`(Task 13 で消す)。AccessDenied が出たら Step 4 と同じ要領で足し、管理者で残りを destroy してから Step 3 からやり直します。
-
-- [ ] **Step 7: tf-builder-policy.json を確定版として README に転記する**
-
-Run:
-```bash
-cd ../bootstrap
-jq . tf-builder-policy.json > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/policy-final.json
-```
-
-README の「builder の権限(申請用)」を、この JSON のコードブロックと、次の 3 項目の説明に差し替えます。
-
-- このポリシーで作れるもの(VPC、EKS、ECR、NLB、`eks-exp-*` と `app-deployer` の IAM ロール、`app-deployer-policy`)
-- 作れないもの(他の名前の IAM ロール・ポリシー、EC2 インスタンスの直接起動、上記以外のサービス)
-- 名前の prefix による限定(`eks-exp-*`、`app-deployer`、`tfstate-*-eks-exp`)
-
-実験ログに、Step 3〜6 で追加した Action の一覧と回数を書きます。
-
-- [ ] **Step 8: commit**
-
-```bash
-cd /home/kazufusa/src/github.com/kazufusa/til
-git add 20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json 20261016_eks_ecr_nlb_iam_terraform/README.md
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: builder権限をtf-builderロールで検証し確定版をREADMEに記載"
-```
-
----
-
-### Task 13: 第 4 段(deployer の境界確認)と最終片付け
-
-**Files:**
-- Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(実験ログ、申請文の最終化)
-
-**Interfaces:**
-- Consumes: Task 12 で `tf-builder` が残った状態(環境は destroy 済み)
-- Produces: 空のアカウント(state バケットも削除)、完成した README
-
-- [ ] **Step 1: builder で環境をもう一度 apply する**
+- [ ] **Step 1: builder で再 apply**
 
 Run:
 ```bash
 cd 20261016_eks_ecr_nlb_iam_terraform/terraform
-AWS_PROFILE=builder terraform apply
+AWS_PROFILE=builder terraform apply -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task12-apply.log 2>&1; tail -3 "$_"
 ```
-Expected: `Apply complete!`(Task 12 で確定した権限だけで通る)。
+Expected: `Apply complete!`(確定した権限だけで通る)。
 
-- [ ] **Step 2: deployer の境界を確認する(全て拒否されること)**
+- [ ] **Step 2: deployer の AWS 側の境界(全て拒否)**
 
 Run:
 ```bash
-export AWS_PROFILE=deployer
 for cmd in \
   "aws ec2 describe-instances" \
   "aws eks list-clusters" \
@@ -2026,92 +1963,98 @@ for cmd in \
   "aws iam list-roles" \
   "aws elbv2 describe-load-balancers"; do
   echo "== $cmd"
-  $cmd 2>&1 | grep -oE 'AccessDenied|UnauthorizedOperation|not authorized' | head -1 || echo "ALLOWED (unexpected)"
+  $cmd --profile deployer 2>&1 | grep -oE 'AccessDenied|UnauthorizedOperation|not authorized' | head -1 || echo "ALLOWED (unexpected)"
 done
-echo "== allowed: eks describe-cluster"
-aws eks describe-cluster --name eks-exp --query cluster.status --output text
+aws eks describe-cluster --name eks-exp --profile deployer --query cluster.status --output text
 ```
-Expected: 5 つとも `AccessDenied` か `UnauthorizedOperation` か `not authorized`。最後だけ `ACTIVE`。
+Expected: 5 つとも拒否。最後だけ `ACTIVE`。
 
-- [ ] **Step 3: deployer の Kubernetes 側の境界を確認する**
+- [ ] **Step 3: deployer の Kubernetes 側の境界**
 
 Run:
 ```bash
-aws eks update-kubeconfig --name eks-exp --alias eks-exp-deployer
-echo "--- 許可されるべき"
-kubectl -n app auth can-i create deployments
-kubectl -n app auth can-i create services
-kubectl -n app auth can-i delete pods
-echo "--- 拒否されるべき"
-kubectl auth can-i create namespaces
-kubectl auth can-i list nodes
-kubectl -n kube-system auth can-i list pods
-kubectl -n app auth can-i update resourcequotas
-kubectl -n app auth can-i create rolebindings
-kubectl get namespaces; echo "exit=$?"
+aws eks update-kubeconfig --name eks-exp --profile deployer --alias eks-exp-deployer
+K="kubectl --context eks-exp-deployer"
+echo "--- 許可されるべき"; $K -n app auth can-i create deployments; $K -n app auth can-i create services; $K -n app auth can-i delete pods
+echo "--- 拒否されるべき"; $K auth can-i create namespaces; $K auth can-i list nodes; $K -n kube-system auth can-i list pods; $K -n app auth can-i update resourcequotas; $K -n app auth can-i create rolebindings
+$K get namespaces; echo "exit=$?"
 echo "--- quota で拒否されるべき"
-kubectl -n app create deploy nc --image=public.ecr.aws/docker/library/busybox:1.36 -- sleep 3600
-kubectl -n app expose deploy nc --name=nc-lb --type=LoadBalancer --port=80; echo "exit=$?"
-kubectl -n app delete deploy nc
+$K -n app create deploy nc --image=public.ecr.aws/docker/library/busybox:1.36 -- sleep 3600
+$K -n app expose deploy nc --name=nc-lb --type=LoadBalancer --port=80; echo "exit=$?"
+$K -n app delete deploy nc
 ```
-Expected: 許可側は 3 つとも `yes`。拒否側は 5 つとも `no`、`kubectl get namespaces` は `Forbidden` で `exit=1`。quota 側は `exceeded quota: no-cloud-resources` で `exit=1`。
+Expected: 許可側 3 つ `yes`。拒否側 5 つ `no`、`get namespaces` は `Forbidden`。quota は `exceeded quota: no-cloud-resources`。
 
-- [ ] **Step 4: builder で destroy し、残骸チェックを通す**
+- [ ] **Step 4: 実験ログを追記して commit**
+
+```bash
+cd .. && git add README.md && git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第3段(deployerの境界確認)の実験ログを追記"
+```
+
+---
+
+### Task 13: 片付けと README の完成
+
+**Files:**
+- Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(確定版 JSON、申請文、実験ログ)
+
+**Interfaces:**
+- Consumes: Task 12 後の稼働中の環境、確定した `bootstrap/tf-builder-policy.json`
+- Produces: 空のアカウント、完成した README、push 済みの main
+
+- [ ] **Step 1: builder で destroy**
 
 Run:
-```bash
-export AWS_PROFILE=builder
-aws eks update-kubeconfig --name eks-exp --alias eks-exp-builder
-../scripts/preflight-destroy.sh
-terraform destroy
-cd .. && AWS_PROFILE=default bootstrap/delete-builder-role.sh
-AWS_PROFILE=default scripts/check-leftovers.sh
-```
-Expected: `Destroy complete!`、`deleted role: tf-builder`、`deleted policy: ...`、`RESULT: clean`。
-
-- [ ] **Step 5: state バケットを消す(builder の権限で)**
-
-builder がバケットを削除できることも検証対象なので、`builder` プロファイルで実行します。`tf-builder` ロールは Step 4 で消したので、ここだけ順序を入れ替え、Step 4 の `delete-builder-role.sh` より前に実行します。
-
-Run:
-```bash
-AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
-aws s3 ls --profile default | grep -c tfstate || echo "no state bucket"
-```
-Expected: `deleted bucket: tfstate-<ACCOUNT_ID>-eks-exp`、`no state bucket`。
-
-- [ ] **Step 6: kubeconfig と AWS プロファイルの後始末**
-
-Run:
-```bash
-kubectl config delete-context eks-exp-builder
-kubectl config delete-context eks-exp-deployer
-kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-identity --query Account --output text):cluster/eks-exp
-```
-
-`~/.aws/config` の `[profile builder]` と `[profile deployer]` は、再実験に備えて残します(README に「不要なら手で消す」と記載)。
-
-- [ ] **Step 7: README を完成させる**
-
-次を書き加えます。
-
-- 実験ログ: 第 4 段の結果(Step 2〜3 の出力)、最終 destroy とバケット削除の結果
-- 申請文のたたき台: 依頼は 1 件(`bootstrap/create-builder-role.sh <自分の identity の ARN>` を実行してロール ARN を教えてほしい。ロールを作らず `tf-builder-policy.json` を自分の identity に直接付けてもよい)、state バケットは自分で作る旨、範囲の説明、期間と撤去(`delete-builder-role.sh` で消せる)
-- deployer への引き渡し文: `deployer_role_arn` と手順(deployer)の節への案内
-
-文書規約の確認:
 ```bash
 cd 20261016_eks_ecr_nlb_iam_terraform
+kubectl config use-context eks-exp-builder && scripts/preflight-destroy.sh
+cd terraform && AWS_PROFILE=builder terraform destroy -auto-approve > /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/task13-destroy.log 2>&1; tail -3 "$_"
+```
+Expected: `Destroy complete!`。
+
+- [ ] **Step 2: builder で state バケットを消す(S3 削除権限の検証)**
+
+Run:
+```bash
+cd .. && AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
+```
+Expected: `y` を入力後、`deleted bucket: tfstate-<ACCOUNT_ID>-eks-exp`。対話入力が使えない場合は `yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh`。
+
+- [ ] **Step 3: 管理者で tf-builder を消し、残骸チェックを通す**
+
+Run:
+```bash
+bootstrap/delete-builder-role.sh
+scripts/check-leftovers.sh
+aws s3 ls | grep -c tfstate || echo "no state bucket"
+```
+Expected: `deleted role: tf-builder`、`deleted policy: ...`、`RESULT: clean`、`no state bucket`。
+
+- [ ] **Step 4: kubeconfig の後始末**
+
+```bash
+kubectl config delete-context eks-exp-builder; kubectl config delete-context eks-exp-deployer
+kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-identity --query Account --output text):cluster/eks-exp
+```
+`~/.aws/config` の `builder` と `deployer` は再実験に備えて残す(README に「不要なら手で消す」と記載)。
+
+- [ ] **Step 5: README を完成させる**
+
+- 「builder の権限(申請用)」を `jq . bootstrap/tf-builder-policy.json` の確定版に差し替え、「初版」の注記を外す
+- 実験ログに、第 3 段の結果、最終 destroy とバケット削除の結果、足した Action の総数
+- 申請文のたたき台を最終化(依頼は `create-builder-role.sh` 1 件、添付 3 つ、範囲の説明 4 点、撤去手順)
+
+```bash
 grep -nE '\*\*[^*]+\*\*' README.md || echo "no bold"
 grep -nE '(可能です|提供します|が求められます|において|に関して)' README.md || echo "no banned phrases"
+grep -rn "$(aws sts get-caller-identity --query Account --output text)" . || echo "no account id"
 ```
-Expected: `no bold`、`no banned phrases`。
 
-- [ ] **Step 8: commit と push**
+- [ ] **Step 6: commit と push**
 
 ```bash
 cd /home/kazufusa/src/github.com/kazufusa/til
-git add 20261016_eks_ecr_nlb_iam_terraform/README.md
-git commit -m "20261016_eks_ecr_nlb_iam_terraform: 第4段(deployer境界確認)と最終片付けの実験ログ、申請文を完成"
+git add 20261016_eks_ecr_nlb_iam_terraform/
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: 片付け完了、確定版の申請ポリシーと申請文をREADMEに記載"
 git push origin main
 ```
