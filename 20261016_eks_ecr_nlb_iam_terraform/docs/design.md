@@ -4,16 +4,19 @@
 
 ## 目的
 
-AWS 上に次の環境を terraform で組み、何度でも完全に戻せる形で実験します。
+成果物は 2 つです。
 
-- 外部から HTTP で到達できる URL(NLB の DNS 名)
-- その URL で応答する EKS 上の Pod
-- Pod からインターネットへのアウトバウンド通信(NAT Gateway 経由、送信元は固定 EIP)
-- Pod の image を置く ECR リポジトリ
-- 特定の人物が image を push し、kubectl でデプロイできる権限
+1. ロール。自分が本番で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `app-deployer`(terraform 管理)
+2. EKS 環境を作る terraform。apply すると次の 5 点が満たされます
 
-この実験から、2 つの権限リストを確定させます。
-自分が本番で申請する権限と、その人物に terraform で付与する権限です。
+- 外部から URL でアプリにアクセスできる(NLB の DNS 名)
+- アプリからインターネットへアウトバウンドできる(NAT Gateway 経由、送信元は固定 EIP)
+- kubectl でアプリをデプロイできる(EKS、namespace `app`)
+- image を置く ECR がある
+- `app-deployer` ロールで image の push とデプロイができる
+
+実験は、`tf-builder` の権限だけでこの terraform を apply し、5 点を確認し、destroy で完全に戻せることを証明する工程です。
+AWS 上で行い、何度でも完全に戻せる形にします。
 
 ## 役割
 
@@ -309,8 +312,10 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 ## 成果物
 
-- `20261016_eks_ecr_nlb_iam_terraform/` 一式(terraform、bootstrap、scripts、app)
-- README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台(バケット作成スクリプトの渡し方を含む)、実験ログ
+- `terraform/` 一式。本番にそのまま持っていく EKS 環境のコード
+- `bootstrap/` 一式。マネージャーに渡す `create-builder-role.sh` と、検証済みの `tf-builder-policy.json`
+- README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台、実験ログ
+- `scripts/` と `app/`。実験用の残骸チェックとサンプルアプリ
 
 ## コストと所要時間
 
