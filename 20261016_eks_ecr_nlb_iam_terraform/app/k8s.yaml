@@ -1,0 +1,43 @@
+# app/k8s.yaml
+# apply 前に IMAGE_PLACEHOLDER を ECR の image URL に置換する:
+#   sed "s|IMAGE_PLACEHOLDER|${IMAGE}|" app/k8s.yaml | kubectl apply -f -
+# namespace app は terraform(namespace.tf)が作る。deployer は namespace を作れない。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: IMAGE_PLACEHOLDER
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: app
+spec:
+  # NLB の target group は全ノードの 30080 を見る。この数字は terraform 側(local.node_port)と一致させる
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080
