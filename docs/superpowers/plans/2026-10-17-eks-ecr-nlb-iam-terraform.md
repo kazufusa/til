@@ -23,7 +23,7 @@
 - `bootstrap/` は aws コマンドだけで書く(マネージャーは terraform を使えない)。`terraform/` は本番と実験で同一
 - EKS コントロールプレーンログは全て無効、KMS カスタマーキーは使わない、アカウント設定・Service Quotas・Identity Center・Organizations・CloudTrail・AWS Config は触らない
 - 日本語文書は `~/.claude/CLAUDE.md` の規約(ですます調、一文 60 字目安、強調表現なし、見出しは体言止め)に従う
-- 固有値(アカウント ID、ARN、バケット名)は `terraform.tfvars` と `backend.hcl` にだけ書き、どちらも gitignore する。見本は `*.example` として commit する
+- tfvars と backend.hcl は使わない。変数の値は `variables.tf` の `default` にべた書きする。固有値(アカウント ID、ARN)はコードに書かず、`aws_caller_identity` と `aws_iam_session_context` から導く。バケット名だけ init の引数で渡す
 - README と実験ログにもアカウント ID と ARN を生で書かない。`<ACCOUNT_ID>`、`<SSO_ROLE_ARN>` の形にする。commit 前に `grep -rn <ACCOUNT_ID>` が空であることを確認する
 - commit に Co-Authored-By と Generated with は書かない
 - AWS に課金が発生するタスク(Task 10 以降)は、着手前に `aws sts get-caller-identity` で `default` プロファイルが生きていることを確認する
@@ -32,7 +32,7 @@
 
 - Pod からの外向き通信が失敗する(private route table の既定経路漏れ、NAT が `available` になる前にノードが起動)。期待は Pod から `checkip.amazonaws.com` に到達し NAT の EIP が返ること。Task 10 の Step 11b で確認する
 - NLB のヘルスチェックが node SG の「NLB SG 参照」ルールで通らず、curl がタイムアウトする。期待は target が `healthy` になること。Task 10 の Step 7 で `describe-target-health` を確認し、`unhealthy` のときは Task 4 の代替ルール(VPC CIDR からの 30080 許可)に切り替える
-- `deployer_trusted_principals` に `arn:aws:sts::...:assumed-role/...` を渡すと IAM が `Invalid principal` で失敗する。期待は plan 時に分かりやすく落ちること。Task 5 の変数 validation で `arn:aws:iam::` 始まりを強制し、Task 10 の Step 3 で ARN 変換を手順化する
+- `deployer_trusted_principals` に `arn:aws:sts::...:assumed-role/...` を書くと IAM が `Invalid principal` で失敗する。期待は plan 時に分かりやすく落ちること。Task 1 の変数 validation で `arn:aws:iam::` 始まりを強制し、Task 10 の Step 5 で確認する。空リストのときは `aws_iam_session_context.issuer_arn`(実行者の帽子)を使う
 - `create-state-bucket.sh` を 2 回実行すると `BucketAlreadyOwnedByYou` で落ちる。期待は冪等に成功すること。Task 6 の Step 2 で `head-bucket` による存在確認を入れる
 - `preflight-destroy.sh` が別クラスタの kubeconfig を見て「問題なし」と答える。期待は対象クラスタ以外なら拒否すること。Task 7 の Step 2 で current-context の ARN にクラスタ名が含まれることを確認する
 - ECR に image が残ったまま destroy すると `RepositoryNotEmptyException` で止まる。期待は `force_delete = true` で消えること。Task 11 の Step 3 は image を push したまま destroy して確認する
@@ -46,13 +46,12 @@
 - Create: `20261016_eks_ecr_nlb_iam_terraform/.gitignore`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/versions.tf`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/backend.tf`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/backend.hcl.example`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/variables.tf`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/main.tf`
 
 **Interfaces:**
 - Consumes: なし
-- Produces: 変数 `region`、`cluster_name`、`node_count`、`ecr_repository_name`、`deployer_trusted_principals`、`deployer_namespaces`。`locals.name_prefix = var.cluster_name`。data `aws_caller_identity.current`、`aws_availability_zones.available`。provider `kubernetes`(Task 3 の `aws_eks_cluster.main` を参照するので、main.tf の provider ブロックは Task 3 で有効になる)
+- Produces: 変数 `region`、`cluster_name`、`node_count`、`ecr_repository_name`、`deployer_trusted_principals`、`deployer_namespaces`。`locals.name_prefix`、`local.deployer_trusted_principals`(空なら実行者の帽子)。data `aws_caller_identity.current`、`aws_iam_session_context.current`、`aws_availability_zones.available`。provider `kubernetes` は Task 3 で追記
 
 - [ ] **Step 1: .gitignore を作る**
 
@@ -61,9 +60,6 @@
 .terraform/
 *.tfstate
 *.tfstate.*
-backend.hcl
-*.tfvars
-!*.tfvars.example
 kubeconfig*
 ```
 
@@ -87,22 +83,19 @@ terraform {
 }
 ```
 
-- [ ] **Step 3: backend.tf と backend.hcl.example を作る**
+- [ ] **Step 3: backend.tf を作る**
 
 ```hcl
 # terraform/backend.tf
+# バケット名はアカウント ID を含むので init の引数で渡す:
+#   terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
 terraform {
-  backend "s3" {}
+  backend "s3" {
+    key          = "terraform/terraform.tfstate"
+    region       = "ap-northeast-1"
+    use_lockfile = true
+  }
 }
-```
-
-```hcl
-# terraform/backend.hcl.example
-# cp backend.hcl.example backend.hcl して <ACCOUNT_ID> を埋める
-bucket       = "tfstate-<ACCOUNT_ID>-eks-exp"
-key          = "terraform/terraform.tfstate"
-region       = "ap-northeast-1"
-use_lockfile = true
 ```
 
 - [ ] **Step 4: variables.tf を作る**
@@ -139,8 +132,9 @@ variable "ecr_repository_name" {
 }
 
 variable "deployer_trusted_principals" {
-  description = "app-deployer ロールにスイッチできる IAM principal の ARN。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を渡す"
+  description = "app-deployer ロールにスイッチできる IAM principal の ARN。空なら terraform を実行している本人の帽子(ロール)を信頼する。本番ではその人物の ARN を default に書く。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を書く"
   type        = list(string)
+  default     = []
 
   validation {
     condition = alltrue([
@@ -179,6 +173,11 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+# 実行者が assumed-role セッションなら、その帽子(IAM ロール)の ARN を issuer_arn で得る
+data "aws_iam_session_context" "current" {
+  arn = data.aws_caller_identity.current.arn
+}
+
 data "aws_availability_zones" "available" {
   state = "available"
 
@@ -191,6 +190,13 @@ data "aws_availability_zones" "available" {
 locals {
   name_prefix = var.cluster_name
   azs         = slice(data.aws_availability_zones.available.names, 0, 2)
+
+  # 空なら実行者本人の帽子を信頼する(実験で自分が deployer 役を兼ねるため)
+  deployer_trusted_principals = (
+    length(var.deployer_trusted_principals) > 0
+    ? var.deployer_trusted_principals
+    : [data.aws_iam_session_context.current.issuer_arn]
+  )
 }
 ```
 
@@ -636,10 +642,9 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: ECRとNLB(NodePort向けtarge
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/deployer.tf`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/namespace.tf`
 - Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/outputs.tf`
-- Create: `20261016_eks_ecr_nlb_iam_terraform/terraform/terraform.tfvars.example`
 
 **Interfaces:**
-- Consumes: `var.deployer_trusted_principals`、`var.deployer_namespaces`、`aws_ecr_repository.app.arn`、`aws_eks_cluster.main.arn`、provider `kubernetes`
+- Consumes: `local.deployer_trusted_principals`、`var.deployer_namespaces`、`aws_ecr_repository.app.arn`、`aws_eks_cluster.main.arn`、provider `kubernetes`
 - Produces: `aws_iam_role.deployer.arn`、`kubernetes_namespace.deployer[*]`、output `cluster_name`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_namespaces`、`region`、`node_port`、`nat_public_ip`
 
 - [ ] **Step 1: deployer.tf を作る**
@@ -652,7 +657,7 @@ data "aws_iam_policy_document" "deployer_assume" {
 
     principals {
       type        = "AWS"
-      identifiers = var.deployer_trusted_principals
+      identifiers = local.deployer_trusted_principals
     }
   }
 }
@@ -805,15 +810,15 @@ output "nat_public_ip" {
 }
 ```
 
-- [ ] **Step 4: terraform.tfvars.example を作る**
+- [ ] **Step 4: deployer の信頼先を output に出す**
+
+outputs.tf に追記します。信頼先が意図どおりか apply 後に目で確認するためです。
 
 ```hcl
-# terraform/terraform.tfvars.example
-# cp terraform.tfvars.example terraform.tfvars して ARN を埋める
-# SSO の場合は arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/ap-northeast-1/AWSReservedSSO_AdministratorAccess_<hash>
-deployer_trusted_principals = [
-  "arn:aws:iam::<ACCOUNT_ID>:role/<ROLE_NAME>",
-]
+output "deployer_trusted_principals" {
+  description = "app-deployer にスイッチできる principal(空指定なら実行者の帽子)"
+  value       = local.deployer_trusted_principals
+}
 ```
 
 - [ ] **Step 5: validate を通す**
@@ -828,7 +833,7 @@ Expected: `Success! The configuration is valid.`
 - [ ] **Step 6: commit**
 
 ```bash
-git add 20261016_eks_ecr_nlb_iam_terraform/terraform/deployer.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/namespace.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/outputs.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/terraform.tfvars.example
+git add 20261016_eks_ecr_nlb_iam_terraform/terraform/deployer.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/namespace.tf 20261016_eks_ecr_nlb_iam_terraform/terraform/outputs.tf
 git commit -m "20261016_eks_ecr_nlb_iam_terraform: deployerロール(namespace限定edit)、namespaceとResourceQuota、outputを追加"
 ```
 
@@ -1535,13 +1540,14 @@ bootstrap/create-builder-role.sh <builder のログイン identity の ARN>
 
 バケット名とロール ARN を builder に伝えてもらいます。
 
-### 1. backend と tfvars
+### 1. 固有値と init
+
+本番では `terraform/variables.tf` の `deployer_trusted_principals` の `default` に、その人物の identity の ARN を書いて commit します。
+空のままだと terraform を実行した本人が deployer になります(実験用)。
 
 ```bash
 cd terraform
-cp backend.hcl.example backend.hcl       # <ACCOUNT_ID> を埋める
-cp terraform.tfvars.example terraform.tfvars  # 信頼する principal の ARN を埋める
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
 ```
 
 ### 2. apply
@@ -1645,7 +1651,6 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: READMEの初版(手順、権�
 
 **Files:**
 - Modify: `20261016_eks_ecr_nlb_iam_terraform/README.md`(実験ログ)
-- Create(gitignore 済): `terraform/backend.hcl`、`terraform/terraform.tfvars`
 - Modify: `~/.aws/config`(プロファイル `deployer` を追加)
 
 **Interfaces:**
@@ -1671,45 +1676,32 @@ bootstrap/create-state-bucket.sh   # 2 回目は "bucket already exists" で成�
 ```
 Expected: 2 回ともバケット名が stdout に出て終了コード 0。
 
-- [ ] **Step 3: 信頼する principal の ARN を求める**
+- [ ] **Step 3: 自分の帽子(SSO ロール)の ARN を控える**
 
 Run:
 ```bash
 aws sts get-caller-identity --query Arn --output text
-```
-Expected: `arn:aws:sts::<ACCOUNT_ID>:assumed-role/AWSReservedSSO_AdministratorAccess_<hash>/<user>` の形。これを次の形の IAM ロール ARN に変換します。
-
-```
-arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/ap-northeast-1/AWSReservedSSO_AdministratorAccess_<hash>
-```
-
-確認:
-```bash
 aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/ --query 'Roles[].Arn' --output text
 ```
-Expected: 上の ARN が含まれる。
+Expected: 1 行目は `arn:aws:sts::<ACCOUNT_ID>:assumed-role/AWSReservedSSO_AdministratorAccess_<hash>/<user>`、2 行目に対応する `arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/ap-northeast-1/AWSReservedSSO_AdministratorAccess_<hash>` が含まれる。後者を Task 12 で `create-builder-role.sh` の引数に使う。terraform 側は `aws_iam_session_context` が同じ値を自動で導くので、手で書かない。
 
-- [ ] **Step 4: backend.hcl と terraform.tfvars を書いて init**
+- [ ] **Step 4: init(バケット名だけ引数で渡す)**
 
 Run:
 ```bash
 cd terraform
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-sed "s/<ACCOUNT_ID>/${ACCOUNT_ID}/" backend.hcl.example > backend.hcl
-cat > terraform.tfvars <<EOF
-deployer_trusted_principals = ["<Step 3 の IAM ロール ARN>"]
-EOF
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
 ```
 Expected: `Terraform has been successfully initialized!`。S3 に `terraform/terraform.tfstate` はまだ無い。
 
-- [ ] **Step 5: 変数 validation が効くことを確認する**
+- [ ] **Step 5: 変数 validation と既定値の導出を確認する**
 
 Run:
 ```bash
 terraform plan -var 'deployer_trusted_principals=["arn:aws:sts::123456789012:assumed-role/x/y"]' 2>&1 | grep -c 'arn:aws:iam::<account>:role'
+terraform plan -no-color 2>/dev/null | grep -A3 'deployer_trusted_principals' | head -5
 ```
-Expected: `1`(validation の error_message が出て plan が止まる)。
+Expected: 1 つ目は `1`(validation の error_message が出て plan が止まる)。2 つ目は output の予定値に Step 3 の 2 行目と同じ SSO ロール ARN が出る。
 
 - [ ] **Step 6: apply**
 
@@ -1719,7 +1711,7 @@ terraform plan -out=tfplan
 terraform apply tfplan
 terraform output
 ```
-Expected: 約 15〜20 分で完了。output に `cluster_name = "eks-exp"`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_namespaces = ["app"]`、`node_port = 30080` が出る。
+Expected: 約 15〜20 分で完了。output に `cluster_name = "eks-exp"`、`nlb_dns_name`、`ecr_repository_url`、`deployer_role_arn`、`deployer_trusted_principals`(自分の SSO ロール ARN)、`deployer_namespaces = ["app"]`、`node_port = 30080`、`nat_public_ip` が出る。
 
 kubernetes provider の接続エラー(`Unauthorized`、`connection refused`、`cluster has no endpoint`)で止まった場合は、クラスタだけ先に作ってから全体を apply します。
 
@@ -1932,7 +1924,7 @@ Run:
 ```bash
 cd terraform
 export AWS_PROFILE=builder
-terraform init -backend-config=backend.hcl -reconfigure
+terraform init -reconfigure -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
 terraform apply 2>&1 | tee /tmp/claude-1000/-home-kazufusa-src-github-com-kazufusa-til/180bb581-075b-430e-a024-0a949e7fa652/scratchpad/builder-apply-1.log
 grep -oE 'not authorized to perform: [a-zA-Z0-9:*-]+' "$_" | sort -u
 ```

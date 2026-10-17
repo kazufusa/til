@@ -85,10 +85,9 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 │   ├── nlb.tf           # NLB, target group, listener, SG
 │   ├── deployer.tf      # deployer の IAM role, policy, Access Entry
 │   ├── namespace.tf     # namespace app と ResourceQuota(kubernetes provider)
-│   ├── variables.tf
+│   ├── variables.tf     # 固有値は default にべた書きする(tfvars は使わない)
 │   ├── outputs.tf
-│   ├── backend.tf       # backend "s3" の宣言(バケット名は書かない)
-│   └── backend.hcl.example
+│   └── backend.tf       # backend "s3"。バケット名だけ init の引数で渡す
 ├── bootstrap/           # マネージャーに渡す一式。aws コマンドだけで terraform を使わない
 │   ├── tf-builder-policy.json  # builder に付与する権限(実験で確定した JSON)
 │   ├── create-state-bucket.sh  # state 用 S3 バケット作成
@@ -112,10 +111,20 @@ state は S3 に置きます。
 ロックは `use_lockfile = true`(Terraform 1.10 以降)で S3 だけで完結させます。
 DynamoDB は使いません。
 
-バケット名とリージョンは `backend.hcl` で渡します。
-`terraform init -backend-config=backend.hcl` で初期化します。
-`backend.hcl` は環境ごとに違うため、`.gitignore` に入れ、`backend.hcl.example` を置きます。
-`.terraform/` と `*.tfstate*` も `.gitignore` に入れます。
+key、region、`use_lockfile` は `backend.tf` に直書きします。
+バケット名だけはアカウント ID を含むため、init の引数で渡します。
+
+```bash
+terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
+```
+
+変数の値は `variables.tf` の `default` にべた書きします。
+tfvars は使いません。
+`deployer_trusted_principals` の既定値は空リストで、空のときは terraform を実行している本人の帽子(`aws_iam_session_context` の `issuer_arn`)を信頼します。
+実験では自分が deployer 役を兼ねるので、固有値を一切書かずに動きます。
+本番ではその人物の ARN を `default` に書いて commit します。
+
+`.gitignore` に入れるのは `.terraform/` と `*.tfstate*` だけです。
 
 バケットは terraform の管理外です。
 作成は `bootstrap/create-state-bucket.sh` で行います。
@@ -160,8 +169,8 @@ KMS のカスタマーキーは使いません。削除に待機期間がある�
 ResourceQuota は、deployer が terraform 外のクラウド資源(ELB、EBS)を作れないようにする仕組みです。
 edit 権限では ResourceQuota を変更できません。
 
-実験では `deployer_trusted_principals` に自分の administrator ロールの ARN を入れます。
-本番ではその人物のログイン identity(SSO のロールまたは IAM ユーザー)の ARN に変えます。
+実験では `deployer_trusted_principals` を空のままにし、実行者本人の帽子を信頼します。
+本番ではその人物のログイン identity(SSO のロールまたは IAM ユーザー)の ARN を `default` に書きます。
 
 deployer の IAM ポリシーは次の 3 文です。
 
@@ -224,7 +233,7 @@ README の申請文は次の形にします。
 
 第 1 段は管理者権限での通し確認です。
 
-1. `terraform/` を `backend.hcl` 付きで init し、apply(約 20 分)
+1. `terraform/` をバケット名付きで init し、apply(約 20 分)
 2. output の ロール ARN を `~/.aws/config` のプロファイル `deployer` に登録
 3. deployer 役として `app/` の image を build して ECR に push
 4. deployer 役として kubeconfig を生成し、namespace、Deployment、Service(NodePort 30080)を apply
