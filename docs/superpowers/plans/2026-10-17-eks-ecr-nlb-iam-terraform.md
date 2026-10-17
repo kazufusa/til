@@ -23,6 +23,8 @@
 - `bootstrap/` は aws コマンドだけで書く(マネージャーは terraform を使えない)。`terraform/` は本番と実験で同一
 - EKS コントロールプレーンログは全て無効、KMS カスタマーキーは使わない、アカウント設定・Service Quotas・Identity Center・Organizations・CloudTrail・AWS Config は触らない
 - 日本語文書は `~/.claude/CLAUDE.md` の規約(ですます調、一文 60 字目安、強調表現なし、見出しは体言止め)に従う
+- 固有値(アカウント ID、ARN、バケット名)は `terraform.tfvars` と `backend.hcl` にだけ書き、どちらも gitignore する。見本は `*.example` として commit する
+- README と実験ログにもアカウント ID と ARN を生で書かない。`<ACCOUNT_ID>`、`<SSO_ROLE_ARN>` の形にする。commit 前に `grep -rn <ACCOUNT_ID>` が空であることを確認する
 - commit に Co-Authored-By と Generated with は書かない
 - AWS に課金が発生するタスク(Task 10 以降)は、着手前に `aws sts get-caller-identity` で `default` プロファイルが生きていることを確認する
 
