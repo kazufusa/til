@@ -21,6 +21,16 @@ check() {
   fi
 }
 
+# default 以外の VPC に属する SG だけを見る(default VPC には実験の資源を作らない)
+non_default_sgs() {
+  local vpcs
+  vpcs="$(aws ec2 describe-vpcs --filters Name=is-default,Values=false --query 'Vpcs[].VpcId' --output text)"
+  [[ -z "$vpcs" ]] && return 0
+  # shellcheck disable=SC2086
+  aws ec2 describe-security-groups --filters Name=vpc-id,Values=$(echo $vpcs | tr ' ' ',') \
+    --query "SecurityGroups[?GroupName!='default'].GroupId" --output text
+}
+
 check "tag Project=eks-exp" \
   aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=eks-exp \
   --query 'ResourceTagMappingList[].ResourceARN' --output text
@@ -41,8 +51,7 @@ check "elastic ips" \
   aws ec2 describe-addresses --query 'Addresses[].AllocationId' --output text
 check "non-default vpcs" \
   aws ec2 describe-vpcs --filters Name=is-default,Values=false --query 'Vpcs[].VpcId' --output text
-check "non-default security groups" \
-  aws ec2 describe-security-groups --query "SecurityGroups[?GroupName!='default'].GroupId" --output text
+check "security groups in non-default vpcs" non_default_sgs
 check "iam roles" \
   aws iam list-roles \
   --query "Roles[?starts_with(RoleName,'eks-exp') || RoleName=='app-deployer' || RoleName=='tf-builder'].RoleName" \
