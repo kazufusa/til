@@ -78,7 +78,14 @@
         "eks:AssociateAccessPolicy",
         "eks:DisassociateAccessPolicy"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:eks:*:*:cluster/eks-exp",
+        "arn:aws:eks:*:*:nodegroup/eks-exp/*",
+        "arn:aws:eks:*:*:addon/eks-exp/*",
+        "arn:aws:eks:*:*:access-entry/eks-exp/*",
+        "arn:aws:eks:*:*:podidentityassociation/eks-exp/*",
+        "arn:aws:eks:*:*:access-policy/*"
+      ]
     },
     {
       "Sid": "Ecr",

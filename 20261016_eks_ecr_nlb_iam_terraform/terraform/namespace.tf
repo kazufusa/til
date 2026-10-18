@@ -9,10 +9,13 @@ resource "kubernetes_namespace" "deployer" {
 
     labels = {
       "managed-by" = "terraform"
+      # 特権 Pod や hostPath でノードに出る経路を塞ぐ
+      "pod-security.kubernetes.io/enforce" = "baseline"
+      "pod-security.kubernetes.io/warn"    = "restricted"
     }
   }
 
-  # node group より先に消そうとすると API が応答しない場合があるため、cluster 本体に依存させる
+  # node group より先に消そうとすると API が応答しない場合があるため、node group に依存させる
   depends_on = [aws_eks_node_group.main]
 }
 
