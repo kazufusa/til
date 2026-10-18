@@ -92,7 +92,8 @@ deployer の Service は、`nodePort` を 30080 に固定して受けます。
 この数字がずれると、NLB のヘルスチェックが通らず、URL に届きません。
 
 ノードは private subnet にあり、パブリック IP を持ちません。
-外から届くのは NLB の 80 番だけで、外へ出るのは NAT の固定 IP だけです。
+外から届くのは CloudFront 経由の通信だけで、NLB は CloudFront 以外からの接続を受けません。
+外へ出るのは NAT の固定 IP だけです。
 
 Pod から外へ出る通信は、NAT Gateway を通ります。
 送信元の IP は NAT Gateway の固定 EIP になるので、通信先の許可リストに入れられます。
@@ -103,7 +104,14 @@ ELB の既定ドメインには、証明書を発行できません。
 そのため、CloudFront の既定ドメイン(`*.cloudfront.net`)で HTTPS にしています。
 キャッシュは無効にしてあり、HTTP で来たリクエストは HTTPS へ転送します。
 CloudFront の後ろは、これまでどおり NLB です。
-CloudFront から NLB へは HTTP で届き、NLB の HTTP の URL も残ります。
+CloudFront から NLB へは HTTP で届きます。
+NLB のセキュリティグループは CloudFront のプレフィックスリストだけを許すので、NLB の URL を直接開いても届きません。
+
+ログも、入口と同じく最初から用意します。
+`kubectl logs` で見えるのは動いている Pod のログだけで、Pod が作り直されると消えます。
+開発環境でもログを転送しておくのが普通です。
+AWS 公式のアドオンが全 Pod の標準出力を CloudWatch Logs に送り、7 日間残します。
+読み取りの権限は deployer に付けてあります。
 
 ## 8. namespace の権限と ResourceQuota
 

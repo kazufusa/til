@@ -13,9 +13,9 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | AmazonVPCFullAccess | AWS 管理ポリシー | ネットワークを作る |
 | ElasticLoadBalancingFullAccess | AWS 管理ポリシー | 公開用の入口(NLB)を作る |
 | AmazonEC2ContainerRegistryFullAccess | AWS 管理ポリシー | image 置き場(ECR)を作る |
-| カスタム tf-builder-policy | 下の 6 項目 | EKS と、危険になりうる IAM と state だけ自前で縛る |
+| カスタム tf-builder-policy | 下の 7 項目 | EKS と、危険になりうる IAM と state だけ自前で縛る |
 
-カスタムポリシーの 6 項目は次のとおりです。
+カスタムポリシーの 7 項目は次のとおりです。
 
 1. EKS の全操作(`eks:*`)
 2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
@@ -23,14 +23,15 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
    付けられるポリシーは EKS 用の AWS 管理ポリシー 4 つと `<名前>-deployer-policy` に限る。
    `AdministratorAccess` は付けられない
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
-5. 各サービスの参照(Describe、List、Get)
-6. 実験で見つかった 2 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)
+5. 各サービスの参照(Describe、List、Get)と、CloudFront のプレフィックスリストの参照
+6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
+7. 実験で見つかった 2 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)
 
 ### deployer(<名前>-deployer、terraform で作って渡す側)
 
 | 層 | できること | できないこと |
 | --- | --- | --- |
-| AWS | ECR の `app` リポジトリへの push と pull、クラスタ情報の参照(`eks:DescribeCluster`) | それ以外すべて(EC2、IAM、他の ECR、ELB の参照も不可) |
+| AWS | ECR の指定リポジトリへの push と pull、クラスタ情報の参照(`eks:DescribeCluster`)、CloudWatch Logs の読み取り(自分のクラスタのロググループ) | それ以外すべて(EC2、IAM、他の ECR、他のロググループ、ELB の参照も不可) |
 | Kubernetes、namespace `app` の中 | 何でも(Deployment、Service、Secret の参照と編集、Role の付与) | ResourceQuota の変更、namespace 自体の削除 |
 | Kubernetes、クラスタ全体 | 読み取り(ノード、namespace 一覧、他 namespace の Pod) | 他 namespace への書き込み、他 namespace の Secret 参照、namespace 作成 |
 | クラウド資源 | なし | LoadBalancer 型 Service と PVC(quota で 0 件に固定) |
@@ -55,16 +56,17 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | `AmazonVPCFullAccess` | AWS 管理 | VPC、サブネット、NAT、EIP、SG などのネットワーク一式 |
 | `ElasticLoadBalancingFullAccess` | AWS 管理 | NLB、target group、listener |
 | `AmazonEC2ContainerRegistryFullAccess` | AWS 管理 | ECR リポジトリの作成と削除 |
-| `tf-builder-policy` | カスタム | 下記の 7 領域 |
+| `tf-builder-policy` | カスタム | 下記の 8 領域 |
 
-カスタムポリシーの内容は、次の 7 領域です。
+カスタムポリシーの内容は、次の 8 領域です。
 
 - EKS: `eks:*`
 - Auto Scaling: 負荷分散先の関連付けだけ
 - IAM: 資源名と PolicyARN で限定
 - S3: state バケットの名前で限定
 - CloudFront: HTTPS の入口の作成と削除
-- 参照: 各サービスの Describe、Get、List
+- 参照: 各サービスの Describe、Get、List と、CloudFront のプレフィックスリスト
+- CloudWatch Logs: `/aws/containerinsights/<名前>/` 配下のロググループの作成と削除
 - 実験で見つかった ec2 の 2 Action
 
 管理ポリシーは AWS が更新するので、申請の手間が減ります。
@@ -82,19 +84,12 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Sid": "ReadOnlyDiscovery",
       "Effect": "Allow",
       "Action": [
-        "ec2:Describe*",
         "eks:Describe*",
         "eks:List*",
-        "ecr:Describe*",
-        "ecr:List*",
-        "ecr:GetLifecyclePolicy",
-        "ecr:GetRepositoryPolicy",
-        "elasticloadbalancing:Describe*",
         "autoscaling:Describe*",
         "iam:Get*",
         "iam:List*",
-        "sts:GetCallerIdentity",
-        "ec2:GetSecurityGroupsForVpc"
+        "sts:GetCallerIdentity"
       ],
       "Resource": "*"
     },
@@ -151,6 +146,7 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
             "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
             "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
             "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+            "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
             "arn:aws:iam::*:policy/eks-exp-deployer-policy"
           ]
         }
@@ -176,36 +172,15 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Resource": "*"
     },
     {
-      "Sid": "StateBucketAdmin",
+      "Sid": "StateBucket",
       "Effect": "Allow",
       "Action": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:ListBucket",
-        "s3:ListBucketVersions",
-        "s3:GetBucketLocation",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketVersioning",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetBucketTagging",
-        "s3:PutBucketTagging"
+        "s3:*"
       ],
-      "Resource": "arn:aws:s3:::tfstate-*-eks-exp"
-    },
-    {
-      "Sid": "StateBucketObjects",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:GetObjectVersion",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:DeleteObjectVersion"
-      ],
-      "Resource": "arn:aws:s3:::tfstate-*-eks-exp/*"
+      "Resource": [
+        "arn:aws:s3:::tfstate-*-eks-exp",
+        "arn:aws:s3:::tfstate-*-eks-exp/*"
+      ]
     },
     {
       "Sid": "StateBucketDiscovery",
@@ -217,14 +192,7 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Sid": "CloudFront",
       "Effect": "Allow",
       "Action": [
-        "cloudfront:CreateDistribution",
-        "cloudfront:GetDistribution",
-        "cloudfront:GetDistributionConfig",
-        "cloudfront:UpdateDistribution",
-        "cloudfront:DeleteDistribution",
-        "cloudfront:TagResource",
-        "cloudfront:UntagResource",
-        "cloudfront:ListTagsForResource"
+        "cloudfront:*"
       ],
       "Resource": "*"
     },
@@ -236,6 +204,39 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
         "ec2:DisassociateAddress"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:DescribeLogGroups",
+        "logs:ListTagsForResource",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsLogGroup",
+        "logs:TagLogGroup",
+        "logs:UntagLogGroup"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*"
+    },
+    {
+      "Sid": "LogsDescribe",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PrefixList",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeManagedPrefixLists",
+        "ec2:GetManagedPrefixListEntries"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -245,16 +246,17 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 | サービス | 主な Action | 何のために必要か |
 | --- | --- | --- |
-| EC2(ネットワーク) | VPC、サブネット、IGW、NAT、ルートテーブル、SG、EIP の作成と削除 | クラスタを置くネットワークの構築 |
+| EC2(ネットワーク) | VPC、サブネット、IGW、NAT、ルートテーブル、SG、EIP の作成と削除、CloudFront のプレフィックスリストの参照 | クラスタを置くネットワークの構築と、NLB の入口を CloudFront に限る SG ルール |
 | EKS | `eks:*` | クラスタ、ノードグループ、Access Entry の管理 |
 | ECR | リポジトリの作成と削除、image の削除 | image の置き場所 |
 | ELB | LB、target group、listener の作成と削除 | NLB の構築 |
 | Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
 | IAM(ロール) | `<cluster_name>-*` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
-| IAM(ポリシー) | 既知の 5 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
+| IAM(ポリシー) | 既知の 6 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
 | IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
 | S3 | `tfstate-*-<cluster_name>` の管理と読み書き | terraform の state |
-| CloudFront | ディストリビューションの作成、更新、削除、タグ | HTTPS の入口 |
+| CloudFront | `cloudfront:*` | HTTPS の入口 |
+| CloudWatch Logs | `/aws/containerinsights/<cluster_name>/` 配下のロググループの作成、削除、保存期間、タグ | Pod のログの転送先 |
 
 ### 実験で見つかった権限
 
@@ -278,7 +280,7 @@ destroy にだけ必要な権限は、apply を通しただけでは見つかり
 次の 4 点を、申請文でそのまま説明します。
 
 1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
-   AWS 管理の EKS と ECR のポリシー 4 つと、deployer のポリシーだけです。
+   AWS 管理の EKS、ECR、CloudWatch のポリシー 5 つと、deployer のポリシーだけです。
    builder が作るロールに `AdministratorAccess` は付けられません。
 2. builder は deployer のポリシーの中身(`CreatePolicyVersion`)を書き換えられます。
    deployer ロールの信頼ポリシーも書き換えられます。
@@ -477,6 +479,7 @@ destroy にだけ必要な権限は、apply を通しただけでは見つかり
             "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
             "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
             "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+            "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
             "arn:aws:iam::*:policy/eks-exp-deployer-policy"
           ]
         }
@@ -538,6 +541,39 @@ destroy にだけ必要な権限は、apply を通しただけでは見つかり
       "Effect": "Allow",
       "Action": "s3:ListAllMyBuckets",
       "Resource": "*"
+    },
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:DescribeLogGroups",
+        "logs:ListTagsForResource",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsLogGroup",
+        "logs:TagLogGroup",
+        "logs:UntagLogGroup"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*"
+    },
+    {
+      "Sid": "LogsDescribe",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PrefixList",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeManagedPrefixLists",
+        "ec2:GetManagedPrefixListEntries"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -550,7 +586,7 @@ terraform が管理する権限で、AWS 側と Kubernetes 側があります。
 
 ### AWS 側
 
-`terraform/deployer.tf` の 3 文を JSON にしたものです。
+`terraform/deployer.tf` の 5 文を JSON にしたものです。
 `<ACCOUNT_ID>` は実際のアカウント ID に、`<cluster_name>` はクラスタ名に置き換わります。
 
 ```json
@@ -578,13 +614,37 @@ terraform が管理する権限で、AWS 側と Kubernetes 側があります。
         "ecr:ListImages",
         "ecr:DescribeRepositories"
       ],
-      "Resource": "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
+      "Resource": [
+        "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
+      ]
     },
     {
       "Sid": "EksKubeconfig",
       "Effect": "Allow",
       "Action": "eks:DescribeCluster",
       "Resource": "arn:aws:eks:ap-northeast-1:<ACCOUNT_ID>:cluster/<cluster_name>"
+    },
+    {
+      "Sid": "LogsRead",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogsReadClusterGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-northeast-1:<ACCOUNT_ID>:log-group:/aws/containerinsights/<cluster_name>/*",
+        "arn:aws:logs:ap-northeast-1:<ACCOUNT_ID>:log-group:/aws/containerinsights/<cluster_name>/*:*"
+      ]
     }
   ]
 }
@@ -609,6 +669,7 @@ EKS の Access Entry に、次の 3 つを結びつけています。
 | namespace の一覧 | できる |
 | 他の namespace の Pod の参照 | できる |
 | 自分の namespace(`app`)の Secret の参照と編集 | できる |
+| ログの参照 | できる(`kubectl logs` と CloudWatch Logs の両方) |
 | 他の namespace の Secret の参照 | できない |
 | `delete nodes` | できない |
 | namespace の作成 | できない |
@@ -632,11 +693,12 @@ AWS の推奨に合わせた点は次のとおりです。
 
 | 領域 | 守れている点 |
 | --- | --- |
-| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは NLB の 80 番だけで、外へ出るのは NAT の固定 IP だけ |
+| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは CloudFront 経由の HTTPS だけで、NLB はセキュリティグループで CloudFront 以外を拒否する。外へ出るのは NAT の固定 IP だけ |
 | 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
 | builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。`AdministratorAccess` は付けられない |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
 | 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
+| ログ | 全 Pod の標準出力を CloudWatch Logs に転送し、7 日間保存する。deployer が読めるのは自分のクラスタのロググループだけ |
 | state | S3 のバージョニング、暗号化、パブリックアクセスブロックを有効にしている |
 
 ## 本番で追加を検討する対策

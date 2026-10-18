@@ -8,10 +8,11 @@
 
 ## できること
 
-- HTTPS の URL(CloudFront)で、アプリにアクセスできる(NLB の HTTP の URL も残る)
+- HTTPS の URL(CloudFront)で、アプリにアクセスできる(入口は CloudFront だけで、NLB には直接届かない)
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
 - kubectl で、サンプルの Slack アプリ(署名検証、メンション返信)をデプロイできる
-- image を置く ECR がある
+- 全 Pod のログが CloudWatch Logs に転送され、7 日間残る
+- image を置く ECR がある(リポジトリは複数指定できる)
 - deployer ロール(既定は `eks-exp-deployer`)で、image の push とデプロイができる
 
 ## 2 つのロール
@@ -51,10 +52,11 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 | --- | --- | --- |
 | deployer ロールの ARN | `terraform output deployer_role_arn` | `~/.aws/config` の role_arn |
 | クラスタ名とリージョン | `cluster_name`、`region` | update-kubeconfig |
-| ECR リポジトリの URL | `ecr_repository_url` | push と manifest の image |
+| ECR リポジトリの URL | `ecr_repository_url`(先頭の 1 つ。全部は `ecr_repository_urls`) | push と manifest の image |
 | namespace | `deployer_namespaces`(既定 `app`) | デプロイ先 |
 | NodePort | `node_port`(30080) | Service に必ずこの番号を書く |
 | 公開 URL(HTTPS) | `https_url` | 動作確認 |
+| ログのロググループ | `log_group_application` | CloudWatch Logs でのログ参照 |
 | できること・できないこと | `docs/permissions.md` | 権限の範囲の確認 |
 | 最初に読むページ | `docs/deployer.md` | 開発者向けの手順 |
 

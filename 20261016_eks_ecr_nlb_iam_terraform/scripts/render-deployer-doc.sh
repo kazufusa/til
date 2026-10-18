@@ -30,6 +30,7 @@ port="$(get .node_port.value)"
 nlb="$(get .nlb_dns_name.value)"
 nat="$(get .nat_public_ip.value)"
 https="$(get .https_url.value)"
+log_group="$(get '.log_group_application.value // "(ログ転送は無効です)"')"
 
 sed \
   -e "s|{{DEPLOYER_ROLE_ARN}}|$(esc "$role_arn")|g" \
@@ -41,6 +42,7 @@ sed \
   -e "s|{{NLB_DNS_NAME}}|$(esc "$nlb")|g" \
   -e "s|{{NAT_PUBLIC_IP}}|$(esc "$nat")|g" \
   -e "s|{{HTTPS_URL}}|$(esc "$https")|g" \
+  -e "s|{{LOG_GROUP_APPLICATION}}|$(esc "$log_group")|g" \
   "$TEMPLATE" >"$out"
 
 echo "$out"

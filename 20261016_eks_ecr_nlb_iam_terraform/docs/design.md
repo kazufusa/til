@@ -9,7 +9,7 @@
 1. ロール。自分が本番で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `<cluster_name>-deployer`(terraform 管理)
 2. EKS 環境を作る terraform。apply すると次の 5 点が満たされます
 
-- 外部から HTTPS の URL でアプリにアクセスできる(CloudFront の `*.cloudfront.net`、証明書は AWS が自動付与。NLB の HTTP の URL も残る)
+- 外部から HTTPS の URL でアプリにアクセスできる(CloudFront の `*.cloudfront.net`、証明書は AWS が自動付与。入口は CloudFront だけで、NLB は CloudFront 以外を拒否する)
 - アプリからインターネットへアウトバウンドできる(NAT Gateway 経由、送信元は固定 EIP)
 - kubectl でアプリをデプロイできる(EKS、namespace `app`)
 - image を置く ECR がある
@@ -152,7 +152,8 @@ apply と destroy を何周してもバケットは残します。
 - managed node group。t3.medium、desired 1、private subnet 配置。実験目的のため冗長化しません
 - node 用 IAM ロール(`AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryPullOnly`)
 - ECR リポジトリ `app`。`force_delete = true`。イメージスキャンは無効
-- NLB(internet-facing)、NLB 用 SG(80/tcp を 0.0.0.0/0 から許可)
+- NLB(internet-facing)、NLB 用 SG(80/tcp を CloudFront のプレフィックスリストから許可)
+- ログ転送。CloudWatch Observability アドオン、ロググループ 4 つ(保存 7 日)、ノードロールへの `CloudWatchAgentServerPolicy`
 - target group(instance, port 30080, health check は traffic port)、listener 80
 - node group の Auto Scaling Group と target group の紐づけ(`aws_autoscaling_attachment`)
 - EKS クラスタ SG への ingress ルール(30080/tcp を NLB の SG から許可)
@@ -291,7 +292,7 @@ destroy 後に残ることを許容するもの。
 - タグ `Project=eks-exp` の資源がゼロ(Resource Groups Tagging API)
 - EKS クラスタ、ECR リポジトリ、ELB、ASG、NAT Gateway、EIP、VPC(default 以外)がゼロ
 - IAM ロール `<cluster_name>-deployer`、`tf-builder`、`eks-exp-*` がゼロ
-- CloudWatch ロググループ `/aws/eks/` 配下がゼロ
+- CloudWatch ロググループ `/aws/eks/` と `/aws/containerinsights/<cluster_name>/` 配下がゼロ
 
 state バケットは周回中は残すため、`check-leftovers.sh` の対象から除きます。
 `delete-state-bucket.sh` は全オブジェクトバージョンと削除マーカーを消してからバケットを削除します。
@@ -309,7 +310,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 - 独自ドメインと ACM 証明書(HTTPS は CloudFront の既定ドメインで代替)
 - AWS Load Balancer Controller、Ingress
-- オートスケール、監視、ログ基盤
+- オートスケール、監視、ログの分析基盤(転送と 7 日間の保存だけ行う)
 - 複数環境(dev/prod)の切り替え
 - state バケットの terraform 管理(管理者がスクリプトで作る)
 

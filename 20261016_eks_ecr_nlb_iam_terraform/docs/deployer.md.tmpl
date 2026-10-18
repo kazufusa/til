@@ -16,7 +16,8 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | namespace | `{{NAMESPACE}}` |
 | NodePort | `{{NODE_PORT}}` |
 | 公開 URL(HTTPS) | `{{HTTPS_URL}}` |
-| 公開 URL(NLB 直、HTTP) | `http://{{NLB_DNS_NAME}}/` |
+| CloudFront のオリジン(NLB) | `{{NLB_DNS_NAME}}`(直接は届きません) |
+| アプリのログ(CloudWatch Logs) | `{{LOG_GROUP_APPLICATION}}` |
 | 外向き通信の送信元 IP | `{{NAT_PUBLIC_IP}}` |
 
 ## プロファイルの設定
@@ -97,6 +98,26 @@ Request URL を入れると、Slack が challenge を送ります。
 slack.com への通信は NAT を通ります。送信元 IP は上の表の値です。
 詳しい手順は `app/README.md` にあります。
 
+## ログの見方
+
+Pod のログは、まず kubectl で見ます。
+
+```bash
+kubectl -n {{NAMESPACE}} logs deploy/web --tail=100 -f
+```
+
+Pod が消えると、kubectl では見えなくなります。
+全 Pod の標準出力は CloudWatch Logs にも転送してあり、Pod が消えたあとも 7 日間残ります。
+次のコマンドで読めます。
+
+```bash
+aws logs tail {{LOG_GROUP_APPLICATION}} --follow --profile deployer --region {{REGION}}
+```
+
+読み取りの権限があるのは、このクラスタのロググループだけです。
+NLB の URL には、外から直接は届きません。
+入口は CloudFront の HTTPS の URL だけです。
+
 ## できること・できないこと
 
 | 操作 | 可否 |
@@ -104,6 +125,7 @@ slack.com への通信は NAT を通ります。送信元 IP は上の表の値�
 | namespace `{{NAMESPACE}}` の中の操作 | admin なのでできる |
 | クラスタ全体の参照(`get nodes` など) | 読み取りだけできる |
 | 自分の namespace(`{{NAMESPACE}}`)の Secret の参照と編集 | できる |
+| ログの参照 | できる(`kubectl logs` と CloudWatch Logs の両方) |
 | 他の namespace の Secret の参照 | できない |
 | namespace の作成 | できない |
 | ResourceQuota の変更 | できない |

@@ -16,7 +16,8 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | namespace | `app` |
 | NodePort | `30080` |
 | 公開 URL(HTTPS) | `https://d0123456789abc.cloudfront.net/` |
-| 公開 URL(NLB 直、HTTP) | `http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/` |
+| CloudFront のオリジン(NLB) | `eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com`(直接は届きません) |
+| アプリのログ(CloudWatch Logs) | `/aws/containerinsights/eks-exp/application` |
 | 外向き通信の送信元 IP | `203.0.113.10` |
 
 ## プロファイルの設定
@@ -97,6 +98,26 @@ Request URL を入れると、Slack が challenge を送ります。
 slack.com への通信は NAT を通ります。送信元 IP は上の表の値です。
 詳しい手順は `app/README.md` にあります。
 
+## ログの見方
+
+Pod のログは、まず kubectl で見ます。
+
+```bash
+kubectl -n app logs deploy/web --tail=100 -f
+```
+
+Pod が消えると、kubectl では見えなくなります。
+全 Pod の標準出力は CloudWatch Logs にも転送してあり、Pod が消えたあとも 7 日間残ります。
+次のコマンドで読めます。
+
+```bash
+aws logs tail /aws/containerinsights/eks-exp/application --follow --profile deployer --region ap-northeast-1
+```
+
+読み取りの権限があるのは、このクラスタのロググループだけです。
+NLB の URL には、外から直接は届きません。
+入口は CloudFront の HTTPS の URL だけです。
+
 ## できること・できないこと
 
 | 操作 | 可否 |
@@ -104,6 +125,7 @@ slack.com への通信は NAT を通ります。送信元 IP は上の表の値�
 | namespace `app` の中の操作 | admin なのでできる |
 | クラスタ全体の参照(`get nodes` など) | 読み取りだけできる |
 | 自分の namespace(`app`)の Secret の参照と編集 | できる |
+| ログの参照 | できる(`kubectl logs` と CloudWatch Logs の両方) |
 | 他の namespace の Secret の参照 | できない |
 | namespace の作成 | できない |
 | ResourceQuota の変更 | できない |
