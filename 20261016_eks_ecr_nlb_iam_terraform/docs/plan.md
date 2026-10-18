@@ -17,7 +17,7 @@
 - 全資源に `Project = eks-exp` タグ(provider の `default_tags`)
 - クラスタ名 `eks-exp`、IAM ロール名は `eks-exp-cluster`、`eks-exp-node`、`app-deployer`、`tf-builder`、ポリシー名は `app-deployer-policy`、`tf-builder-policy`
 - ECR リポジトリ名 `app`、NodePort は `30080`、ノードは `t3.medium` x1
-- deployer の Kubernetes 権限は `AmazonEKSEditPolicy` を namespace `app` に限定。namespace と ResourceQuota(`services.loadbalancers=0`、`persistentvolumeclaims=0`)は terraform が作る
+- deployer の Kubernetes 権限は `AmazonEKSAdminPolicy` を namespace `app` に限定、加えて `AmazonEKSViewPolicy` を cluster スコープ(読み取り専用)。namespace と ResourceQuota(`services.loadbalancers=0`、`persistentvolumeclaims=0`)は terraform が作る
 - cluster-admin は builder(クラスタ作成者)だけ。deployer に cluster スコープの権限を付けない
 - state バケット名は `tfstate-<アカウントID>-eks-exp`、タグは `Project = eks-exp-state`(残骸チェックの対象外にするため値を変える)
 - `bootstrap/` は aws コマンドだけで書く(マネージャーは terraform を使えない)。`terraform/` は本番と実験で同一
@@ -1967,15 +1967,15 @@ Run:
 ```bash
 aws eks update-kubeconfig --name eks-exp --profile deployer --alias eks-exp-deployer
 K="kubectl --context eks-exp-deployer"
-echo "--- 許可されるべき"; $K -n app auth can-i create deployments; $K -n app auth can-i create services; $K -n app auth can-i delete pods
-echo "--- 拒否されるべき"; $K auth can-i create namespaces; $K auth can-i list nodes; $K -n kube-system auth can-i list pods; $K -n app auth can-i update resourcequotas; $K -n app auth can-i create rolebindings
-$K get namespaces; echo "exit=$?"
+echo "--- 許可されるべき(書き込みは app、読み取りは全体)"; $K -n app auth can-i create deployments; $K -n app auth can-i create services; $K -n app auth can-i delete pods; $K -n app auth can-i create rolebindings; $K auth can-i list nodes; $K auth can-i list namespaces; $K -n kube-system auth can-i list pods
+echo "--- 拒否されるべき"; $K auth can-i create namespaces; $K -n kube-system auth can-i delete pods; $K -n kube-system auth can-i get secrets; $K -n app auth can-i update resourcequotas; $K -n app auth can-i delete namespaces
+$K get nodes; echo "exit=$?"
 echo "--- quota で拒否されるべき"
 $K -n app create deploy nc --image=public.ecr.aws/docker/library/busybox:1.36 -- sleep 3600
 $K -n app expose deploy nc --name=nc-lb --type=LoadBalancer --port=80; echo "exit=$?"
 $K -n app delete deploy nc
 ```
-Expected: 許可側 3 つ `yes`。拒否側 5 つ `no`、`get namespaces` は `Forbidden`。quota は `exceeded quota: no-cloud-resources`。
+Expected: 許可側 7 つ `yes`。拒否側 5 つ `no`。`get nodes` はノード 1 台が表示され `exit=0`。quota は `exceeded quota: no-cloud-resources`。
 
 - [ ] **Step 4: 実験ログを追記して commit**
 

@@ -38,7 +38,7 @@ destroy は実験の操作であり、本番では行いません。
 
 役割分担は AWS の推奨に合わせます。
 cluster-admin は platform(builder)だけが持ちます。
-deployer は namespace `app` に限定した edit 権限を持ちます。
+deployer はアプリ開発者です。namespace `app` の中は admin、クラスタ全体は読み取り専用の権限を持ちます。
 namespace と ResourceQuota は builder が terraform で作ります。
 
 IAM の方針も推奨に合わせます。
@@ -167,7 +167,10 @@ KMS のカスタマーキーは使いません。削除に待機期間がある�
 - IAM ロール `app-deployer`。信頼ポリシーは変数 `deployer_trusted_principals` に列挙した ARN からの `sts:AssumeRole` を許可
 - カスタマー管理ポリシー `app-deployer-policy`(下記)をロールにアタッチ
 - EKS Access Entry(principal は上記ロール)
-- Access Policy の関連付け。`AmazonEKSEditPolicy`、スコープは namespace(変数 `deployer_namespaces`、既定 `["app"]`)
+- Access Policy の関連付けを 2 つ
+  - `AmazonEKSAdminPolicy` を namespace スコープ(変数 `deployer_namespaces`、既定 `["app"]`)。自分の namespace では Role や RoleBinding も作れ、チームメイトを自分で追加できます。ResourceQuota と namespace 自体は変更できません
+  - `AmazonEKSViewPolicy` を cluster スコープ。ノード、namespace 一覧、他 namespace の Pod を参照できます。Secret の参照は含まれません
+  - ノードの状態が見えないと Pod の Pending の原因を追えないため、読み取りはクラスタ全体にします
 - namespace `app`(kubernetes provider で作成。認証は `aws eks get-token` の exec)
 - namespace `app` の ResourceQuota。`services.loadbalancers = 0`、`persistentvolumeclaims = 0`
 
@@ -262,7 +265,7 @@ AccessDenied が出たら候補ポリシーに Action を足し、管理者が `
 
 1. builder で再 apply
 2. プロファイル `deployer` で AWS 側の 5 操作が全て拒否されることを確認
-3. Kubernetes 側で namespace 外が Forbidden、quota で LoadBalancer が拒否、namespace 内の Deployment と Service は許可されることを確認
+3. Kubernetes 側で、読み取りはクラスタ全体で許可、書き込みは namespace `app` 以外で Forbidden、quota で LoadBalancer が拒否、namespace 内の Deployment と Service と RoleBinding は許可されることを確認
 
 片付けは、builder で destroy、builder で `delete-state-bucket.sh`、管理者で `delete-builder-role.sh`、`check-leftovers.sh` が clean、の順です。
 最後に確定版の `tf-builder-policy.json` と申請文を README に載せます。
