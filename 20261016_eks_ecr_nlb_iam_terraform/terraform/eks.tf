@@ -85,5 +85,10 @@ resource "aws_eks_node_group" "main" {
     max_unavailable = 1
   }
 
-  depends_on = [aws_iam_role_policy_attachment.node]
+  # ノードはNAT経由の出口がないと起動に失敗するため、
+  # privateルートテーブルの関連付けが済んでから作成する
+  depends_on = [
+    aws_iam_role_policy_attachment.node,
+    aws_route_table_association.private,
+  ]
 }
