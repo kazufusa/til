@@ -2076,6 +2076,109 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: builder権限をAWS管理ポ�
 
 ---
 
+### Task 12d: HTTPS の入口(CloudFront を NLB の前に置く)
+
+**Files:**
+- Create: `terraform/cloudfront.tf`
+- Modify: `terraform/outputs.tf`(`https_url`)
+- Modify: `bootstrap/tf-builder-policy.json` と `.minimal.json`(Sid `CloudFront`)
+- Modify: `scripts/check-leftovers.sh`(CloudFront distribution の残骸チェックを追加)
+
+**Interfaces:**
+- Consumes: `aws_lb.main.dns_name`
+- Produces: output `https_url = "https://<distribution domain>/"`
+
+- [ ] **Step 1: cloudfront.tf を作る**
+
+```hcl
+# terraform/cloudfront.tf
+# ELB の既定ドメインには証明書を付けられないため、CloudFront の既定ドメイン(*.cloudfront.net)で HTTPS を提供する。
+# キャッシュは無効。HTTP で来た場合は HTTPS にリダイレクトする。CloudFront から NLB へは HTTP。
+resource "aws_cloudfront_distribution" "main" {
+  enabled         = true
+  comment         = "${local.name_prefix} HTTPS entry"
+  is_ipv6_enabled = true
+  price_class     = "PriceClass_200"
+
+  origin {
+    domain_name = aws_lb.main.dns_name
+    origin_id   = "nlb"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "nlb"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD"]
+    # AWS 管理ポリシー: CachingDisabled と AllViewer(ID は AWS 公開の固定値)
+    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+    origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+```
+
+- [ ] **Step 2: outputs.tf に追加**
+
+```hcl
+output "https_url" {
+  description = "HTTPS の公開 URL(CloudFront の既定ドメイン)"
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}/"
+}
+```
+
+- [ ] **Step 3: builder 権限に CloudFront を追加(両 JSON)**
+
+```json
+{
+  "Sid": "CloudFront",
+  "Effect": "Allow",
+  "Action": [
+    "cloudfront:CreateDistribution",
+    "cloudfront:GetDistribution",
+    "cloudfront:GetDistributionConfig",
+    "cloudfront:UpdateDistribution",
+    "cloudfront:DeleteDistribution",
+    "cloudfront:TagResource",
+    "cloudfront:UntagResource",
+    "cloudfront:ListTagsForResource"
+  ],
+  "Resource": "*"
+}
+```
+
+- [ ] **Step 4: check-leftovers.sh に追加**
+
+```bash
+check "cloudfront distributions" \
+  aws cloudfront list-distributions --query "DistributionList.Items[?contains(Comment, \`${PROJECT}\`)].Id" --output text
+```
+
+- [ ] **Step 5: validate と commit**
+
+`terraform fmt -check -recursive && validate`、`jq empty` 両 JSON、`bash -n`。
+commit: `20261016_eks_ecr_nlb_iam_terraform: CloudFrontでHTTPSの入口を追加(ELB既定ドメインには証明書を付けられないため)`
+
+検証は Task 13 の eks-exp2 周回で `curl -sI https://<domain>/` が 200 を返すことで行う。CloudFront の作成に 5〜10 分かかる。
+
+---
+
 ### Task 13: 片付けと README の完成
 
 **Files:**
@@ -2125,7 +2228,7 @@ PROJECT=eks-exp2 AWS_PROFILE=builder bootstrap/create-state-bucket.sh
 terraform -chdir=terraform init -reconfigure -backend-config="profile=builder" -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp2"
 terraform -chdir=terraform apply -var aws_profile=builder -var cluster_name=eks-exp2 -auto-approve
 ```
-deployer 役で push と apply を行い、curl で応答を確認したら destroy します。
+deployer 役で push と apply を行い、HTTP(NLB)と HTTPS(`terraform output -raw https_url`)の両方で curl の応答を確認したら destroy します。HTTPS は CloudFront の伝播に数分かかるため、最大 10 分待ちます。
 
 ```bash
 terraform -chdir=terraform destroy -var aws_profile=builder -var cluster_name=eks-exp2 -auto-approve

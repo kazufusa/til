@@ -9,7 +9,7 @@
 1. ロール。自分が本番で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `app-deployer`(terraform 管理)
 2. EKS 環境を作る terraform。apply すると次の 5 点が満たされます
 
-- 外部から URL でアプリにアクセスできる(NLB の DNS 名)
+- 外部から HTTPS の URL でアプリにアクセスできる(CloudFront の `*.cloudfront.net`、証明書は AWS が自動付与。NLB の HTTP の URL も残る)
 - アプリからインターネットへアウトバウンドできる(NAT Gateway 経由、送信元は固定 EIP)
 - kubectl でアプリをデプロイできる(EKS、namespace `app`)
 - image を置く ECR がある
@@ -307,7 +307,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 ## 対象外
 
-- HTTPS と独自ドメイン
+- 独自ドメインと ACM 証明書(HTTPS は CloudFront の既定ドメインで実現)
 - AWS Load Balancer Controller、Ingress
 - オートスケール、監視、ログ基盤
 - 複数環境(dev/prod)の切り替え
