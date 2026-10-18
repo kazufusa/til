@@ -527,4 +527,48 @@ IAM ロール(`app-deployer`、`tf-builder`、`eks-exp-*`)と、`/aws/eks/` 配�
 
 ## 実験ログ
 
-第 1 段以降で追記します。
+### 第 0〜1 段(2026-10-17 実施)
+
+マネージャー役のユーザーが `create-builder-role.sh` を実行し、`tf-builder` を作りました。
+`aws-reserved` パス付きの SSO ロール ARN は、信頼ポリシーの Principal として拒否されませんでした。
+そのため、`root` と `PrincipalArn` 条件に切り替える代替案は使っていません。
+2 回目の実行は `updated` で成功し、スクリプトが冪等であることも確認できました。
+
+以降の AWS 操作は、すべて `builder` と `deployer` で行いました。
+`builder` に切り替えた後は管理者権限が外れており、`sso-admin list-instances` は AccessDenied になりました。
+`iam list-users` は成功します。`ReadOnlyDiscovery` に `iam:List*` を含めているためで、手順書の期待値が誤っていました。
+
+state バケットの作成と 2 回目の再実行は、builder で AccessDenied なく通りました。
+`init` と `plan` も通り、plan は 38 個の追加でした。
+`deployer_trusted_principals` は、実行者の帽子である `tf-builder` になりました。
+
+#### 足りなかった Action
+
+| 回 | Action | 追加先の Sid | 発生した操作 |
+| --- | --- | --- | --- |
+| 1 | `ec2:GetSecurityGroupsForVpc` | `ReadOnlyDiscovery` | セキュリティグループ付き NLB の作成 |
+
+`ec2:Describe*` では `GetSecurityGroupsForVpc` を含められません。
+1 回目の apply は 38 個中 36 個を作った時点で止まりました。
+Action を足して管理者がロールを更新した後、2 回目の plan は 2 個の追加になり、apply が完了しました。
+追加した Action は 1 件だけで、7b の繰り返しは 1 回でした。
+
+#### 所要時間
+
+1 回目の apply では、EKS クラスターに約 8 分半、NAT ゲートウェイに約 2 分、ノードグループに約 2 分かかりました。
+NLB の作成には約 2 分半かかりました。
+2 回目の apply が終わってから第 1 段の確認を始めるまで、環境は十数時間放置されていました。
+その間の費用は、片付け時に確認します。
+
+#### 疎通結果
+
+- 2 回目の apply 直後の target は 1 台で `unhealthy` でした。Pod がまだ無かったためです。
+- `app-deployer` の assume は、`source_profile = builder` の 2 段重ねで成功しました。
+- deployer で ECR にログインし、`v1` を push できました。
+- `get nodes` は Forbidden になり、`no-cloud-resources` の quota も見えました。
+- rollout は成功し、Service は `80:30080/TCP` になりました。
+- 少し待つと target は `healthy` になり、NLB 経由の curl は `hello from eks-exp` を返しました。
+- Pod から見た外向き IP は NAT ゲートウェイの IP と一致しました。
+
+回避策は使っていません。
+kubernetes provider の接続エラーも起きず、NLB の代替ルール(VPC CIDR からの許可)も不要でした。
