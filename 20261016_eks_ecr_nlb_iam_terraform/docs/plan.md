@@ -2114,29 +2114,33 @@ kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-id
 ```
 `~/.aws/config` の `builder` と `deployer` は再実験に備えて残す(README に「不要なら手で消す」と記載)。
 
-- [ ] **Step 5: README を完成させる**
+- [ ] **Step 5: 文書を README と docs/ に分割して完成させる**
 
-- 「解説」の節を README の冒頭近く(目的の直後)に追加する。対象読者は AWS と Kubernetes の初学者。次の項目を、各項目 3〜6 文の平易な日本語で書く
-  1. ロールは「かぶる帽子」。IAM ユーザーとの違い、スイッチロールの意味、SSO でログインした時点で帽子 1 をかぶっていること
-  2. 段 0 と段 1。terraform を回す帽子(`tf-builder`)は terraform では作れないので、マネージャーがスクリプトで作る。それ以外は builder が terraform で作る
-  3. 2 つの帽子の役割分担。builder(作る人)と deployer(使う人)。deployer は AWS 側は ECR と `eks:DescribeCluster` だけ、Kubernetes 側は namespace `app` の edit だけ
-  4. kubectl の認証と認可。`aws eks get-token` が帽子の鍵でトークンを作り、EKS の Access Entry が「この帽子は Kubernetes のこの権限」に対応づける。IAM ポリシーには Kubernetes の権限は書かない
-  5. ノードと Pod。ノードは EC2、Pod はその上のコンテナ。ノードは builder が terraform で増減し、Pod は deployer が kubectl で増減する
-  6. URL からアプリまでの経路。NLB(terraform 管理)→ ノードの 30080 → Service → Pod。数字 30080 だけが両者の約束
-  7. なぜ namespace 限定と ResourceQuota か。cluster-admin は platform だけ。quota で deployer が terraform 外の ELB や EBS を作れないようにし、destroy で必ず戻せるようにする
-  8. マネージャーへの頼み方。渡すのは `create-builder-role.sh` と `tf-builder-policy.json`、頼むのは実行 1 回。候補ポリシーは実験で検証済みだが硬い境界ではないこと
-- 「builder の権限(申請用)」を 2 段構成にする。本文は「AWS 管理ポリシー 3 つ + カスタム 1 つ」の表と 3 行の説明(ネットワーク/ELB/ECR は AWS 管理、EKS は全権、IAM と state バケットだけ名前で縛る)。カスタム JSON は `jq . bootstrap/tf-builder-policy.json`。付録として `tf-builder-policy.minimal.json` を「監査が厳しい環境向けの代替(実験で検証済み)」として載せる
-- 同じ節に「権限一覧」の表を置く。列は「サービス」「主な Action」「何のために必要か」。行は ec2(ネットワーク)、eks、ecr、elasticloadbalancing、autoscaling、iam、s3、sts
-- 「実験で見つかった権限」の表を置く。列は「Action」「どの操作で必要になったか」「候補に無かった理由」。行は `ec2:GetSecurityGroupsForVpc`(SG 付き NLB の作成)、`ec2:DisassociateAddress`(NAT 用 EIP の解放、destroy 時)、ほか実験中に追加したもの全て
-- 「deployer の権限(terraform 管理)」を、AWS 側(JSON)と Kubernetes 側(`AmazonEKSAdminPolicy` namespace `app`、`AmazonEKSViewPolicy` cluster)の 2 段で書き、「できること / できないこと」の表を付ける(get nodes 可、他 namespace の参照可、Secret 参照不可、namespace 作成不可、quota 変更不可、LoadBalancer 作成不可)
-- 実験ログに、第 3 段の結果、最終 destroy とバケット削除の結果、足した Action の総数
-- 申請文のたたき台を最終化(依頼は `create-builder-role.sh` 1 件、添付 3 つ、範囲の説明 4 点、撤去手順)
+README.md は 100 行前後の入口にし、詳細は `docs/` に移します。既存 README の内容は捨てずに移します。
 
+| ファイル | 中身 |
+| --- | --- |
+| `README.md` | 何を作るか(5 要件の箇条書き)、2 つのロールの 1 行説明、最短手順(マネージャー 1 コマンド、builder: init/apply/output、deployer: profile/push/apply/確認)、名前を変えるときの注意(`cluster_name` と `PROJECT`)、docs への案内 |
+| `docs/guide.md` | 初学者向け解説。項目: 1 ロールは帽子、SSO とスイッチロール / 2 段 0 と段 1 / 3 builder と deployer の分担 / 4 kubectl の認証と認可(get-token と Access Entry) / 5 ノードと Pod / 6 URL から Pod までの経路と 30080 / 7 namespace admin + cluster view と ResourceQuota の理由 / 8 ECR と Pod の紐付け(deployer は image 名を書く、pull 権限はノードの帽子) / 9 マネージャーへの頼み方。各項目 3〜6 文 |
+| `docs/permissions.md` | builder: 申請構成の表(AWS 管理 3 + カスタム 1)と 3 行の説明、カスタム JSON、権限一覧表(サービス別の目的)、実験で見つかった権限の表、付録として `tf-builder-policy.minimal.json` の全文。deployer: AWS 側 JSON、Kubernetes 側(Admin namespace app + View cluster)、できる/できない表。設計の方針(AWS 推奨に沿った点)もここに移す |
+| `docs/request.md` | 申請文のたたき台。依頼 1 件(`create-builder-role.sh <ARN>`)、添付 3 つ、範囲の説明 4 点、撤去手順、候補ポリシーは硬い境界ではない旨 |
+| `docs/experiment-log.md` | 既存の実験ログを移し、第 3 段と片付けを追記。費用の概算を記入 |
+
+書き方の規約(ですます調、一文 60 字目安、強調なし、見出しは体言止め、固有値なし)は全ファイルに適用します。
+`docs/design.md` の「成果物」の節を、この分割に合わせて更新します。
+
+確認:
 ```bash
-grep -nE '\*\*[^*]+\*\*' README.md || echo "no bold"
-grep -nE '(可能です|提供します|が求められます|において|に関して)' README.md || echo "no banned phrases"
+cd 20261016_eks_ecr_nlb_iam_terraform
+wc -l README.md docs/*.md
+for f in README.md docs/guide.md docs/permissions.md docs/request.md docs/experiment-log.md; do
+  grep -nE '\*\*[^*]+\*\*' "$f" && echo "bold in $f"
+  grep -nE '(可能です|提供します|が求められます|において|に関して)' "$f" && echo "banned in $f"
+done; echo checks done
 grep -rn "$(aws sts get-caller-identity --query Account --output text)" . || echo "no account id"
+LC_ALL=C.UTF-8 gawk 'BEGIN{code=0} /^```/{code=!code; next} code||/^\|/||/^#/||/^$/{next} {if (length($0) > 90) print FILENAME":"NR": "length($0)}' README.md docs/guide.md docs/permissions.md docs/request.md docs/experiment-log.md
 ```
+Expected: README が 120 行以下、`checks done` の前に出力なし、`no account id`、長文チェックの出力なし。
 
 - [ ] **Step 6: commit と push**
 
