@@ -39,15 +39,22 @@ terraform apply
 terraform output
 ```
 
-deployer が、image を push してデプロイします。
-プロファイルの書き方は `docs/guide.md` の付録にあります。
+deployer は、`docs/deployer.md` の手順で image を push してデプロイします。
 
-```bash
-aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
-docker build -t "${ECR}:v1" app/ && docker push "${ECR}:v1"
-aws eks update-kubeconfig --name eks-exp
-sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -f -
-```
+## deployer への引き渡し
+
+builder が apply の後に developer へ渡す情報です。
+
+| 渡すもの | 出所 | 用途 |
+| --- | --- | --- |
+| `app-deployer` ロールの ARN | `terraform output deployer_role_arn` | `~/.aws/config` の role_arn |
+| クラスタ名とリージョン | `cluster_name`、`region` | update-kubeconfig |
+| ECR リポジトリの URL | `ecr_repository_url` | push と manifest の image |
+| namespace | `deployer_namespaces`(既定 `app`) | デプロイ先 |
+| NodePort | `node_port`(30080) | Service に必ずこの番号を書く |
+| 公開 URL | `nlb_dns_name` | 動作確認 |
+| できること・できないこと | `docs/permissions.md` | 権限の範囲の確認 |
+| 最初に読むページ | `docs/deployer.md` | 開発者向けの手順 |
 
 ## 名前を変えるときの注意
 
@@ -70,6 +77,7 @@ docs/        解説、権限、申請文、実験ログ、設計、計画
 ## 文書の案内
 
 - `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説と、手順の詳細
+- `docs/deployer.md`: アプリ開発者が最初に読む手順書
 - `docs/permissions.md`: builder と deployer の権限、検証で見つかった Action
 - `docs/request.md`: マネージャーへの申請文のたたき台
 - `docs/experiment-log.md`: 各段の実験ログ
