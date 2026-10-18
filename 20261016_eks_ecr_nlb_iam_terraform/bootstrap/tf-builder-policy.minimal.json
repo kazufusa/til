@@ -177,6 +177,7 @@
             "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
             "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
             "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+            "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
             "arn:aws:iam::*:policy/eks-exp-deployer-policy"
           ]
         }
@@ -237,6 +238,30 @@
       "Sid": "StateBucketDiscovery",
       "Effect": "Allow",
       "Action": "s3:ListAllMyBuckets",
+      "Resource": "*"
+    },
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:DescribeLogGroups",
+        "logs:ListTagsForResource",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsLogGroup",
+        "logs:TagLogGroup",
+        "logs:UntagLogGroup"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*"
+    },
+    {
+      "Sid": "LogsDescribe",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
       "Resource": "*"
     }
   ]

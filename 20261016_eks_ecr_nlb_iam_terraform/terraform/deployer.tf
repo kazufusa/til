@@ -45,6 +45,29 @@ data "aws_iam_policy_document" "deployer" {
     actions   = ["eks:DescribeCluster"]
     resources = [aws_eks_cluster.main.arn]
   }
+
+  # 自分のクラスタのログだけを読める。転送を止めていても害はないので常に付ける
+  statement {
+    sid       = "LogsRead"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "LogsReadClusterGroups"
+    actions = [
+      "logs:DescribeLogStreams",
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+      "logs:StartQuery",
+      "logs:GetQueryResults",
+      "logs:StopQuery",
+    ]
+    resources = [
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/containerinsights/${var.cluster_name}/*",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/containerinsights/${var.cluster_name}/*:*",
+    ]
+  }
 }
 
 resource "aws_iam_policy" "deployer" {

@@ -45,3 +45,8 @@ output "https_url" {
   description = "HTTPS の公開 URL(CloudFront の既定ドメイン)"
   value       = "https://${aws_cloudfront_distribution.main.domain_name}/"
 }
+
+output "log_group_application" {
+  description = "全 Pod の標準出力が入る CloudWatch Logs のロググループ。転送を止めていれば null"
+  value       = var.enable_log_shipping ? aws_cloudwatch_log_group.insights["application"].name : null
+}

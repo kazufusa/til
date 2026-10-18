@@ -62,3 +62,20 @@ variable "aws_profile" {
   type        = string
   default     = null
 }
+
+variable "enable_log_shipping" {
+  description = "Pod のログを CloudWatch Logs に転送するか"
+  type        = bool
+  default     = true
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs の保存日数"
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90], var.log_retention_days)
+    error_message = "log_retention_days は 1, 3, 5, 7, 14, 30, 60, 90 のいずれかにしてください。"
+  }
+}

@@ -67,6 +67,9 @@ check "iam policies" \
 check "eks log groups" \
   aws logs describe-log-groups --log-group-name-prefix /aws/eks/ \
   --query 'logGroups[].logGroupName' --output text
+check "container insights log groups" \
+  aws logs describe-log-groups --log-group-name-prefix "/aws/containerinsights/${PROJECT}/" \
+  --query 'logGroups[].logGroupName' --output text
 
 if [[ "$fail" -ne 0 ]]; then
   echo "RESULT: leftovers found"
