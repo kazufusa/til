@@ -162,3 +162,31 @@ ECR リポジトリは作り直されていたので、イメージを build し
 deployer の権限だけでマニフェストを適用でき、rollout も完了しました。
 NLB の URL に curl すると、1 回目で `hello from eks-exp` が返りました。
 環境は稼働したままです。
+
+### 第 3 段の追補: get nodes
+
+deployer が `kubectl get nodes` を実行すると、Forbidden になっていました。
+AmazonEKSViewPolicy は Kubernetes の view ClusterRole に対応します。
+view は namespace 内の資源だけを対象にし、クラスタ直下の nodes を含みません。
+
+そこで、nodes の get・list・watch だけを許す ClusterRole を terraform で追加しました。
+deployer の access entry には Kubernetes グループ app-deployers を設定し、
+このグループに ClusterRoleBinding で ClusterRole を結び付けています。
+access entry は作り直しにならず、policy association も維持されました。
+plan は 2 add、1 change、0 destroy で、builder の権限不足はありませんでした。
+
+deployer の profile で確認した結果は次のとおりです。
+
+| 確認 | 結果 |
+| --- | --- |
+| auth whoami | app-deployer のロールと、グループ app-deployers が表示された |
+| get nodes | 1 ノードが Ready で、終了コード 0 |
+| auth can-i list nodes | yes |
+| auth can-i delete nodes | no |
+| kube-system で auth can-i get secrets | no(変更なし) |
+| get namespaces | 一覧を取得できた |
+
+確認時の落とし穴は、前節と同じく user エントリの共有です。
+`update-kubeconfig` に `--user-alias` を付けないと、profile ごとの認証が上書きされます。
+`--alias eks-exp-deployer --user-alias eks-exp-deployer` のように、
+context と user の両方に別名を付けると、profile が混ざりません。
