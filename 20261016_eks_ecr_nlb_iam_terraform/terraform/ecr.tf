@@ -1,6 +1,8 @@
 # terraform/ecr.tf
 resource "aws_ecr_repository" "app" {
-  name                 = var.ecr_repository_name
+  for_each = toset(var.ecr_repository_names)
+
+  name                 = each.value
   image_tag_mutability = "MUTABLE"
   # destroy 時に image が残っていても消せるようにする
   force_delete = true

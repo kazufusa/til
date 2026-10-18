@@ -37,7 +37,7 @@ data "aws_iam_policy_document" "deployer" {
       "ecr:ListImages",
       "ecr:DescribeRepositories",
     ]
-    resources = [aws_ecr_repository.app.arn]
+    resources = [for r in aws_ecr_repository.app : r.arn]
   }
 
   statement {

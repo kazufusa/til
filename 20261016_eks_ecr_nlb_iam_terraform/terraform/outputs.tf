@@ -13,7 +13,13 @@ output "nlb_dns_name" {
 }
 
 output "ecr_repository_url" {
-  value = aws_ecr_repository.app.repository_url
+  description = "先頭のリポジトリの URL"
+  value       = aws_ecr_repository.app[var.ecr_repository_names[0]].repository_url
+}
+
+output "ecr_repository_urls" {
+  description = "リポジトリ名から URL への対応"
+  value       = { for name, r in aws_ecr_repository.app : name => r.repository_url }
 }
 
 output "deployer_role_arn" {

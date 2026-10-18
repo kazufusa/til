@@ -26,10 +26,15 @@ variable "node_count" {
   }
 }
 
-variable "ecr_repository_name" {
-  description = "ECR リポジトリ名"
-  type        = string
-  default     = "app"
+variable "ecr_repository_names" {
+  description = "ECR リポジトリ名の一覧。先頭の 1 つが ecr_repository_url になる"
+  type        = list(string)
+  default     = ["app"]
+
+  validation {
+    condition     = length(var.ecr_repository_names) >= 1
+    error_message = "ecr_repository_names は 1 つ以上必要です。"
+  }
 }
 
 variable "deployer_trusted_principals" {
