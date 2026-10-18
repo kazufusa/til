@@ -595,7 +595,7 @@ terraform が管理する権限で、AWS 側と Kubernetes 側があります。
 EKS の Access Entry に、次の 3 つを結びつけています。
 
 - `AmazonEKSAdminPolicy`: namespace `app` に限る。Role や RoleBinding も作れる
-- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない
+- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない(自分の namespace の Secret は admin 権限で扱えます)
 - ClusterRole `node-viewer`: nodes の get、list、watch だけ。
   Kubernetes グループ `<cluster_name>-deployers` に結びつく
 
@@ -635,7 +635,7 @@ AWS の推奨に合わせた点は次のとおりです。
 | ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは NLB の 80 番だけで、外へ出るのは NAT の固定 IP だけ |
 | 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
 | builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。`AdministratorAccess` は付けられない |
-| deployer | 書き込みは namespace `app` の中だけ。Secret の参照、namespace の作成、quota の変更はできない |
+| deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
 | 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
 | state | S3 のバージョニング、暗号化、パブリックアクセスブロックを有効にしている |
 

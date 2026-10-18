@@ -190,3 +190,99 @@ deployer の profile で確認した結果は次のとおりです。
 `update-kubeconfig` に `--user-alias` を付けないと、profile ごとの認証が上書きされます。
 `--alias eks-exp-deployer --user-alias eks-exp-deployer` のように、
 context と user の両方に別名を付けると、profile が混ざりません。
+
+## 片付けと検証周回
+
+### 旧環境の destroy
+
+名前の一元化の前に作った環境(クラスター名 eks-exp)を、粗い権限の builder で destroy しました。
+粗い権限とは、AWS 管理ポリシー 3 つとカスタムポリシーを組み合わせた構成です。
+結果は 41 リソースの削除で、AccessDenied は 1 件も出ませんでした。
+権限の追加はありません。所要時間は約 12 分 40 秒でした。
+内訳は、ノードグループが約 8 分、EKS クラスターが約 3 分、NAT ゲートウェイが約 1 分、NLB が約 30 秒です。
+
+state 用バケットを削除し、作り直し、もう一度削除する往復は、記録が残っていないため未確認です。
+バケットの削除そのものは、後述の eks-exp2 の片付けで確認できました。
+バージョニングされた 16 個のオブジェクトを消してから、バケットが削除されています。
+
+### 名前を変えた周回
+
+名前の一元化が効いているかを確かめるため、cluster_name を eks-exp2 にして最初から作り直しました。
+変わった名前は次のとおりです。
+cluster_name だけを渡して、残りは派生しました。
+
+| 対象 | 旧 | 新 |
+| --- | --- | --- |
+| クラスター | eks-exp | eks-exp2 |
+| 付随するロール | eks-exp-* | eks-exp2-* |
+| deployer ロール | eks-exp-deployer | eks-exp2-deployer |
+| state バケット | tfstate-(アカウント)-eks-exp | 同 eks-exp2 |
+| タグ Project | eks-exp | eks-exp2 |
+
+builder のカスタムポリシーは render-policy.sh で eks-exp2 向けに描画し直しました。
+新しい名前のまま、AccessDenied は apply でも destroy でも 0 件でした。
+
+### apply
+
+apply は 42 リソースの追加で、所要時間は約 10 分 30 秒でした。
+内訳は、EKS クラスターが約 8 分、NAT ゲートウェイが約 2 分、ノードグループが約 2 分です。
+NLB は約 2 分 40 秒、CloudFront は約 2 分 50 秒でした。
+
+### 動作確認
+
+deployer のロールに切り替えて、ECR への push から確認しました。
+
+| 確認 | 結果 |
+| --- | --- |
+| docker push | ECR に v1 を push できた |
+| get nodes | 1 ノードが Ready |
+| Deployment の rollout | 成功 |
+| NLB への HTTP | 応答に hello from eks-exp が含まれた |
+| CloudFront への HTTPS | 1 回目の確認で成功 |
+| CloudFront への HTTP | 301 Moved Permanently |
+| app で Secret を作成、参照、削除 | すべてできた |
+| kube-system の Secret 一覧 | Forbidden |
+
+HTTPS は、NLB の確認が済んだ時点で既に配信されていました。
+待ち時間は発生していません。
+
+Secret は、自分の namespace では admin 権限で扱えます。
+他の namespace では、AmazonEKSViewPolicy が Secret を含まないため参照できません。
+この結果に合わせて、deployer.md と permissions.md の Secret の行を書き直しました。
+
+引き渡し用の文書は、実環境の output から render-deployer-doc.sh で生成できました。
+未置換のプレースホルダーは 0 件です。
+
+### destroy と残骸の確認
+
+preflight は、LoadBalancer の Service も PVC もないことを確認して通りました。
+destroy は 42 リソースの削除で、所要時間は約 12 分 45 秒でした。
+CloudFront の削除が約 2 分 40 秒、ノードグループが約 8 分、EKS クラスターが約 3 分です。
+
+直後の check-leftovers.sh は、タグ検索で NAT ゲートウェイとサブネットを残骸として報告しました。
+EC2 を直接調べると、NAT ゲートウェイは deleted 状態で、サブネットも VPC も SG もありません。
+タグ検索の索引に、削除済みの資源が遅れて残っているだけです。
+旧環境の名前でも、同じ索引の遅れが数時間後まで残っていました。
+サービスごとの確認は、すべて ok でした。
+
+そのあと、state 用バケットと tf-builder のロールとポリシーを削除しました。
+builder のポリシーからは、旧名の撤去用に置いた Legacy の 3 文も外しました。
+最終状態は、state 用バケットが 0 個、tf-builder が 0 件です。
+kubeconfig の eks-exp と eks-exp2 のエントリも消しました。
+
+### 費用の見積もり
+
+構成のうち時間課金が支配的なのは、EKS コントロールプレーンと NAT ゲートウェイと NLB、ノードです。
+合計はおよそ 0.24 USD/時間です。
+環境が存在していた時間は、ログとコミットの時刻から次のように見積もりました。
+
+| 周回 | 存在していた時間 |
+| --- | --- |
+| 第 1 段の環境(放置を含む) | 約 20 時間 |
+| 第 2 段の再構築から旧環境の destroy まで | 約 1.7 時間 |
+| eks-exp2 の apply 開始から destroy 完了まで | 約 0.4 時間 |
+
+合計は約 22 時間です。
+22 時間 × 0.24 USD/時間 ≈ 5.3 USD で、およそ 5 USD になります。
+時間の内訳は時刻からの概算なので、誤差は 1 USD 程度です。
+データ転送と CloudFront、ECR の保管料は、この規模では無視できる額でした。

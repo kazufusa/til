@@ -103,7 +103,8 @@ slack.com への通信は NAT を通ります。送信元 IP は上の表の値�
 | --- | --- |
 | namespace `app` の中の操作 | admin なのでできる |
 | クラスタ全体の参照(`get nodes` など) | 読み取りだけできる |
-| Secret の参照 | できない |
+| 自分の namespace(`app`)の Secret の参照と編集 | できる |
+| 他の namespace の Secret の参照 | できない |
 | namespace の作成 | できない |
 | ResourceQuota の変更 | できない |
 | Service type=LoadBalancer と PVC | quota に拒否される |
