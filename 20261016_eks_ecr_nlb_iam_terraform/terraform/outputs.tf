@@ -8,7 +8,7 @@ output "cluster_name" {
 }
 
 output "nlb_dns_name" {
-  description = "外部公開 URL のホスト名。http://<この値>/ でアクセスする"
+  description = "CloudFront のオリジン。外から直接は届きません"
   value       = aws_lb.main.dns_name
 }
 

@@ -5,7 +5,7 @@ locals {
 
 resource "aws_security_group" "nlb" {
   name        = "${local.name_prefix}-nlb"
-  description = "NLB: allow HTTP from the internet"
+  description = "NLB: allow HTTP from CloudFront only"
   vpc_id      = aws_vpc.main.id
 
   tags = {
@@ -13,10 +13,15 @@ resource "aws_security_group" "nlb" {
   }
 }
 
+# 入口を CloudFront 1 本にする。NLB の DNS 名を直接叩いても届かない
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "nlb_http" {
   security_group_id = aws_security_group.nlb.id
-  description       = "HTTP from anywhere"
-  cidr_ipv4         = "0.0.0.0/0"
+  description       = "HTTP from CloudFront"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
   from_port         = 80
   to_port           = 80
   ip_protocol       = "tcp"
