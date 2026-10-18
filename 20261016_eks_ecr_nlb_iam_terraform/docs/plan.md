@@ -2053,6 +2053,9 @@ kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-id
   7. なぜ namespace 限定と ResourceQuota か。cluster-admin は platform だけ。quota で deployer が terraform 外の ELB や EBS を作れないようにし、destroy で必ず戻せるようにする
   8. マネージャーへの頼み方。渡すのは `create-builder-role.sh` と `tf-builder-policy.json`、頼むのは実行 1 回。候補ポリシーは実験で検証済みだが硬い境界ではないこと
 - 「builder の権限(申請用)」を `jq . bootstrap/tf-builder-policy.json` の確定版に差し替え、「初版」の注記を外す
+- 同じ節に「権限一覧」の表を置く。列は「サービス」「主な Action」「何のために必要か」。行は ec2(ネットワーク)、eks、ecr、elasticloadbalancing、autoscaling、iam、s3、sts
+- 「実験で見つかった権限」の表を置く。列は「Action」「どの操作で必要になったか」「候補に無かった理由」。行は `ec2:GetSecurityGroupsForVpc`(SG 付き NLB の作成)、`ec2:DisassociateAddress`(NAT 用 EIP の解放、destroy 時)、ほか実験中に追加したもの全て
+- 「deployer の権限(terraform 管理)」を、AWS 側(JSON)と Kubernetes 側(`AmazonEKSAdminPolicy` namespace `app`、`AmazonEKSViewPolicy` cluster)の 2 段で書き、「できること / できないこと」の表を付ける(get nodes 可、他 namespace の参照可、Secret 参照不可、namespace 作成不可、quota 変更不可、LoadBalancer 作成不可)
 - 実験ログに、第 3 段の結果、最終 destroy とバケット削除の結果、足した Action の総数
 - 申請文のたたき台を最終化(依頼は `create-builder-role.sh` 1 件、添付 3 つ、範囲の説明 4 点、撤去手順)
 
