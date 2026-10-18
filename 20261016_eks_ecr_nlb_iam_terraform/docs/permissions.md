@@ -25,7 +25,7 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
 5. 各サービスの参照(Describe、List、Get)と、CloudFront のプレフィックスリストの参照
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
-7. 実験で見つかった 2 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)
+7. 実験で見つかった 3 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)、`ec2:DescribeAddressesAttribute`(EIP 作成後の読み取り)
 
 ### deployer(<名前>-deployer、terraform で作って渡す側)
 
@@ -67,14 +67,11 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 - CloudFront: HTTPS の入口の作成と削除
 - 参照: 各サービスの Describe、Get、List と、CloudFront のプレフィックスリスト
 - CloudWatch Logs: `/aws/containerinsights/<名前>/` 配下のロググループの作成と削除
-- 実験で見つかった ec2 の 2 Action
+- 実験で見つかった ec2 の 3 Action
 
 管理ポリシーは AWS が更新するので、申請の手間が減ります。
 その代わり、権限は検証済みの最小構成より広くなります。
 共有アカウントでは、付録の最小構成を申請します。
-
-次のカスタム JSON から、一時的な 3 つの Statement(`Legacy` で始まる Sid)を省いています。
-これらは旧環境を片付けるために一時的に付けたもので、最後に取り除きます。
 
 ```json
 {
@@ -201,7 +198,8 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Effect": "Allow",
       "Action": [
         "ec2:GetSecurityGroupsForVpc",
-        "ec2:DisassociateAddress"
+        "ec2:DisassociateAddress",
+        "ec2:DescribeAddressesAttribute"
       ],
       "Resource": "*"
     },
@@ -260,17 +258,23 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 ### 実験で見つかった権限
 
-初版の JSON では足りず、実験で AccessDenied になって追加した Action は次の 2 件です。
+初版の JSON では足りず、実験で AccessDenied になって追加した Action は次の 3 件です。
 
 | Action | 何のために必要か |
 | --- | --- |
 | `ec2:GetSecurityGroupsForVpc` | セキュリティグループ付き NLB の作成 |
 | `ec2:DisassociateAddress` | NAT 用 EIP の解放(destroy 時) |
+| `ec2:DescribeAddressesAttribute` | NAT 用 EIP の作成直後の読み取り |
 
-どちらも `ec2:Describe*` には含まれません。
+最初の 2 つは `ec2:Describe*` には含まれません。
 `Describe*` は、名前が Describe で始まる Action だけに一致するためです。
 `DisassociateAddress` は、apply では呼ばれません。
 destroy にだけ必要な権限は、apply を通しただけでは見つかりません。
+
+`DescribeAddressesAttribute` は、縮約で `ec2:Describe*` を外したときに漏れました。
+`AmazonVPCFullAccess` にも含まれないためです。
+欠けると、プロバイダーが EIP の作成後に読み取りを繰り返して先へ進まず、
+NAT ができないまま、ノードも出口がなくて起動に失敗します。
 
 ### 作れるものと作れないもの
 

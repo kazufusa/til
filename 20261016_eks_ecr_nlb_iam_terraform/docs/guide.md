@@ -90,6 +90,8 @@ NLB は builder が terraform で作り、Service と Pod は deployer が作り
 terraform の NLB は、全ノードの 30080 に転送します。
 deployer の Service は、`nodePort` を 30080 に固定して受けます。
 この数字がずれると、NLB のヘルスチェックが通らず、URL に届きません。
+NLB はクロスゾーン負荷分散を有効にしています。
+ノードが 1 つの AZ にしか無くても、どの AZ の入口からも届くようにするためです。
 
 ノードは private subnet にあり、パブリック IP を持ちません。
 外から届くのは CloudFront 経由の通信だけで、NLB は CloudFront 以外からの接続を受けません。
