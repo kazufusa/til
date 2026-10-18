@@ -317,7 +317,11 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 - `terraform/` 一式。本番にそのまま持っていく EKS 環境のコード
 - `bootstrap/` 一式。マネージャーに渡す `create-builder-role.sh` と、検証済みの `tf-builder-policy.json`
-- README.md。構成、手順、builder の確定ポリシー JSON、deployer のポリシー JSON、申請文のたたき台、実験ログ
+- README.md。概要と最短手順を載せた入口
+- docs/guide.md。初学者向けの解説と手順の詳細
+- docs/permissions.md。builder の確定ポリシー JSON と deployer のポリシー JSON
+- docs/request.md。マネージャーへの申請文のたたき台
+- docs/experiment-log.md。実験ログ
 - `scripts/` と `app/`。実験用の残骸チェックとサンプルアプリ
 
 ## コストと所要時間

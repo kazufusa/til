@@ -1,618 +1,77 @@
-# EKS + ECR + NLB + デプロイ権限の terraform 実験
+# EKS + ECR + NLB + IAM ロールの terraform
 
-## 目的
+## 概要
 
-AWS 上に EKS、ECR、NLB を terraform で組み、何度でも完全に戻せる形で実験します。
-外部から HTTP で届く URL と、Pod から NAT Gateway を通るアウトバウンド通信を確かめます。
-特定の人物が image を push し、kubectl でデプロイできる権限も同じ terraform で管理します。
-実験の成果は 2 つの権限リストです。
-本番でマネージャーに申請する builder の権限と、その人物に付与する deployer の権限です。
+このディレクトリには、EKS 環境と、その周りの 2 つの IAM ロールを作る terraform が入っています。
+個人のアカウントで何度も作って壊し、完全に戻せることを確かめました。
+本番のリポジトリへ移す前提で作っています。
 
-## 役割
+## できること
 
-| 役割 | 誰 | やること | AWS 側の権限 | Kubernetes 側の権限 |
+- NLB の URL で、アプリにアクセスできる
+- Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
+- kubectl で、アプリをデプロイできる
+- image を置く ECR がある
+- `app-deployer` ロールで、image の push とデプロイができる
+
+## 2 つのロール
+
+| 役割 | 誰 | ロール | 作る人 | できること |
 | --- | --- | --- | --- | --- |
-| platform(builder) | 自分 | terraform の apply と destroy、namespace と quota の管理 | 申請した権限(実験では `tf-builder`) | cluster-admin(クラスタ作成者) |
-| deployer | その人物 | ECR への push、namespace `app` への kubectl apply | ECR `app` への push と `eks:DescribeCluster` | namespace `app` の edit(`AmazonEKSEditPolicy`) |
+| builder | 環境を作る人 | `tf-builder` | マネージャー | terraform の apply と destroy |
+| deployer | アプリ開発者 | `app-deployer` | terraform | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
 
-deployer の実体は IAM ロール `app-deployer` で、アクセスキーは発行しません。
-本番の組織では、SSO ログイン後にスイッチロールして作業します。
-本番へ移すときは、信頼ポリシーの相手をその人物のログイン identity に変えます。
+## 最短手順
 
-実験では、管理者の `default` プロファイル(SSO)を使います。
-`builder` と `deployer` の 2 プロファイルは、`default` からスイッチロールします。
-どちらも `role_arn` と `source_profile = default` で定義します。
-
-## 設計の方針
-
-AWS の推奨に合わせた点は次のとおりです。
-
-- IAM ユーザーではなくロールを使い、長期のアクセスキーを発行しない
-- 権限は最小にし、IAM の対象は資源名の接頭辞(`eks-exp-*`、`app-*`)で限定する
-- EKS の認可は aws-auth ConfigMap ではなく Access Entry で行う
-- cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
-- namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
-- deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
-- 段 0 でマネージャーに頼むのは terraform 実行ロールの作成 1 件だけにし、残りは builder の権限内で完結させる
-
-## 構成
-
-```
-インターネット
-   │  http://<nlb>.elb.ap-northeast-1.amazonaws.com
-   ▼
-NLB (terraform 管理, public subnet, SG 付き)
-   │  listener :80 → target group (instance, port 30080)
-   ▼
-EKS managed node group (t3.medium x1, private subnet)
-   │  NodePort 30080
-   ▼
-Pod (namespace app, image は ECR)
-```
-
-NLB、target group、SG は全て terraform が持ちます。
-Kubernetes 側はクラウド資源を作りません。
-deployer は Service type=NodePort で nodePort を 30080 に固定します。
-この番号が terraform と manifest の約束です。
-
-Pod の外向き通信は、private subnet のルートテーブルで NAT Gateway に向けます。
-送信元 IP は NAT Gateway の EIP に固定されるので、通信先の許可リストに入れられます。
-その IP は `terraform output nat_public_ip` で確認します。
-
-## 前提ツール
-
-terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
-リージョンは ap-northeast-1 です。
-
-## 手順(builder)
-
-以降の builder の操作は、実験では `AWS_PROFILE=builder` で実行します。
-本番では、マネージャーが付与した identity で実行します。
-
-### 0-a. ロール作成(マネージャー)
-
-terraform を回すロールは、terraform 自身では作れません。
-そのため、マネージャーが aws コマンドのスクリプトを 1 本だけ実行します。
-実験では、自分が管理者としてこのスクリプトを実行します。
+マネージャーが、builder のロールを 1 回作ります。
 
 ```bash
-bootstrap/create-builder-role.sh <SSO_ROLE_ARN>
+bootstrap/create-builder-role.sh <builder のログイン identity の ARN>
 ```
 
-マネージャーは、できあがったロールの ARN を builder に伝えます。
-
-### 0-b. state バケット作成(builder)
-
-builder は `~/.aws/config` に `builder` プロファイルを足します。
-
-```ini
-[profile builder]
-role_arn       = <tf-builder のロール ARN>
-source_profile = default
-region         = ap-northeast-1
-```
-
-プロファイルを切り替えてから、付与された権限で state 用のバケットを作ります。
+builder が、state バケットを作って terraform を回します。
 
 ```bash
-export AWS_PROFILE=builder
 bootstrap/create-state-bucket.sh
-```
-
-### 1. 固有値と init
-
-本番では、その人物の identity の ARN を書いて commit します。
-書く場所は `terraform/variables.tf` の `deployer_trusted_principals` の `default` です。
-空のままだと terraform を実行した本人が deployer になります(実験用)。
-tfvars と backend.hcl は使いません。
-
-```bash
 cd terraform
 terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
-```
-
-### 2. apply
-
-```bash
 terraform apply
 terraform output
 ```
 
-作成に約 20 分かかります。
-
-### 3. deployer への引き渡し
-
-渡すものは次の 6 つです。
-
-- `deployer_role_arn`
-- `ecr_repository_url`
-- `cluster_name`
-- `region`
-- `node_port`
-- `nlb_dns_name`
-
-## 手順(deployer)
-
-### 1. プロファイル
-
-`~/.aws/config` に次のプロファイルを足します。
-実験では `source_profile` に `default` を指定します。
-
-```ini
-[profile deployer]
-role_arn       = <deployer_role_arn>
-source_profile = <自分のログインプロファイル>
-region         = ap-northeast-1
-```
-
-### 2. image の push
+deployer が、image を push してデプロイします。
+プロファイルの書き方は `docs/guide.md` の付録にあります。
 
 ```bash
-export AWS_PROFILE=deployer
-ECR=<ecr_repository_url>
 aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
-docker build -t "${ECR}:v1" app/
-docker push "${ECR}:v1"
-```
-
-### 3. デプロイ
-
-```bash
+docker build -t "${ECR}:v1" app/ && docker push "${ECR}:v1"
 aws eks update-kubeconfig --name eks-exp
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -f -
-kubectl -n app rollout status deploy/web
 ```
 
-引き渡された `nlb_dns_name` に対して、`http://<nlb_dns_name>/` へ curl すると Pod の応答が返ります。
+## 名前を変えるときの注意
 
-### 4. できないこと
+- 名前の元になる語は、今は `eks-exp` です。
+  クラスタ、ロール、NLB、バケット、タグ、ポリシー JSON に接頭辞として入っています。
+- 変えるときは、terraform の変数 `cluster_name` を変え、builder のポリシー JSON も作り直します。
+  手順は `docs/permissions.md` にあります。
+- NLB の名前は 32 文字までです。稼働後に変えると、terraform が作り直します。
 
-deployer が見えるのは namespace `app` の中だけです。
-namespace の作成、ノードの参照、他 namespace の Pod の参照は Forbidden になります。
-RBAC と ResourceQuota も変更できません。
+## ディレクトリ構成
 
-Service type=LoadBalancer と PersistentVolumeClaim は、ResourceQuota が 0 に制限しています。
-terraform の外にクラウド資源ができるのを防ぐためです。
-
-## 片付け(実験のみ)
-
-destroy は実験の操作で、本番では行いません。
-
-```bash
-aws eks update-kubeconfig --name eks-exp
-scripts/preflight-destroy.sh
-(cd terraform && terraform destroy)
-bootstrap/delete-builder-role.sh
-scripts/check-leftovers.sh
-bootstrap/delete-state-bucket.sh
+```
+terraform/   EKS、ネットワーク、NLB、ECR、deployer ロールの terraform
+bootstrap/   マネージャーが実行するスクリプトと builder のポリシー JSON
+scripts/     destroy 前の確認と残骸の検査(実験用)
+app/         サンプルアプリの Dockerfile と manifest
+docs/        解説、権限、申請文、実験ログ、設計、計画
 ```
 
-destroy に約 15 分かかります。
-state バケットは周回の間は残し、最後に一度だけ削除します。
-`delete-state-bucket.sh` は builder の権限で実行できます。
+## 文書の案内
 
-## builder の権限(申請用)
-
-初版であり、実験での検証前です。
-検証で AccessDenied が出た Action を足し、確定版に差し替えます。
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "ReadOnlyDiscovery",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:Describe*",
-        "eks:Describe*",
-        "eks:List*",
-        "ecr:Describe*",
-        "ecr:List*",
-        "ecr:GetLifecyclePolicy",
-        "ecr:GetRepositoryPolicy",
-        "elasticloadbalancing:Describe*",
-        "autoscaling:Describe*",
-        "iam:Get*",
-        "iam:List*",
-        "sts:GetCallerIdentity"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "Network",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:CreateVpc",
-        "ec2:DeleteVpc",
-        "ec2:ModifyVpcAttribute",
-        "ec2:CreateSubnet",
-        "ec2:DeleteSubnet",
-        "ec2:ModifySubnetAttribute",
-        "ec2:CreateInternetGateway",
-        "ec2:DeleteInternetGateway",
-        "ec2:AttachInternetGateway",
-        "ec2:DetachInternetGateway",
-        "ec2:AllocateAddress",
-        "ec2:ReleaseAddress",
-        "ec2:CreateNatGateway",
-        "ec2:DeleteNatGateway",
-        "ec2:CreateRouteTable",
-        "ec2:DeleteRouteTable",
-        "ec2:CreateRoute",
-        "ec2:DeleteRoute",
-        "ec2:AssociateRouteTable",
-        "ec2:DisassociateRouteTable",
-        "ec2:CreateSecurityGroup",
-        "ec2:DeleteSecurityGroup",
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress",
-        "ec2:RevokeSecurityGroupIngress",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:ModifySecurityGroupRules",
-        "ec2:CreateTags",
-        "ec2:DeleteTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "Eks",
-      "Effect": "Allow",
-      "Action": [
-        "eks:CreateCluster",
-        "eks:DeleteCluster",
-        "eks:UpdateClusterConfig",
-        "eks:UpdateClusterVersion",
-        "eks:TagResource",
-        "eks:UntagResource",
-        "eks:CreateNodegroup",
-        "eks:DeleteNodegroup",
-        "eks:UpdateNodegroupConfig",
-        "eks:UpdateNodegroupVersion",
-        "eks:CreateAccessEntry",
-        "eks:DeleteAccessEntry",
-        "eks:UpdateAccessEntry",
-        "eks:AssociateAccessPolicy",
-        "eks:DisassociateAccessPolicy"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "Ecr",
-      "Effect": "Allow",
-      "Action": [
-        "ecr:CreateRepository",
-        "ecr:DeleteRepository",
-        "ecr:TagResource",
-        "ecr:UntagResource",
-        "ecr:PutImageScanningConfiguration",
-        "ecr:PutImageTagMutability",
-        "ecr:BatchDeleteImage"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "Elb",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:CreateLoadBalancer",
-        "elasticloadbalancing:DeleteLoadBalancer",
-        "elasticloadbalancing:ModifyLoadBalancerAttributes",
-        "elasticloadbalancing:SetSecurityGroups",
-        "elasticloadbalancing:SetSubnets",
-        "elasticloadbalancing:CreateTargetGroup",
-        "elasticloadbalancing:DeleteTargetGroup",
-        "elasticloadbalancing:ModifyTargetGroup",
-        "elasticloadbalancing:ModifyTargetGroupAttributes",
-        "elasticloadbalancing:CreateListener",
-        "elasticloadbalancing:DeleteListener",
-        "elasticloadbalancing:ModifyListener",
-        "elasticloadbalancing:AddTags",
-        "elasticloadbalancing:RemoveTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "AutoScalingAttach",
-      "Effect": "Allow",
-      "Action": [
-        "autoscaling:AttachLoadBalancerTargetGroups",
-        "autoscaling:DetachLoadBalancerTargetGroups",
-        "autoscaling:AttachTrafficSources",
-        "autoscaling:DetachTrafficSources"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "IamRolesScoped",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreateRole",
-        "iam:DeleteRole",
-        "iam:UpdateRole",
-        "iam:UpdateRoleDescription",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:PassRole"
-      ],
-      "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/app-deployer"
-      ]
-    },
-    {
-      "Sid": "IamAttachOnlyKnownPolicies",
-      "Effect": "Allow",
-      "Action": [
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy"
-      ],
-      "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/app-deployer"
-      ],
-      "Condition": {
-        "ArnEquals": {
-          "iam:PolicyARN": [
-            "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-            "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-            "arn:aws:iam::*:policy/app-deployer-policy"
-          ]
-        }
-      }
-    },
-    {
-      "Sid": "IamPoliciesScoped",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreatePolicy",
-        "iam:DeletePolicy",
-        "iam:CreatePolicyVersion",
-        "iam:DeletePolicyVersion",
-        "iam:TagPolicy",
-        "iam:UntagPolicy"
-      ],
-      "Resource": "arn:aws:iam::*:policy/app-deployer-policy"
-    },
-    {
-      "Sid": "ServiceLinkedRoles",
-      "Effect": "Allow",
-      "Action": "iam:CreateServiceLinkedRole",
-      "Resource": "*"
-    },
-    {
-      "Sid": "StateBucketAdmin",
-      "Effect": "Allow",
-      "Action": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:ListBucket",
-        "s3:ListBucketVersions",
-        "s3:GetBucketLocation",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketVersioning",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetBucketTagging",
-        "s3:PutBucketTagging"
-      ],
-      "Resource": "arn:aws:s3:::tfstate-*-eks-exp"
-    },
-    {
-      "Sid": "StateBucketObjects",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:GetObjectVersion",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:DeleteObjectVersion"
-      ],
-      "Resource": "arn:aws:s3:::tfstate-*-eks-exp/*"
-    },
-    {
-      "Sid": "StateBucketDiscovery",
-      "Effect": "Allow",
-      "Action": "s3:ListAllMyBuckets",
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-### 作れるものと作れないもの
-
-作れるものは、ネットワーク、EKS、ECR、ELB、`eks-exp-*` と `app-deployer` の IAM ロールです。
-名前が `tfstate-*-eks-exp` の S3 バケットの作成、設定、削除もできます。
-
-次の 4 点を、申請文でそのまま説明します。
-
-1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
-   AWS 管理の EKS と ECR のポリシー 4 つと `app-deployer-policy` だけです。
-   builder が作るロールに `AdministratorAccess` は付けられません。
-2. builder は `app-deployer-policy` の中身(`CreatePolicyVersion`)を書き換えられます。
-   `app-deployer` の信頼ポリシーも書き換えられます。
-   この候補は厳密な境界ではありません。
-3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
-4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
-
-## deployer の権限(terraform 管理)
-
-`terraform/deployer.tf` の 3 文を JSON にしたものです。
-`<ACCOUNT_ID>` は実際のアカウント ID に置き換わります。
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "EcrLogin",
-      "Effect": "Allow",
-      "Action": "ecr:GetAuthorizationToken",
-      "Resource": "*"
-    },
-    {
-      "Sid": "EcrPushPullAppRepo",
-      "Effect": "Allow",
-      "Action": [
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload",
-        "ecr:PutImage",
-        "ecr:BatchGetImage",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:DescribeImages",
-        "ecr:ListImages",
-        "ecr:DescribeRepositories"
-      ],
-      "Resource": "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
-    },
-    {
-      "Sid": "EksKubeconfig",
-      "Effect": "Allow",
-      "Action": "eks:DescribeCluster",
-      "Resource": "arn:aws:eks:ap-northeast-1:<ACCOUNT_ID>:cluster/eks-exp"
-    }
-  ]
-}
-```
-
-Kubernetes 側の権限は、Access Policy `AmazonEKSEditPolicy` を namespace `app` に限って関連付けています。
-この権限では ResourceQuota と RBAC を変更できません。
-
-## 申請文のたたき台
-
-マネージャーへの依頼は 1 件です。
-
-- 依頼内容: `create-builder-role.sh <自分の identity の ARN>` を実行して、ロール `tf-builder` を作ってほしい
-- 代案: ロールを作らず、自分の identity に `tf-builder-policy.json` を直接付けてもかまわない
-- 添付: `create-builder-role.sh`、`delete-builder-role.sh`、`tf-builder-policy.json` の 3 つ
-- 範囲の説明: このポリシーで作れるもの、作れないもの、資源名の接頭辞による限定。上の「作れるものと作れないもの」の 4 点を含める
-- 期間と撤去: 作業後に自分が terraform destroy し、ロールも削除してよい
-
-state 用のバケットは、付与された権限で自分が作ります。
-マネージャーは terraform を使えない前提なので、段 0 は aws コマンドのスクリプトにしています。
-
-## 可逆性
-
-次のものには触りません。
-
-- アカウント設定(S3 パブリックアクセスブロック、EBS 既定暗号化、IAM パスワードポリシー)
-- Service Quotas
-- IAM Identity Center と Organizations
-- KMS のカスタマーマネージドキー
-- CloudTrail と AWS Config
-
-destroy 後に残ることを許容するものは 3 種類です。
-1 つ目は、次の 4 つのサービスリンクロールです。
-
-- `AWSServiceRoleForAmazonEKS`
-- `AWSServiceRoleForAmazonEKSNodegroup`
-- `AWSServiceRoleForElasticLoadBalancing`
-- `AWSServiceRoleForAutoScaling`
-
-どれも自動生成され、課金されません。
-2 つ目は、`~/.aws/config` に足したプロファイルです。手で消せます。
-3 つ目は、state 用 S3 バケットです。周回中は残し、最後に `delete-state-bucket.sh` で消します。
-
-`scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
-EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
-IAM ロール(`app-deployer`、`tf-builder`、`eks-exp-*`)と、`/aws/eks/` 配下のロググループも対象です。
-
-## 実験ログ
-
-### 第 0〜1 段(2026-10-17 実施)
-
-マネージャー役のユーザーが `create-builder-role.sh` を実行し、`tf-builder` を作りました。
-`aws-reserved` パス付きの SSO ロール ARN は、信頼ポリシーの Principal として拒否されませんでした。
-そのため、`root` と `PrincipalArn` 条件に切り替える代替案は使っていません。
-2 回目の実行は `updated` で成功し、スクリプトが冪等であることも確認できました。
-
-以降の AWS 操作は、すべて `builder` と `deployer` で行いました。
-`builder` に切り替えた後は管理者権限が外れており、`sso-admin list-instances` は AccessDenied になりました。
-`iam list-users` は成功します。`ReadOnlyDiscovery` に `iam:List*` を含めているためで、手順書の期待値が誤っていました。
-
-state バケットの作成と 2 回目の再実行は、builder で AccessDenied なく通りました。
-`init` と `plan` も通り、plan は 38 個の追加でした。
-`deployer_trusted_principals` は、実行者の帽子である `tf-builder` になりました。
-
-#### 足りなかった Action
-
-| 回 | Action | 追加先の Sid | 発生した操作 |
-| --- | --- | --- | --- |
-| 1 | `ec2:GetSecurityGroupsForVpc` | `ReadOnlyDiscovery` | セキュリティグループ付き NLB の作成 |
-
-`ec2:Describe*` では `GetSecurityGroupsForVpc` を含められません。
-1 回目の apply は 38 個中 36 個を作った時点で止まりました。
-Action を足して管理者がロールを更新した後、2 回目の plan は 2 個の追加になり、apply が完了しました。
-追加した Action は 1 件だけで、7b の繰り返しは 1 回でした。
-
-#### 所要時間
-
-1 回目の apply では、EKS クラスターに約 8 分半、NAT ゲートウェイに約 2 分、ノードグループに約 2 分かかりました。
-NLB の作成には約 2 分半かかりました。
-2 回目の apply が終わってから第 1 段の確認を始めるまで、環境は十数時間放置されていました。
-その間の費用は、片付け時に確認します。
-
-#### 疎通結果
-
-- 2 回目の apply 直後の target は 1 台で `unhealthy` でした。Pod がまだ無かったためです。
-- `app-deployer` の assume は、`source_profile = builder` の 2 段重ねで成功しました。
-- deployer で ECR にログインし、`v1` を push できました。
-- `get nodes` は Forbidden になり、`no-cloud-resources` の quota も見えました。
-- rollout は成功し、Service は `80:30080/TCP` になりました。
-- 少し待つと target は `healthy` になり、NLB 経由の curl は `hello from eks-exp` を返しました。
-- Pod から見た外向き IP は NAT ゲートウェイの IP と一致しました。
-
-回避策は使っていません。
-kubernetes provider の接続エラーも起きず、NLB の代替ルール(VPC CIDR からの許可)も不要でした。
-
-### 第 2 段(2026-10-18 実施)
-
-builder の権限だけで destroy し、残骸が無いことを確認しました。
-
-#### 負の対照
-
-- `app` namespace で `LoadBalancer` の Service を作ると、`no-cloud-resources` の quota に拒否されました。
-- `default` namespace では、同じ Service が作れてしまいました。
-- destroy 前の確認スクリプトは、その Service を検出して異常終了しました。
-- Service と Deployment を消すと、確認スクリプトは通りました。
-
-#### destroy の 2 回
-
-1 回目の destroy は、38 個のうち 37 個を消して止まりました。
-止まったのは EIP で、`ec2:DisassociateAddress` が許可されていなかったためです。
-この Action を `Network` の Statement に追加し、ロールのポリシーを更新して、2 回目の destroy を実行しました。
-2 回目は EIP の 1 個だけを消し、約 1 秒で終わりました。
-
-apply では EIP を関連付けるだけなので、この権限は不要でした。
-関連付けの解除は、NAT ゲートウェイを消した後の EIP 解放で初めて呼ばれます。
-apply では、destroy にだけ必要な権限は見つかりません。
-権限の不足を洗い出すには、builder で destroy まで通す必要があります。
-
-#### 所要時間
-
-1 回目の destroy は、全体で十数分かかりました。
-内訳は、ノードグループが約 8 分、EKS クラスターが約 3 分、NAT ゲートウェイが約 1 分半、NLB が約 30 秒です。
-1 回目が止まった時点で、EKS、ノード、NAT、NLB はすでに消えていました。
-計算資源の費用は、そこで終わっています。
-
-#### 残骸の確認
-
-確認スクリプトで、次の結果になりました。
-
-- EKS、ECR、ロードバランサー、ターゲットグループ、Auto Scaling グループ、NAT ゲートウェイ、EIP は `ok` でした。
-- VPC、セキュリティグループ、ログ group、タグ `Project=eks-exp` のリソースも `ok` でした。
-- 残ったのは、IAM ロール `tf-builder` と IAM ポリシー `tf-builder-policy` だけです。
-- state バケットも残っています。
-
-3 つとも、実験の土台として意図して残したものです。
-片付けの手順で、最後に消します。
-
-kubeconfig の `eks-exp-deployer` と `eks-exp-builder` の context、cluster、user も削除しました。
+- `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説と、手順の詳細
+- `docs/permissions.md`: builder と deployer の権限、検証で見つかった Action
+- `docs/request.md`: マネージャーへの申請文のたたき台
+- `docs/experiment-log.md`: 各段の実験ログ
+- `docs/design.md`: 設計と判断の記録
+- `docs/plan.md`: 実装の計画

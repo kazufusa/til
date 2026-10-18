@@ -1,0 +1,369 @@
+# 権限
+
+builder と deployer の権限を、実際のコードに合わせてまとめます。
+AWS 側の JSON は、そのまま申請や確認に使えます。
+
+## builder の権限
+
+実験で検証済みです。
+apply から destroy までを builder の権限だけで通し、足りない Action を 2 件足した結果です。
+JSON の実体は `bootstrap/tf-builder-policy.json` です。
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyDiscovery",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "eks:Describe*",
+        "eks:List*",
+        "ecr:Describe*",
+        "ecr:List*",
+        "ecr:GetLifecyclePolicy",
+        "ecr:GetRepositoryPolicy",
+        "elasticloadbalancing:Describe*",
+        "autoscaling:Describe*",
+        "iam:Get*",
+        "iam:List*",
+        "sts:GetCallerIdentity",
+        "ec2:GetSecurityGroupsForVpc"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Network",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateVpc",
+        "ec2:DeleteVpc",
+        "ec2:ModifyVpcAttribute",
+        "ec2:CreateSubnet",
+        "ec2:DeleteSubnet",
+        "ec2:ModifySubnetAttribute",
+        "ec2:CreateInternetGateway",
+        "ec2:DeleteInternetGateway",
+        "ec2:AttachInternetGateway",
+        "ec2:DetachInternetGateway",
+        "ec2:AllocateAddress",
+        "ec2:ReleaseAddress",
+        "ec2:DisassociateAddress",
+        "ec2:CreateNatGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:CreateRouteTable",
+        "ec2:DeleteRouteTable",
+        "ec2:CreateRoute",
+        "ec2:DeleteRoute",
+        "ec2:AssociateRouteTable",
+        "ec2:DisassociateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:ModifySecurityGroupRules",
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Eks",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreateCluster",
+        "eks:DeleteCluster",
+        "eks:UpdateClusterConfig",
+        "eks:UpdateClusterVersion",
+        "eks:TagResource",
+        "eks:UntagResource",
+        "eks:CreateNodegroup",
+        "eks:DeleteNodegroup",
+        "eks:UpdateNodegroupConfig",
+        "eks:UpdateNodegroupVersion",
+        "eks:CreateAccessEntry",
+        "eks:DeleteAccessEntry",
+        "eks:UpdateAccessEntry",
+        "eks:AssociateAccessPolicy",
+        "eks:DisassociateAccessPolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Ecr",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:CreateRepository",
+        "ecr:DeleteRepository",
+        "ecr:TagResource",
+        "ecr:UntagResource",
+        "ecr:PutImageScanningConfiguration",
+        "ecr:PutImageTagMutability",
+        "ecr:BatchDeleteImage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Elb",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:SetSecurityGroups",
+        "elasticloadbalancing:SetSubnets",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:ModifyListener",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:RemoveTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AutoScalingAttach",
+      "Effect": "Allow",
+      "Action": [
+        "autoscaling:AttachLoadBalancerTargetGroups",
+        "autoscaling:DetachLoadBalancerTargetGroups",
+        "autoscaling:AttachTrafficSources",
+        "autoscaling:DetachTrafficSources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IamRolesScoped",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/eks-exp-*",
+        "arn:aws:iam::*:role/app-deployer"
+      ]
+    },
+    {
+      "Sid": "IamAttachOnlyKnownPolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/eks-exp-*",
+        "arn:aws:iam::*:role/app-deployer"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+            "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+            "arn:aws:iam::*:policy/app-deployer-policy"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "IamPoliciesScoped",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreatePolicy",
+        "iam:DeletePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy"
+      ],
+      "Resource": "arn:aws:iam::*:policy/app-deployer-policy"
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*"
+    },
+    {
+      "Sid": "StateBucketAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging"
+      ],
+      "Resource": "arn:aws:s3:::tfstate-*-eks-exp"
+    },
+    {
+      "Sid": "StateBucketObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": "arn:aws:s3:::tfstate-*-eks-exp/*"
+    },
+    {
+      "Sid": "StateBucketDiscovery",
+      "Effect": "Allow",
+      "Action": "s3:ListAllMyBuckets",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### サービスごとの Action
+
+| サービス | 主な Action | 何のために必要か |
+| --- | --- | --- |
+| EC2(参照) | `Describe*`、`GetSecurityGroupsForVpc` | 既存資源の確認と、terraform の plan |
+| EC2(ネットワーク) | VPC、サブネット、IGW、NAT、ルートテーブル、SG、EIP の作成と削除 | クラスタを置くネットワークの構築 |
+| EKS | クラスタ、ノードグループ、Access Entry の作成と削除 | EKS 環境と、deployer の権限の対応づけ |
+| ECR | リポジトリの作成と削除、image の削除 | image の置き場所 |
+| ELB | LB、target group、listener の作成と削除 | 外部から届く URL |
+| Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
+| IAM(ロール) | `eks-exp-*` と `app-deployer` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
+| IAM(ポリシー) | 既知の 5 ポリシーの Attach と Detach、`app-deployer-policy` の作成 | ロールへの権限付与 |
+| IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
+| S3 | `tfstate-*-eks-exp` バケットの管理とオブジェクトの読み書き | terraform の state |
+
+### 実験で見つかった権限
+
+初版の JSON では足りず、実験で AccessDenied になって追加した Action は次の 2 件です。
+
+| Action | 追加先の Sid | 何のために必要か |
+| --- | --- | --- |
+| `ec2:GetSecurityGroupsForVpc` | `ReadOnlyDiscovery` | セキュリティグループ付き NLB の作成 |
+| `ec2:DisassociateAddress` | `Network` | NAT 用 EIP の解放(destroy 時) |
+
+どちらも `ec2:Describe*` には含まれません。
+`Describe*` は名前が Describe で始まる Action だけに一致します。
+`GetSecurityGroupsForVpc` は名前が Get で始まり、`DisassociateAddress` は Disassociate で始まるためです。
+
+`DisassociateAddress` は、apply では呼ばれません。
+NAT ゲートウェイを消した後に EIP を解放するときに、初めて呼ばれます。
+destroy にだけ必要な権限は、apply を通しただけでは見つかりません。
+
+### 作れるものと作れないもの
+
+作れるものは、ネットワーク、EKS、ECR、ELB、`eks-exp-*` と `app-deployer` の IAM ロールです。
+名前が `tfstate-*-eks-exp` の S3 バケットの作成、設定、削除もできます。
+
+次の 4 点を、申請文でそのまま説明します。
+
+1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
+   AWS 管理の EKS と ECR のポリシー 4 つと `app-deployer-policy` だけです。
+   builder が作るロールに `AdministratorAccess` は付けられません。
+2. builder は `app-deployer-policy` の中身(`CreatePolicyVersion`)を書き換えられます。
+   `app-deployer` の信頼ポリシーも書き換えられます。
+   この候補は厳密な境界ではありません。
+3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
+4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
+
+## deployer の権限
+
+terraform が管理する権限で、AWS 側と Kubernetes 側があります。
+
+### AWS 側
+
+`terraform/deployer.tf` の 3 文を JSON にしたものです。
+`<ACCOUNT_ID>` は実際のアカウント ID に置き換わります。
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrLogin",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPushPullAppRepo",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:DescribeImages",
+        "ecr:ListImages",
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
+    },
+    {
+      "Sid": "EksKubeconfig",
+      "Effect": "Allow",
+      "Action": "eks:DescribeCluster",
+      "Resource": "arn:aws:eks:ap-northeast-1:<ACCOUNT_ID>:cluster/eks-exp"
+    }
+  ]
+}
+```
+
+### Kubernetes 側
+
+EKS の Access Policy を 2 つ関連付けています。
+
+- `AmazonEKSAdminPolicy`: namespace `app` に限る。Role や RoleBinding も作れる
+- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない
+
+namespace 自体の作成と、ResourceQuota の変更は、この権限に含まれません。
+
+| 操作 | 可否 |
+| --- | --- |
+| `get nodes` | できる |
+| namespace の一覧 | できる |
+| 他の namespace の Pod の参照 | できる |
+| Secret の参照 | できない |
+| namespace の作成 | できない |
+| ResourceQuota の変更 | できない |
+| 他の namespace への書き込み | できない |
+| Service type=LoadBalancer の作成 | できない(ResourceQuota が 0 に制限) |
+
+## 設計の方針
+
+AWS の推奨に合わせた点は次のとおりです。
+
+- IAM ユーザーではなくロールを使い、長期のアクセスキーを発行しない
+- 権限は最小にし、IAM の対象は資源名の接頭辞(`eks-exp-*`、`app-*`)で限定する
+- EKS の認可は aws-auth ConfigMap ではなく Access Entry で行う
+- cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
+- namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
+- deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
+- 段 0 でマネージャーに頼むのは terraform 実行ロールの作成 1 件だけにし、残りは builder の権限内で完結させる
+
+申請向けに、AWS 管理ポリシー 3 つとカスタムポリシー 1 つへ組み替えた構成を準備中です。完成したら、この文書に追加します。
