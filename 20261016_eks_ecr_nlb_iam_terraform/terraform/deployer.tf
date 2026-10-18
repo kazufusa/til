@@ -61,6 +61,8 @@ resource "aws_eks_access_entry" "deployer" {
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = aws_iam_role.deployer.arn
   type          = "STANDARD"
+
+  kubernetes_groups = ["app-deployers"]
 }
 
 # namespace 内は admin(Role/RoleBinding も作れる。ResourceQuota と namespace 自体は変更不可)
