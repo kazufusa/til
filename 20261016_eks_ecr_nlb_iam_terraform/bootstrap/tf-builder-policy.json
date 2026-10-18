@@ -122,7 +122,8 @@
       "Effect": "Allow",
       "Action": [
         "ec2:GetSecurityGroupsForVpc",
-        "ec2:DisassociateAddress"
+        "ec2:DisassociateAddress",
+        "ec2:DescribeAddressesAttribute"
       ],
       "Resource": "*"
     },
