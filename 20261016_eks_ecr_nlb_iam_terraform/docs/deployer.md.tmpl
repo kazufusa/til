@@ -15,7 +15,8 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | ECR リポジトリ | `{{ECR_REPOSITORY_URL}}` |
 | namespace | `{{NAMESPACE}}` |
 | NodePort | `{{NODE_PORT}}` |
-| 公開 URL | `http://{{NLB_DNS_NAME}}/` |
+| 公開 URL(HTTPS) | `{{HTTPS_URL}}` |
+| 公開 URL(NLB 直、HTTP) | `http://{{NLB_DNS_NAME}}/` |
 | 外向き通信の送信元 IP | `{{NAT_PUBLIC_IP}}` |
 
 ## プロファイルの設定
@@ -55,7 +56,7 @@ kubeconfig を作り、manifest の image 名を置き換えて apply します�
 aws eks update-kubeconfig --name {{CLUSTER_NAME}} --region {{REGION}} --profile deployer --alias <alias> --user-alias <alias>
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n {{NAMESPACE}} -f -
 kubectl -n {{NAMESPACE}} rollout status deploy/web
-curl http://{{NLB_DNS_NAME}}/
+curl {{HTTPS_URL}}
 ```
 
 Service の `nodePort` は、必ず {{NODE_PORT}} にします。

@@ -54,6 +54,8 @@ check "elastic ips" \
 check "non-default vpcs" \
   aws ec2 describe-vpcs --filters Name=is-default,Values=false --query 'Vpcs[].VpcId' --output text
 check "security groups in non-default vpcs" non_default_sgs
+check "cloudfront distributions" \
+  aws cloudfront list-distributions --query "DistributionList.Items[?contains(Comment, \`${PROJECT}\`)].Id" --output text
 check "iam roles" \
   aws iam list-roles \
   --query "Roles[?starts_with(RoleName,'${PROJECT}') || RoleName=='tf-builder'].RoleName" \

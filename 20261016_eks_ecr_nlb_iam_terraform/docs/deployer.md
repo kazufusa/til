@@ -15,7 +15,8 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | ECR リポジトリ | `123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app` |
 | namespace | `app` |
 | NodePort | `30080` |
-| 公開 URL | `http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/` |
+| 公開 URL(HTTPS) | `https://d0123456789abc.cloudfront.net/` |
+| 公開 URL(NLB 直、HTTP) | `http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/` |
 | 外向き通信の送信元 IP | `203.0.113.10` |
 
 ## プロファイルの設定
@@ -55,7 +56,7 @@ kubeconfig を作り、manifest の image 名を置き換えて apply します�
 aws eks update-kubeconfig --name eks-exp --region ap-northeast-1 --profile deployer --alias <alias> --user-alias <alias>
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
 kubectl -n app rollout status deploy/web
-curl http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/
+curl https://d0123456789abc.cloudfront.net/
 ```
 
 Service の `nodePort` は、必ず 30080 にします。

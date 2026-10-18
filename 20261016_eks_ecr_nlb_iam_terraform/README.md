@@ -54,7 +54,7 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 | ECR リポジトリの URL | `ecr_repository_url` | push と manifest の image |
 | namespace | `deployer_namespaces`(既定 `app`) | デプロイ先 |
 | NodePort | `node_port`(30080) | Service に必ずこの番号を書く |
-| 公開 URL | `nlb_dns_name` | 動作確認 |
+| 公開 URL(HTTPS) | `https_url` | 動作確認 |
 | できること・できないこと | `docs/permissions.md` | 権限の範囲の確認 |
 | 最初に読むページ | `docs/deployer.md` | 開発者向けの手順 |
 

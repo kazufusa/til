@@ -29,6 +29,7 @@ ns="$(get '.deployer_namespaces.value[0]')"
 port="$(get .node_port.value)"
 nlb="$(get .nlb_dns_name.value)"
 nat="$(get .nat_public_ip.value)"
+https="$(get .https_url.value)"
 
 sed \
   -e "s|{{DEPLOYER_ROLE_ARN}}|$(esc "$role_arn")|g" \
@@ -39,6 +40,7 @@ sed \
   -e "s|{{NODE_PORT}}|$(esc "$port")|g" \
   -e "s|{{NLB_DNS_NAME}}|$(esc "$nlb")|g" \
   -e "s|{{NAT_PUBLIC_IP}}|$(esc "$nat")|g" \
+  -e "s|{{HTTPS_URL}}|$(esc "$https")|g" \
   "$TEMPLATE" >"$out"
 
 echo "$out"

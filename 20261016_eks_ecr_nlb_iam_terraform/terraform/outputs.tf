@@ -40,3 +40,8 @@ output "deployer_trusted_principals" {
   description = "deployer ロールにスイッチできる principal(空指定なら実行者の帽子)"
   value       = local.deployer_trusted_principals
 }
+
+output "https_url" {
+  description = "HTTPS の公開 URL(CloudFront の既定ドメイン)"
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}/"
+}
