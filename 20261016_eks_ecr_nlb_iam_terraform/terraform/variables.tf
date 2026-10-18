@@ -11,7 +11,7 @@ variable "cluster_name" {
 
   validation {
     condition     = length(var.cluster_name) <= 20 && can(regex("^[a-z][a-z0-9-]*[a-z0-9]$", var.cluster_name))
-    error_message = "cluster_name は 1 から 20 文字の英小文字、数字、ハイフンで、先頭は英小文字、末尾は英小文字か数字にしてください。NLB の名前は 32 文字までなので、接尾辞(-nodeport など)を足しても収まる長さにしています。"
+    error_message = "cluster_name は 2 から 20 文字の英小文字、数字、ハイフンで、先頭は英小文字、末尾は英小文字か数字にしてください。NLB の名前は 32 文字までなので、接尾辞(-nodeport など)を足しても収まる長さにしています。"
   }
 }
 
@@ -38,7 +38,7 @@ variable "ecr_repository_names" {
 }
 
 variable "deployer_trusted_principals" {
-  description = "deployer ロールにスイッチできる IAM principal の ARN。空なら terraform を実行している本人の帽子(ロール)を信頼する。本番ではその人物の ARN を default に書く。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を書く"
+  description = "deployer ロールにスイッチできる IAM principal の ARN。空なら terraform を実行している本人の帽子(ロール)を信頼する。移植先(dev 環境)ではその人物の ARN を default に書く。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を書く"
   type        = list(string)
   default     = []
 
@@ -52,7 +52,7 @@ variable "deployer_trusted_principals" {
 }
 
 variable "deployer_namespaces" {
-  description = "deployer が edit 権限を持つ namespace。terraform がこの namespace と ResourceQuota を作る"
+  description = "deployer が admin 権限を持つ namespace。terraform がこの namespace と ResourceQuota を作る"
   type        = list(string)
   default     = ["app"]
 

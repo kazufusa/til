@@ -33,7 +33,7 @@ output "node_port" {
 }
 
 output "deployer_namespaces" {
-  description = "deployer が edit 権限を持つ namespace"
+  description = "deployer が admin 権限を持つ namespace"
   value       = var.deployer_namespaces
 }
 

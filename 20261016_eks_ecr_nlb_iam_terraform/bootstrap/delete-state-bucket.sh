@@ -22,7 +22,8 @@ while :; do
     --output json)"
   count="$(jq '.Objects | length' <<<"$objects")"
   [[ "$count" -eq 0 ]] && break
-  aws s3api delete-objects --bucket "$BUCKET" --delete "$objects" >/dev/null
+  out="$(aws s3api delete-objects --bucket "$BUCKET" --delete "$objects" --output json)"
+  jq -e '(.Errors // []) | length == 0' <<<"$out" >/dev/null || { echo "$out" >&2; exit 1; }
   echo "deleted $count versions" >&2
 done
 
