@@ -59,6 +59,13 @@ kubectl -n {{NAMESPACE}} rollout status deploy/web
 curl {{HTTPS_URL}}
 ```
 
+外向きの通信は、`/news` で確認します。
+NHK の RSS から取った見出しが 5 件、JSON で返れば成功です。
+
+```bash
+curl -s {{HTTPS_URL}}news
+```
+
 Service の `nodePort` は、必ず {{NODE_PORT}} にします。
 NLB がこの番号に転送するためです。
 

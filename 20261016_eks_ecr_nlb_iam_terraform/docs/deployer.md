@@ -59,6 +59,13 @@ kubectl -n app rollout status deploy/web
 curl https://d0123456789abc.cloudfront.net/
 ```
 
+外向きの通信は、`/news` で確認します。
+NHK の RSS から取った見出しが 5 件、JSON で返れば成功です。
+
+```bash
+curl -s https://d0123456789abc.cloudfront.net/news
+```
+
 Service の `nodePort` は、必ず 30080 にします。
 NLB がこの番号に転送するためです。
 

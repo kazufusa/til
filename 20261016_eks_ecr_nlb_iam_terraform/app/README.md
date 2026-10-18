@@ -3,6 +3,8 @@
 標準ライブラリだけで動く、最小の Slack アプリです。
 
 - `GET /` と `GET /healthz` は `hello from eks-exp` を返します。
+- `GET /news` は NHK NEWS WEB の RSS を取得し、先頭 5 件の見出しを JSON で返します。
+  Pod から外向きに通信できるかの確認用です。送信元は NAT の固定 IP です。
 - `POST /slack/events` は Slack のイベントを受けます。署名を検証し、URL 検証に応答します。
 - `app_mention` を受けると、そのメッセージのスレッドに `hello from eks-exp` を返信します。
 
@@ -19,6 +21,7 @@
 docker build -t eks-exp-app:local app/
 docker run -d --rm --name eks-exp-app -p 18080:8080 eks-exp-app:local
 curl localhost:18080/
+curl localhost:18080/news
 curl -X POST localhost:18080/slack/events -d '{"type":"url_verification","challenge":"abc123"}'
 docker stop eks-exp-app
 ```
