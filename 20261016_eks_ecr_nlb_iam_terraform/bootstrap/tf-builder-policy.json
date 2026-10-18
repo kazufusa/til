@@ -5,19 +5,12 @@
       "Sid": "ReadOnlyDiscovery",
       "Effect": "Allow",
       "Action": [
-        "ec2:Describe*",
         "eks:Describe*",
         "eks:List*",
-        "ecr:Describe*",
-        "ecr:List*",
-        "ecr:GetLifecyclePolicy",
-        "ecr:GetRepositoryPolicy",
-        "elasticloadbalancing:Describe*",
         "autoscaling:Describe*",
         "iam:Get*",
         "iam:List*",
-        "sts:GetCallerIdentity",
-        "ec2:GetSecurityGroupsForVpc"
+        "sts:GetCallerIdentity"
       ],
       "Resource": "*"
     },
@@ -99,36 +92,15 @@
       "Resource": "*"
     },
     {
-      "Sid": "StateBucketAdmin",
+      "Sid": "StateBucket",
       "Effect": "Allow",
       "Action": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:ListBucket",
-        "s3:ListBucketVersions",
-        "s3:GetBucketLocation",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketVersioning",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetBucketTagging",
-        "s3:PutBucketTagging"
+        "s3:*"
       ],
-      "Resource": "arn:aws:s3:::tfstate-*-eks-exp"
-    },
-    {
-      "Sid": "StateBucketObjects",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:GetObjectVersion",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:DeleteObjectVersion"
-      ],
-      "Resource": "arn:aws:s3:::tfstate-*-eks-exp/*"
+      "Resource": [
+        "arn:aws:s3:::tfstate-*-eks-exp",
+        "arn:aws:s3:::tfstate-*-eks-exp/*"
+      ]
     },
     {
       "Sid": "StateBucketDiscovery",
@@ -140,14 +112,7 @@
       "Sid": "CloudFront",
       "Effect": "Allow",
       "Action": [
-        "cloudfront:CreateDistribution",
-        "cloudfront:GetDistribution",
-        "cloudfront:GetDistributionConfig",
-        "cloudfront:UpdateDistribution",
-        "cloudfront:DeleteDistribution",
-        "cloudfront:TagResource",
-        "cloudfront:UntagResource",
-        "cloudfront:ListTagsForResource"
+        "cloudfront:*"
       ],
       "Resource": "*"
     },
