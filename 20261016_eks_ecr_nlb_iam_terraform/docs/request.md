@@ -20,17 +20,22 @@
 
 ## 範囲の説明
 
-このポリシーで作れるものは、ネットワーク、EKS、ECR、ELB、CloudFront、`<cluster_name>-*` の IAM ロールです。
-IAM の対象は、資源名の接頭辞で限定しています。
-次の 4 点を、あらかじめ説明します。
+ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
+EKS は全権です。
+自分でロールを作る権限は名前で縛ってあり、管理者権限を付けることはできません。
 
-1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
-   AWS 管理の EKS と ECR のポリシー 4 つと、deployer のポリシーだけです。
-   builder が作るロールに `AdministratorAccess` は付けられません。
-2. builder は deployer のポリシーの中身と、deployer ロールの信頼ポリシーを書き換えられます。
-   この候補は厳密な境界ではありません。
-3. 境界が必要な場合は、Permissions Boundary の付与をお願いします。
-4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
+カスタムポリシーの 6 項目は次のとおりです。
+
+1. EKS の全操作(`eks:*`)
+2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
+3. IAM ロールは名前が `<名前>-*` のものだけ作成と削除ができ、
+   付けられるポリシーは EKS 用の AWS 管理ポリシー 4 つと `<名前>-deployer-policy` に限る。
+   `AdministratorAccess` は付けられない
+4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
+5. 各サービスの参照(Describe、List、Get)
+6. 実験で見つかった 2 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)
+
+検証済みの最小権限の JSON は、`docs/permissions.md` の付録にあります。
 
 ## 撤去
 

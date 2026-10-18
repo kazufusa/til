@@ -4,6 +4,45 @@ builder と deployer の権限を、実際のコードに合わせてまとめ�
 AWS 側の JSON は、そのまま申請や確認に使えます。
 `<cluster_name>` は terraform の変数 `cluster_name` の値で、既定は `eks-exp` です。
 
+## 説明用の要約
+
+### builder(tf-builder、申請する側)
+
+| 付けるもの | 中身 | 一言 |
+| --- | --- | --- |
+| AmazonVPCFullAccess | AWS 管理ポリシー | ネットワークを作る |
+| ElasticLoadBalancingFullAccess | AWS 管理ポリシー | 公開用の入口(NLB)を作る |
+| AmazonEC2ContainerRegistryFullAccess | AWS 管理ポリシー | image 置き場(ECR)を作る |
+| カスタム tf-builder-policy | 下の 6 項目 | EKS と、危険になりうる IAM と state だけ自前で縛る |
+
+カスタムポリシーの 6 項目は次のとおりです。
+
+1. EKS の全操作(`eks:*`)
+2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
+3. IAM ロールは名前が `<名前>-*` のものだけ作成と削除ができ、
+   付けられるポリシーは EKS 用の AWS 管理ポリシー 4 つと `<名前>-deployer-policy` に限る。
+   `AdministratorAccess` は付けられない
+4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
+5. 各サービスの参照(Describe、List、Get)
+6. 実験で見つかった 2 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)
+
+### deployer(<名前>-deployer、terraform で作って渡す側)
+
+| 層 | できること | できないこと |
+| --- | --- | --- |
+| AWS | ECR の `app` リポジトリへの push と pull、クラスタ情報の参照(`eks:DescribeCluster`) | それ以外すべて(EC2、IAM、他の ECR、ELB の参照も不可) |
+| Kubernetes、namespace `app` の中 | 何でも(Deployment、Service、Secret の参照と編集、Role の付与) | ResourceQuota の変更、namespace 自体の削除 |
+| Kubernetes、クラスタ全体 | 読み取り(ノード、namespace 一覧、他 namespace の Pod) | 他 namespace への書き込み、他 namespace の Secret 参照、namespace 作成 |
+| クラウド資源 | なし | LoadBalancer 型 Service と PVC(quota で 0 件に固定) |
+
+### マネージャーへの 3 文
+
+> ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
+> EKS は全権です。
+> 自分でロールを作る権限は名前で縛ってあり、管理者権限を付けることはできません。
+
+細かい最小権限の JSON は付録にあり、厳しく見たい場合に示します。
+
 ## builder の権限
 
 ### 申請向け構成
@@ -569,7 +608,8 @@ EKS の Access Entry に、次の 3 つを結びつけています。
 | `get nodes` | できる |
 | namespace の一覧 | できる |
 | 他の namespace の Pod の参照 | できる |
-| Secret の参照 | できない |
+| 自分の namespace(`app`)の Secret の参照と編集 | できる |
+| 他の namespace の Secret の参照 | できない |
 | `delete nodes` | できない |
 | namespace の作成 | できない |
 | ResourceQuota の変更 | できない |
