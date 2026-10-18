@@ -5,8 +5,10 @@ set -euo pipefail
 
 CLUSTER="${1:-eks-exp}"
 ctx="$(kubectl config current-context)"
-if [[ "$ctx" != *"cluster/${CLUSTER}"* ]]; then
-  echo "current kubeconfig context is not ${CLUSTER}: ${ctx}" >&2
+# context 名は alias で変わるので、その context が指すクラスタ(ARN の末尾が cluster/<名前>)で判定する
+ctx_cluster="$(kubectl config view --minify -o jsonpath='{.contexts[0].context.cluster}')"
+if [[ "$ctx_cluster" != *":cluster/${CLUSTER}" ]]; then
+  echo "current kubeconfig context ${ctx} does not point at cluster ${CLUSTER}: ${ctx_cluster}" >&2
   echo "run: aws eks update-kubeconfig --name ${CLUSTER}" >&2
   exit 1
 fi
