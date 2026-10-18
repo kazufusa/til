@@ -10,7 +10,7 @@
 
 - HTTPS の URL(CloudFront)で、アプリにアクセスできる(NLB の HTTP の URL も残る)
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
-- kubectl で、アプリをデプロイできる
+- kubectl で、サンプルの Slack アプリ(署名検証、メンション返信)をデプロイできる
 - image を置く ECR がある
 - deployer ロール(既定は `eks-exp-deployer`)で、image の push とデプロイができる
 

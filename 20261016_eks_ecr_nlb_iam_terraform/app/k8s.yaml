@@ -22,9 +22,14 @@ spec:
           image: IMAGE_PLACEHOLDER
           ports:
             - containerPort: 8080
+          # Secret slack(SLACK_SIGNING_SECRET, SLACK_BOT_TOKEN)は deployer が作る。無くても起動する
+          envFrom:
+            - secretRef:
+                name: slack
+                optional: true
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 8080
 ---
 apiVersion: v1

@@ -62,6 +62,34 @@ curl {{HTTPS_URL}}
 Service の `nodePort` は、必ず {{NODE_PORT}} にします。
 NLB がこの番号に転送するためです。
 
+## Slack アプリとして使う
+
+サンプルアプリは、Slack のイベントを受ける最小のアプリです。
+Secret を作ると、署名の検証と、メンションへの返信が有効になります。
+
+Slack のアプリを作り、Signing Secret と Bot User OAuth Token を控えてから、Secret を作ります。
+
+```bash
+kubectl -n {{NAMESPACE}} create secret generic slack \
+  --from-literal=SLACK_SIGNING_SECRET=... \
+  --from-literal=SLACK_BOT_TOKEN=xoxb-...
+kubectl -n {{NAMESPACE}} rollout restart deploy/web
+```
+
+Slack の Event Subscriptions で、Request URL を次の値にします。
+`app_mention` を subscribe し、`chat:write` 権限を付けてインストールします。
+
+```text
+{{HTTPS_URL}}slack/events
+```
+
+Request URL を入れると、Slack が challenge を送ります。
+アプリが同じ値を返せば、画面に Verified と出ます。
+チャンネルでアプリにメンションすると、スレッドに `hello from eks-exp` が返ります。
+
+slack.com への通信は NAT を通ります。送信元 IP は上の表の値です。
+詳しい手順は `app/README.md` にあります。
+
 ## できること・できないこと
 
 | 操作 | 可否 |
