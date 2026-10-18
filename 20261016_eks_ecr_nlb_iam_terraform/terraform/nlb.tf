@@ -50,6 +50,10 @@ resource "aws_lb" "main" {
   internal           = false
   subnets            = aws_subnet.public[*].id
   security_groups    = [aws_security_group.nlb.id]
+
+  # ノードが1台だけだと、ターゲットのいないAZのNLBノードに当たった接続が
+  # タイムアウトする(CloudFrontで間欠的な504になる)ため、AZをまたいで分散する
+  enable_cross_zone_load_balancing = true
 }
 
 resource "aws_lb_target_group" "nodeport" {
