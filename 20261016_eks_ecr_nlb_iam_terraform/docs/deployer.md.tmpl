@@ -1,0 +1,85 @@
+# deployer 向けの手引き
+
+この値は例です。builder が scripts/render-deployer-doc.sh で実際の値に埋めます。本番リポジトリでは、埋めた状態で commit します。
+
+アプリ開発者が最初に読むページです。
+image を ECR に push し、kubectl でアプリをデプロイするまでを説明します。
+
+## あなたの環境
+
+| 項目 | 値 |
+| --- | --- |
+| ロール ARN | `{{DEPLOYER_ROLE_ARN}}` |
+| クラスタ名 | `{{CLUSTER_NAME}}` |
+| リージョン | `{{REGION}}` |
+| ECR リポジトリ | `{{ECR_REPOSITORY_URL}}` |
+| namespace | `{{NAMESPACE}}` |
+| NodePort | `{{NODE_PORT}}` |
+| 公開 URL | `http://{{NLB_DNS_NAME}}/` |
+| 外向き通信の送信元 IP | `{{NAT_PUBLIC_IP}}` |
+
+## プロファイルの設定
+
+`~/.aws/config` に、次のプロファイルを足します。
+
+```ini
+[profile deployer]
+role_arn       = {{DEPLOYER_ROLE_ARN}}
+source_profile = <自分のログインプロファイル>
+region         = {{REGION}}
+```
+
+設定できたかは、次のコマンドで確かめます。
+出力の ARN に `app-deployer` が含まれていれば成功です。
+
+```bash
+aws sts get-caller-identity --profile deployer
+```
+
+## image の push
+
+ECR にログインし、image を build して push します。
+
+```bash
+ECR={{ECR_REPOSITORY_URL}}
+aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
+docker build -t "${ECR}:v1" app/
+docker push "${ECR}:v1"
+```
+
+## デプロイ
+
+kubeconfig を作り、manifest の image 名を置き換えて apply します。
+
+```bash
+aws eks update-kubeconfig --name {{CLUSTER_NAME}} --region {{REGION}} --profile deployer --alias <alias> --user-alias <alias>
+sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n {{NAMESPACE}} -f -
+kubectl -n {{NAMESPACE}} rollout status deploy/web
+curl http://{{NLB_DNS_NAME}}/
+```
+
+Service の `nodePort` は、必ず {{NODE_PORT}} にします。
+NLB がこの番号に転送するためです。
+
+## できること・できないこと
+
+| 操作 | 可否 |
+| --- | --- |
+| namespace `{{NAMESPACE}}` の中の操作 | admin なのでできる |
+| クラスタ全体の参照(`get nodes` など) | 読み取りだけできる |
+| Secret の参照 | できない |
+| namespace の作成 | できない |
+| ResourceQuota の変更 | できない |
+| Service type=LoadBalancer と PVC | quota に拒否される |
+
+LoadBalancer と PVC を拒否するのは、terraform の外にクラウド資源を作らせないためです。
+外部に公開する口は、builder が NLB として用意しています。
+権限の詳細は `docs/permissions.md` にあります。
+
+## うまくいかないとき
+
+- `Forbidden` が出るときは、`-n {{NAMESPACE}}` を付けているか確かめます。他の namespace には書き込めません。
+- `exceeded quota` が出るときは、Service type=LoadBalancer や PVC を使っていないか確かめます。
+- Pod が Pending のときは、`kubectl get nodes` と `kubectl -n {{NAMESPACE}} describe pod` を見ます。
+- image の pull に失敗するときは、manifest の URL と tag が push したものと一致するか確かめます。
+- URL が応答しないときは、Service の `nodePort` が {{NODE_PORT}} か確かめます。

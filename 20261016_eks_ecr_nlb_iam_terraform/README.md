@@ -43,7 +43,9 @@ deployer は、`docs/deployer.md` の手順で image を push してデプロイ
 
 ## deployer への引き渡し
 
-builder が apply の後に developer へ渡す情報です。
+builder が apply の後に `scripts/render-deployer-doc.sh` を実行します。
+値が埋まった `docs/deployer.md` を、developer に渡します。
+下の表は、各値の出所です。
 
 | 渡すもの | 出所 | 用途 |
 | --- | --- | --- |
@@ -77,7 +79,7 @@ docs/        解説、権限、申請文、実験ログ、設計、計画
 ## 文書の案内
 
 - `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説と、手順の詳細
-- `docs/deployer.md`: アプリ開発者が最初に読む手順書
+- `docs/deployer.md`: アプリ開発者が最初に読む手順書(雛形は `docs/deployer.md.tmpl`)
 - `docs/permissions.md`: builder と deployer の権限、検証で見つかった Action
 - `docs/request.md`: マネージャーへの申請文のたたき台
 - `docs/experiment-log.md`: 各段の実験ログ

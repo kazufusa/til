@@ -226,50 +226,14 @@ terraform output
 
 ### 手順(deployer)
 
-#### 1. プロファイル
-
-`~/.aws/config` に次のプロファイルを足します。
-実験では `source_profile` に `default` を指定します。
-
-```ini
-[profile deployer]
-role_arn       = <deployer_role_arn>
-source_profile = <自分のログインプロファイル>
-region         = ap-northeast-1
-```
-
-#### 2. image の push
-
-```bash
-export AWS_PROFILE=deployer
-ECR=<ecr_repository_url>
-aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
-docker build -t "${ECR}:v1" app/
-docker push "${ECR}:v1"
-```
-
-#### 3. デプロイ
-
-```bash
-aws eks update-kubeconfig --name eks-exp
-sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -f -
-kubectl -n app rollout status deploy/web
-```
-
-引き渡された `nlb_dns_name` に `http://<nlb_dns_name>/` で curl すると、Pod の応答が返ります。
-
-#### 4. できないこと
-
-deployer ができること、できないことの一覧は `docs/permissions.md` にあります。
-Service type=LoadBalancer と PersistentVolumeClaim は、ResourceQuota が 0 に制限しています。
-terraform の外にクラウド資源ができるのを防ぐためです。
+deployer の手順は、値が埋まった `docs/deployer.md` にまとめています。
 
 ### 片付け(実験のみ)
 
 destroy は実験の操作で、本番では行いません。
 
 ```bash
-aws eks update-kubeconfig --name eks-exp
+aws eks update-kubeconfig --name eks-exp --alias <alias> --user-alias <alias>
 scripts/preflight-destroy.sh
 (cd terraform && terraform destroy)
 bootstrap/delete-builder-role.sh

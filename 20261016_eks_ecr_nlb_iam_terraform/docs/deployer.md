@@ -1,19 +1,22 @@
 # deployer 向けの手引き
 
+この値は例です。builder が scripts/render-deployer-doc.sh で実際の値に埋めます。本番リポジトリでは、埋めた状態で commit します。
+
 アプリ開発者が最初に読むページです。
 image を ECR に push し、kubectl でアプリをデプロイするまでを説明します。
 
-## 受け取る情報
+## あなたの環境
 
-builder から、次の 7 つを受け取ります。
-
-- [ ] `app-deployer` ロールの ARN(`deployer_role_arn`)
-- [ ] クラスタ名とリージョン(`cluster_name`、`region`)
-- [ ] ECR リポジトリの URL(`ecr_repository_url`)
-- [ ] namespace(`deployer_namespaces`、既定は `app`)
-- [ ] NodePort(`node_port`、30080)
-- [ ] 公開 URL(`nlb_dns_name`)
-- [ ] このページの場所(`docs/deployer.md`)
+| 項目 | 値 |
+| --- | --- |
+| ロール ARN | `arn:aws:iam::123456789012:role/app-deployer` |
+| クラスタ名 | `eks-exp` |
+| リージョン | `ap-northeast-1` |
+| ECR リポジトリ | `123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app` |
+| namespace | `app` |
+| NodePort | `30080` |
+| 公開 URL | `http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/` |
+| 外向き通信の送信元 IP | `203.0.113.10` |
 
 ## プロファイルの設定
 
@@ -21,7 +24,7 @@ builder から、次の 7 つを受け取ります。
 
 ```ini
 [profile deployer]
-role_arn       = <deployer_role_arn>
+role_arn       = arn:aws:iam::123456789012:role/app-deployer
 source_profile = <自分のログインプロファイル>
 region         = ap-northeast-1
 ```
@@ -38,7 +41,7 @@ aws sts get-caller-identity --profile deployer
 ECR にログインし、image を build して push します。
 
 ```bash
-ECR=<ecr_repository_url>
+ECR=123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app
 aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
 docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
@@ -49,10 +52,10 @@ docker push "${ECR}:v1"
 kubeconfig を作り、manifest の image 名を置き換えて apply します。
 
 ```bash
-aws eks update-kubeconfig --name <cluster_name> --profile deployer --alias <alias>
+aws eks update-kubeconfig --name eks-exp --region ap-northeast-1 --profile deployer --alias <alias> --user-alias <alias>
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
 kubectl -n app rollout status deploy/web
-curl http://<nlb_dns_name>/
+curl http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/
 ```
 
 Service の `nodePort` は、必ず 30080 にします。
