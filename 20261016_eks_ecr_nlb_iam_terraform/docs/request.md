@@ -21,19 +21,25 @@
 ## 範囲の説明
 
 ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
-EKS は全権です。
-自分でロールを作る権限は名前で縛ってあり、管理者権限を付けることはできません。
+EKS は、自分のクラスタ名の資源に限った全権です。
+自分でロールを作る権限は名前で縛ってあり、管理者ポリシーを直接付けることはできません。
+deployer のポリシー内容と信頼先は builder が書けるため、完全な境界にするには Permissions Boundary が必要です。
 
-カスタムポリシーの 6 項目は次のとおりです。
+カスタムポリシーの 7 項目は次のとおりです。
 
-1. EKS の全操作(`eks:*`)
+1. EKS の全操作(`eks:*`)。書き込みは、名前が `<名前>` のクラスタとその配下の資源に限ります。Auto Scaling は負荷分散先の関連付けだけ
 2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
 3. IAM ロールは名前が `<名前>-*` のものだけ作成と削除ができ、
-   付けられるポリシーは EKS 用の AWS 管理ポリシー 4 つと `<名前>-deployer-policy` に限る。
-   `AdministratorAccess` は付けられない
+   付けられるポリシーは、AWS 管理ポリシー 5 つと `<名前>-deployer-policy` に限ります。
+   5 つは、EKS 用の 4 つと CloudWatchAgentServerPolicy です。
+   管理者ポリシーを直接付けることはできません。
+   deployer のポリシー内容と信頼先は builder が書けるため、完全な境界にするには Permissions Boundary が必要です
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
-5. 各サービスの参照(Describe、List、Get)
-6. 実験で見つかった 2 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)
+5. 各サービスの参照(Describe、List、Get)と、CloudFront のプレフィックスリストの参照
+6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
+7. 実験で見つかった 3 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)、`ec2:DescribeAddressesAttribute`(EIP 作成後の読み取り)
+
+EKS の資源限定は最終検証周回の後に入れたため未検証で、移植先の最初の apply で確認します。
 
 検証済みの最小権限の JSON は、`docs/permissions.md` の付録にあります。
 

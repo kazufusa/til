@@ -1,12 +1,15 @@
 # EKS + ECR + NLB + デプロイ権限の terraform 実験 設計
 
+この設計書は実装前の記録です。最新の構成は README と permissions.md を正とします。
+本文の「移植先」は、社内の dev 環境を指します。
+
 対象ディレクトリ: `20261016_eks_ecr_nlb_iam_terraform/`
 
 ## 目的
 
 成果物は 2 つです。
 
-1. ロール。自分が本番で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `<cluster_name>-deployer`(terraform 管理)
+1. ロール。自分が移植先で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `<cluster_name>-deployer`(terraform 管理)
 2. EKS 環境を作る terraform。apply すると次の 5 点が満たされます
 
 - 外部から HTTPS の URL でアプリにアクセスできる(CloudFront の `*.cloudfront.net`、証明書は AWS が自動付与。入口は CloudFront だけで、NLB は CloudFront 以外を拒否する)
@@ -21,20 +24,20 @@ AWS 上で行い、何度でも完全に戻せる形にします。
 ## 役割
 
 builder は自分です。terraform apply/destroy で環境を作り、壊します。
-本番ではこの権限をマネージャーに申請します。
+移植先ではこの権限をマネージャーに申請します。
 
 deployer はその人物です。ECR に image を push し、kubectl で EKS を操作します。
-本番の組織は SSO ログイン後に作業用ロールへスイッチロールする運用です。
+移植先の組織は SSO ログイン後に作業用ロールへスイッチロールする運用です。
 そのため deployer の実体は IAM ロール `<cluster_name>-deployer` にします。
 アクセスキーは発行しません。
 deployer の権限も同じ terraform で管理します。
 
 実験では、自分の `default` プロファイルから `<cluster_name>-deployer` にスイッチして deployer 役を演じます。
-本番では、信頼ポリシーの「誰がスイッチできるか」をその人物のログイン identity に変えるだけです。
+移植先では、信頼ポリシーの「誰がスイッチできるか」をその人物のログイン identity に変えるだけです。
 
-terraform のコードは実験と本番で同一にします。
+terraform のコードは実験と移植先で同一にします。
 差は変数(アカウント、プロファイル、ノード数)だけです。
-destroy は実験の操作であり、本番では行いません。
+destroy は実験の操作であり、移植先では行いません。
 
 役割分担は AWS の推奨に合わせます。
 cluster-admin は platform(builder)だけが持ちます。
@@ -49,16 +52,22 @@ EKS の認可は aws-auth ConfigMap ではなく Access Entry で行います。
 ## 構成
 
 ```
-インターネット
-   │  http://<nlb>.elb.ap-northeast-1.amazonaws.com
+ブラウザ
+   │  https://<id>.cloudfront.net
    ▼
-NLB (terraform 管理, public subnet, SG 付き)
+CloudFront (HTTPS)
+   │  http :80
+   ▼
+NLB (terraform 管理, public subnet, SG は CloudFront からのみ許可)
    │  listener :80 → target group (instance, port 30080)
    ▼
 EKS managed node group (t3.medium x1, private subnet)
    │  NodePort 30080
    ▼
 Pod (namespace app, image は ECR)
+   │  外向き通信
+   ▼
+NAT Gateway (固定 IP) → インターネット
 ```
 
 NLB、target group、SG は全て terraform が持ちます。
@@ -81,7 +90,7 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 ```
 20261016_eks_ecr_nlb_iam_terraform/
 ├── README.md            # 手順、権限リスト、申請文
-├── terraform/           # 本番に持っていく本体(1 つの state)
+├── terraform/           # 移植先に持っていく本体(1 つの state)
 │   ├── network.tf       # VPC, subnet, IGW, NAT, route table
 │   ├── eks.tf           # EKS cluster, node group, IAM role
 │   ├── ecr.tf           # ECR repository
@@ -103,12 +112,12 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
     └── preflight-destroy.sh    # destroy 前の k8s 側 LoadBalancer チェック
 ```
 
-`terraform/` が本番に持っていく本体で、state は 1 つです。
+`terraform/` が移植先に持っていく本体で、state は 1 つです。
 
 `bootstrap/` は段 0(ブートストラップ)です。
 terraform を回すロールとその state の置き場は、terraform 自身では作れません。
 マネージャーは terraform を使えないため、段 0 は全て aws コマンドのスクリプトにします。
-実験では自分が管理者としてこのスクリプトを実行し、本番で渡すものと同じ手順を検証します。
+実験では自分が管理者としてこのスクリプトを実行し、移植先で渡すものと同じ手順を検証します。
 
 state は S3 に置きます。
 ロックは `use_lockfile = true`(Terraform 1.10 以降)で S3 だけで完結させます。
@@ -125,14 +134,14 @@ terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --q
 tfvars は使いません。
 `deployer_trusted_principals` の既定値は空リストで、空のときは terraform を実行している本人の帽子(`aws_iam_session_context` の `issuer_arn`)を信頼します。
 実験では自分が deployer 役を兼ねるので、固有値を一切書かずに動きます。
-本番ではその人物の ARN を `default` に書いて commit します。
+移植先ではその人物の ARN を `default` に書いて commit します。
 
 `.gitignore` に入れるのは `.terraform/` と `*.tfstate*` だけです。
 
 バケットは terraform の管理外です。
 作成は `bootstrap/create-state-bucket.sh` で行います。
 builder の権限に、名前を `tfstate-*-eks-exp` に限定したバケットの作成・設定・削除を含めます。
-そのため本番でもこのスクリプトは builder 自身が実行します。
+そのため移植先でもこのスクリプトは builder 自身が実行します。
 マネージャーに実行してもらうのは `create-builder-role.sh` の 1 本だけです。
 実験では第 0 段で管理者として作り、第 3 段で builder として同じスクリプトを再実行して権限を検証します。
 
@@ -176,10 +185,10 @@ KMS のカスタマーキーは使いません。削除に待機期間がある�
 - namespace `app` の ResourceQuota。`services.loadbalancers = 0`、`persistentvolumeclaims = 0`
 
 ResourceQuota は、deployer が terraform 外のクラウド資源(ELB、EBS)を作れないようにする仕組みです。
-edit 権限では ResourceQuota を変更できません。
+admin 権限では ResourceQuota を変更できません。
 
 実験では `deployer_trusted_principals` を空のままにし、実行者本人の帽子を信頼します。
-本番ではその人物のログイン identity(SSO のロールまたは IAM ユーザー)の ARN を `default` に書きます。
+移植先ではその人物のログイン identity(SSO のロールまたは IAM ユーザー)の ARN を `default` に書きます。
 
 deployer の IAM ポリシーは次の 3 文です。
 
@@ -223,7 +232,7 @@ builder の申請権限は「候補を作る」「実験で検証する」「確
 `tf-builder` は実験の道具です。
 自分の SSO ユーザーは AdministratorAccess を持つため、候補権限だけで足りるかを試せません。
 Identity Center は触らないと決めたので、候補権限だけを持つロールを別に作って検証します。
-本番でロールを作るか、自分の identity に直接付与するかは、マネージャーの流儀に任せます。
+移植先でロールを作るか、自分の identity に直接付与するかは、マネージャーの流儀に任せます。
 terraform のコードはどちらでも同じで、認証プロファイルの設定だけが変わります。
 
 README の申請文は次の形にします。
@@ -266,7 +275,11 @@ AccessDenied が出たら候補ポリシーに Action を足し、管理者が `
 
 1. builder で再 apply
 2. プロファイル `deployer` で AWS 側の 5 操作が全て拒否されることを確認
-3. Kubernetes 側で、読み取りはクラスタ全体で許可、書き込みは namespace `app` 以外で Forbidden、quota で LoadBalancer が拒否、namespace 内の Deployment と Service と RoleBinding は許可されることを確認
+3. Kubernetes 側で、次を確認
+   - 読み取りはクラスタ全体で許可される
+   - 書き込みは namespace `app` 以外で Forbidden になる
+   - quota で LoadBalancer が拒否される
+   - namespace 内の Deployment、Service、RoleBinding は許可される
 
 片付けは、builder で destroy、builder で `delete-state-bucket.sh`、管理者で `delete-builder-role.sh`、`check-leftovers.sh` が clean、の順です。
 最後に確定版の `tf-builder-policy.json` と申請文を README に載せます。
@@ -316,7 +329,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 ## 成果物
 
-- `terraform/` 一式。本番にそのまま持っていく EKS 環境のコード
+- `terraform/` 一式。移植先にそのまま持っていく EKS 環境のコード
 - `bootstrap/` 一式。マネージャーに渡す `create-builder-role.sh` と、`tf-builder-policy.json`(管理ポリシー 3 つと組み合わせるカスタム 1 つ)、検証済みの `tf-builder-policy.minimal.json`
 - README.md。概要と最短手順を載せた入口
 - docs/guide.md。初学者向けの解説と手順の詳細

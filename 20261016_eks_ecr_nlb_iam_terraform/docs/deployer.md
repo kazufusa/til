@@ -1,6 +1,6 @@
 # deployer 向けの手引き
 
-この値は例です。builder が scripts/render-deployer-doc.sh で実際の値に埋めます。本番リポジトリでは、埋めた状態で commit します。
+この値は例です。builder が scripts/render-deployer-doc.sh で実際の値に埋めます。移植先のリポジトリでは、埋めた状態で commit します。
 
 アプリ開発者が最初に読むページです。
 image を ECR に push し、kubectl でアプリをデプロイするまでを説明します。
@@ -130,6 +130,7 @@ NLB の URL には、外から直接は届きません。
 | namespace の作成 | できない |
 | ResourceQuota の変更 | できない |
 | Service type=LoadBalancer と PVC | quota に拒否される |
+| 特権 Pod、hostPath、hostNetwork | できない(Pod Security の baseline に拒否される) |
 
 LoadBalancer と PVC を拒否するのは、terraform の外にクラウド資源を作らせないためです。
 外部に公開する口は、builder が NLB として用意しています。

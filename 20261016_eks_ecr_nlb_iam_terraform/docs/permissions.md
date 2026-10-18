@@ -17,11 +17,13 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 カスタムポリシーの 7 項目は次のとおりです。
 
-1. EKS の全操作(`eks:*`)
+1. EKS の全操作(`eks:*`)。書き込みは、名前が `<名前>` のクラスタとその配下の資源に限ります。Auto Scaling は負荷分散先の関連付けだけ
 2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
 3. IAM ロールは名前が `<名前>-*` のものだけ作成と削除ができ、
-   付けられるポリシーは EKS 用の AWS 管理ポリシー 4 つと `<名前>-deployer-policy` に限る。
-   `AdministratorAccess` は付けられない
+   付けられるポリシーは、AWS 管理ポリシー 5 つと `<名前>-deployer-policy` に限ります。
+   5 つは、EKS 用の 4 つと CloudWatchAgentServerPolicy です。
+   管理者ポリシーを直接付けることはできません。
+   deployer のポリシー内容と信頼先は builder が書けるため、完全な境界にするには Permissions Boundary が必要です
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
 5. 各サービスの参照(Describe、List、Get)と、CloudFront のプレフィックスリストの参照
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
@@ -33,14 +35,16 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | --- | --- | --- |
 | AWS | ECR の指定リポジトリへの push と pull、クラスタ情報の参照(`eks:DescribeCluster`)、CloudWatch Logs の読み取り(自分のクラスタのロググループ) | それ以外すべて(EC2、IAM、他の ECR、他のロググループ、ELB の参照も不可) |
 | Kubernetes、namespace `app` の中 | 何でも(Deployment、Service、Secret の参照と編集、Role の付与) | ResourceQuota の変更、namespace 自体の削除 |
+| Kubernetes、Pod の設定 | Pod Security の baseline に収まる Pod | 特権 Pod、hostPath、hostNetwork(baseline に拒否される) |
 | Kubernetes、クラスタ全体 | 読み取り(ノード、namespace 一覧、他 namespace の Pod) | 他 namespace への書き込み、他 namespace の Secret 参照、namespace 作成 |
 | クラウド資源 | なし | LoadBalancer 型 Service と PVC(quota で 0 件に固定) |
 
-### マネージャーへの 3 文
+### マネージャーへの説明
 
 > ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
-> EKS は全権です。
-> 自分でロールを作る権限は名前で縛ってあり、管理者権限を付けることはできません。
+> EKS は、自分のクラスタ名の資源に限った全権です。
+> 自分でロールを作る権限は名前で縛ってあり、管理者ポリシーを直接付けることはできません。
+> deployer のポリシー内容と信頼先は builder が書けるため、完全な境界にするには Permissions Boundary が必要です。
 
 細かい最小権限の JSON は付録にあり、厳しく見たい場合に示します。
 
@@ -56,12 +60,11 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | `AmazonVPCFullAccess` | AWS 管理 | VPC、サブネット、NAT、EIP、SG などのネットワーク一式 |
 | `ElasticLoadBalancingFullAccess` | AWS 管理 | NLB、target group、listener |
 | `AmazonEC2ContainerRegistryFullAccess` | AWS 管理 | ECR リポジトリの作成と削除 |
-| `tf-builder-policy` | カスタム | 下記の 8 領域 |
+| `tf-builder-policy` | カスタム | 下記の 7 項目 |
 
-カスタムポリシーの内容は、次の 8 領域です。
+カスタムポリシーの内容は、次の 7 項目です。
 
-- EKS: `eks:*`
-- Auto Scaling: 負荷分散先の関連付けだけ
+- EKS: `eks:*`(書き込みはクラスタ名で限定)と、Auto Scaling の負荷分散先の関連付け
 - IAM: 資源名と PolicyARN で限定
 - S3: state バケットの名前で限定
 - CloudFront: HTTPS の入口の作成と削除
@@ -94,7 +97,14 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Sid": "Eks",
       "Effect": "Allow",
       "Action": "eks:*",
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:eks:*:*:cluster/eks-exp",
+        "arn:aws:eks:*:*:nodegroup/eks-exp/*",
+        "arn:aws:eks:*:*:addon/eks-exp/*",
+        "arn:aws:eks:*:*:access-entry/eks-exp/*",
+        "arn:aws:eks:*:*:podidentityassociation/eks-exp/*",
+        "arn:aws:eks:*:*:access-policy/*"
+      ]
     },
     {
       "Sid": "AutoScalingAttach",
@@ -245,7 +255,7 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | サービス | 主な Action | 何のために必要か |
 | --- | --- | --- |
 | EC2(ネットワーク) | VPC、サブネット、IGW、NAT、ルートテーブル、SG、EIP の作成と削除、CloudFront のプレフィックスリストの参照 | クラスタを置くネットワークの構築と、NLB の入口を CloudFront に限る SG ルール |
-| EKS | `eks:*` | クラスタ、ノードグループ、Access Entry の管理 |
+| EKS | `eks:*`(書き込みはクラスタ名で限定) | クラスタ、ノードグループ、Access Entry の管理 |
 | ECR | リポジトリの作成と削除、image の削除 | image の置き場所 |
 | ELB | LB、target group、listener の作成と削除 | NLB の構築 |
 | Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
@@ -281,16 +291,20 @@ NAT ができないまま、ノードも出口がなくて起動に失敗しま�
 作れるものは、ネットワーク、EKS、ECR、ELB、CloudFront、`<cluster_name>-*` の IAM ロールです。
 名前が `tfstate-*-<cluster_name>` の S3 バケットの作成、設定、削除もできます。
 
-次の 4 点を、申請文でそのまま説明します。
+次の 5 点を、申請文でそのまま説明します。
 
 1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
    AWS 管理の EKS、ECR、CloudWatch のポリシー 5 つと、deployer のポリシーだけです。
-   builder が作るロールに `AdministratorAccess` は付けられません。
+   builder が作るロールに `AdministratorAccess` を直接付けることはできません。
 2. builder は deployer のポリシーの中身(`CreatePolicyVersion`)を書き換えられます。
    deployer ロールの信頼ポリシーも書き換えられます。
    この候補は厳密な境界ではありません。
 3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
-4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
+4. EC2、ELB、ECR、CloudFront は Resource が `*` です。builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
+5. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
+
+EKS の資源限定と Pod Security のラベルは、最終検証周回の後に入れたため未検証です。
+移植先の最初の apply で確認します。
 
 ### 名前を変える手順
 
@@ -384,7 +398,14 @@ NAT ができないまま、ノードも出口がなくて起動に失敗しま�
         "eks:AssociateAccessPolicy",
         "eks:DisassociateAccessPolicy"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:eks:*:*:cluster/eks-exp",
+        "arn:aws:eks:*:*:nodegroup/eks-exp/*",
+        "arn:aws:eks:*:*:addon/eks-exp/*",
+        "arn:aws:eks:*:*:access-entry/eks-exp/*",
+        "arn:aws:eks:*:*:podidentityassociation/eks-exp/*",
+        "arn:aws:eks:*:*:access-policy/*"
+      ]
     },
     {
       "Sid": "Ecr",
@@ -697,15 +718,16 @@ AWS の推奨に合わせた点は次のとおりです。
 
 | 領域 | 守れている点 |
 | --- | --- |
-| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは CloudFront 経由の HTTPS だけで、NLB はセキュリティグループで CloudFront 以外を拒否する。外へ出るのは NAT の固定 IP だけ |
+| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは CloudFront 経由の HTTPS だけで、NLB はセキュリティグループで CloudFront 以外を拒否する。外へ出るのは NAT の固定 IP だけ。プレフィックスリストは他人の CloudFront も含むため、アプリ側の認証(Slack 署名など)が前提 |
 | 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
-| builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。`AdministratorAccess` は付けられない |
+| builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。管理者ポリシーは直接付けられない。ただし deployer のポリシーの書き換えで迂回できる |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
 | 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
+| Pod の権限 | namespace に Pod Security の baseline を強制し、特権 Pod と hostPath を拒否する |
 | ログ | 全 Pod の標準出力を CloudWatch Logs に転送し、30 日間保存する。deployer が読めるのは自分のクラスタのロググループだけ |
 | state | S3 のバージョニング、暗号化、パブリックアクセスブロックを有効にしている |
 
-## 本番で追加を検討する対策
+## 移植先で追加を検討する対策
 
 | 対策 | 内容 |
 | --- | --- |

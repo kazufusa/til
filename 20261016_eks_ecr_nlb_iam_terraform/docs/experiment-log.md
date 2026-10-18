@@ -1,5 +1,7 @@
 # 実験ログ
 
+この時点の名前 `app-deployer` は、後に `<cluster_name>-deployer` に変わりました。
+
 ## 第 0〜1 段(2026-10-17 実施)
 
 マネージャー役のユーザーが `create-builder-role.sh` を実行し、`tf-builder` を作りました。
@@ -81,7 +83,7 @@ apply では、destroy にだけ必要な権限は見つかりません。
 確認スクリプトで、次の結果になりました。
 
 - EKS、ECR、ロードバランサー、ターゲットグループ、Auto Scaling グループ、NAT ゲートウェイ、EIP は `ok` でした。
-- VPC、セキュリティグループ、ログ group、タグ `Project=eks-exp` のリソースも `ok` でした。
+- VPC、セキュリティグループ、ロググループ、タグ `Project=eks-exp` のリソースも `ok` でした。
 - 残ったのは、IAM ロール `tf-builder` と IAM ポリシー `tf-builder-policy` だけです。
 - state バケットも残っています。
 
@@ -322,8 +324,8 @@ NLB のクロスゾーン負荷分散が無効で、ノードのいない AZ の
 - e NLB の DNS 名へ直接つなぐと応答がなく、8 秒で打ち切りになる(CloudFront 専用の証明)
 - f ノードは 1 台が Ready で、Pod のログが読める
 - g ログ転送のアドオンは ACTIVE で、4 つのロググループの保存期間が 30 日になっている
-- g deployer はアプリのログを読め、無関係なロググループは AccessDenied になる
-- h deployer 向けの文書を描画すると、置換し忘れが 0 件になる
+- h deployer はアプリのログを読め、無関係なロググループは AccessDenied になる
+- i deployer 向けの文書を描画すると、置換し忘れが 0 件になる
 
 ログの検索では、件数だけを指定した filter-log-events が空のページを返しました。
 時刻の指定か最大件数の指定を使うと、行が返ります。
@@ -334,3 +336,8 @@ NLB のクロスゾーン負荷分散が無効で、ノードのいない AZ の
 destroy は約 12 分で 48 個を削除し、AccessDenied はありませんでした。
 状態バケットとビルダーのロールも消し、残りがないことを確認しました。
 この周回の追加費用は、約 0.3 USD です。
+
+### 最終検証周回の後の変更
+
+builder のポリシーで EKS の資源をクラスタ名で限定したことは、最終検証周回の後に入れたため未検証で、移植先の最初の apply で確認します。
+namespace に Pod Security のラベル(enforce は baseline)を付けたことも同じく未検証です。

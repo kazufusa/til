@@ -162,16 +162,22 @@ builder が `<cluster_name>-deployer` の権限を書き換えられるなど、
 ### 構成図
 
 ```
-インターネット
-   │  http://<nlb>.elb.ap-northeast-1.amazonaws.com
+ブラウザ
+   │  https://<id>.cloudfront.net
    ▼
-NLB (terraform 管理, public subnet, SG 付き)
+CloudFront (HTTPS)
+   │  http :80
+   ▼
+NLB (terraform 管理, public subnet, SG は CloudFront からのみ許可)
    │  listener :80 → target group (instance, port 30080)
    ▼
 EKS managed node group (t3.medium x1, private subnet)
    │  NodePort 30080
    ▼
 Pod (namespace app, image は ECR)
+   │  外向き通信
+   ▼
+NAT Gateway (固定 IP) → インターネット
 ```
 
 NLB、target group、SG は全て terraform が持ちます。
@@ -190,7 +196,7 @@ terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
 ### 手順(builder)
 
 以降の builder の操作は、実験では `AWS_PROFILE=builder` で実行します。
-本番では、マネージャーが付与した identity で実行します。
+移植先(dev 環境)では、マネージャーが付与した identity で実行します。
 
 #### 0-a. ロール作成(マネージャー)
 
@@ -221,7 +227,7 @@ bootstrap/create-state-bucket.sh
 
 #### 1. 固有値と init
 
-本番では、その人物の identity の ARN を書いて commit します。
+移植先(dev 環境)では、その人物の identity の ARN を書いて commit します。
 書く場所は `terraform/variables.tf` の `deployer_trusted_principals` の `default` です。
 空のままだと terraform を実行した本人が deployer になります(実験用)。
 tfvars と backend.hcl は使いません。
@@ -242,14 +248,8 @@ terraform output
 
 #### 3. deployer への引き渡し
 
-渡すものは次の 6 つです。
-
-- `deployer_role_arn`
-- `ecr_repository_url`
-- `cluster_name`
-- `region`
-- `node_port`
-- `nlb_dns_name`
+`scripts/render-deployer-doc.sh` を実行し、値が埋まった `docs/deployer.md` を渡します。
+渡す値の一覧は README にあります。
 
 ### 手順(deployer)
 
@@ -257,20 +257,24 @@ deployer の手順は、値が埋まった `docs/deployer.md` にまとめてい
 
 ### 片付け(実験のみ)
 
-destroy は実験の操作で、本番では行いません。
+destroy は実験の操作で、移植先(dev 環境)では行いません。
 
 ```bash
+# builder
 aws eks update-kubeconfig --name eks-exp --alias <alias> --user-alias <alias>
 scripts/preflight-destroy.sh
 (cd terraform && terraform destroy)
+bootstrap/delete-state-bucket.sh   # 最後の周回だけ
+# 管理者
 bootstrap/delete-builder-role.sh
 scripts/check-leftovers.sh
-bootstrap/delete-state-bucket.sh
 ```
 
 destroy に約 15 分かかります。
 state バケットは周回の間は残し、最後に一度だけ削除します。
-`delete-state-bucket.sh` は builder の権限で実行できます。
+`delete-state-bucket.sh` は builder の権限で実行するので、builder ロールの削除より先に行います。
+`delete-builder-role.sh` は管理者の操作です。
+`check-leftovers.sh` は個人アカウント専用で、共有アカウントではタグ検索の結果だけを見ます。
 
 ### 実験用プロファイル
 
