@@ -2058,6 +2058,24 @@ git commit -m "20261016_eks_ecr_nlb_iam_terraform: builder権限をAWS管理ポ�
 
 ---
 
+### Task 12c: 名前の一元化(本番で名前が変わっても動くように)
+
+**Files:**
+- Modify: `terraform/variables.tf`(`cluster_name` に validation: 1〜20 文字、`^[a-z][a-z0-9-]*[a-z0-9]$`。理由: NLB 名 32 文字制限に `-nodeport` 等の接尾辞を足しても収まる長さ)
+- Modify: `terraform/main.tf`(`default_tags` の `Project = var.cluster_name`)
+- Modify: `terraform/deployer.tf`(ロール名 `${var.cluster_name}-deployer`、ポリシー名 `${var.cluster_name}-deployer-policy`、Kubernetes グループ `${var.cluster_name}-deployers`)
+- Modify: `terraform/namespace.tf`(ClusterRoleBinding の subject を同じグループ名に)
+- Modify: `bootstrap/*.sh`、`scripts/check-leftovers.sh`、`scripts/preflight-destroy.sh`(環境変数 `PROJECT`、既定 `eks-exp`。バケット名、ロール名、タグ値、残骸の名前パターンに使う)
+- Create: `scripts/render-policy.sh <PROJECT>`(`bootstrap/tf-builder-policy.json` と `.minimal.json` の `eks-exp` を置換して `bootstrap/rendered/<PROJECT>/` に出力。`create-builder-role.sh` は `PROJECT` が `eks-exp` 以外のときこの出力を使う)
+- Modify: `docs/permissions.md`、`README.md`(名前を変える手順を「`cluster_name` を変える」「`PROJECT=<名前> scripts/render-policy.sh` で JSON を作る」「以後のスクリプトは `PROJECT=<名前>` 付きで実行」の 3 行に)
+
+**Interfaces:**
+- Produces: 名前の源は terraform の `var.cluster_name` と、スクリプトの `PROJECT` の 2 つ。両方に同じ値を入れる
+
+検証は Task 13 の eks-exp2 周回で行う。`terraform validate` と `bash -n` は本タスクで通す。
+
+---
+
 ### Task 13: 片付けと README の完成
 
 **Files:**
@@ -2095,6 +2113,26 @@ AWS_PROFILE=builder bootstrap/create-state-bucket.sh
 yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
 ```
 Expected: `created: tfstate-<ACCOUNT_ID>-eks-exp` の後にバケット名、続いて `deleted bucket: ...`。AccessDenied なら `StateBucketAdmin` に Action を足し、管理者が `create-builder-role.sh` を再実行して再試行する。S3 は削除直後の同名再作成が数秒〜数分遅れることがあるので、`OperationAborted` が出たら 1 分待って再実行する。
+
+- [ ] **Step 2c: 名前を変えて 1 周する(eks-exp2)**
+
+名前を変えても動くことの証明です。管理者がやるのは `tf-builder` のポリシー差し替えだけです。
+
+```bash
+PROJECT=eks-exp2 scripts/render-policy.sh eks-exp2
+PROJECT=eks-exp2 bootstrap/create-builder-role.sh "$SSO_ROLE_ARN"     # 管理者。eks-exp2 用 JSON で tf-builder を更新
+PROJECT=eks-exp2 AWS_PROFILE=builder bootstrap/create-state-bucket.sh
+terraform -chdir=terraform init -reconfigure -backend-config="profile=builder" -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp2"
+terraform -chdir=terraform apply -var aws_profile=builder -var cluster_name=eks-exp2 -auto-approve
+```
+deployer 役で push と apply を行い、curl で応答を確認したら destroy します。
+
+```bash
+terraform -chdir=terraform destroy -var aws_profile=builder -var cluster_name=eks-exp2 -auto-approve
+PROJECT=eks-exp2 scripts/check-leftovers.sh
+yes y | PROJECT=eks-exp2 AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
+```
+Expected: apply と destroy が AccessDenied なしで通り、残骸は `tf-builder` のみ。結果を実験ログに記録する。
 
 - [ ] **Step 3: 管理者で tf-builder を消し、残骸チェックを通す**
 
