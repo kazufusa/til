@@ -2043,6 +2043,15 @@ kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-id
 
 - [ ] **Step 5: README を完成させる**
 
+- 「解説」の節を README の冒頭近く(目的の直後)に追加する。対象読者は AWS と Kubernetes の初学者。次の項目を、各項目 3〜6 文の平易な日本語で書く
+  1. ロールは「かぶる帽子」。IAM ユーザーとの違い、スイッチロールの意味、SSO でログインした時点で帽子 1 をかぶっていること
+  2. 段 0 と段 1。terraform を回す帽子(`tf-builder`)は terraform では作れないので、マネージャーがスクリプトで作る。それ以外は builder が terraform で作る
+  3. 2 つの帽子の役割分担。builder(作る人)と deployer(使う人)。deployer は AWS 側は ECR と `eks:DescribeCluster` だけ、Kubernetes 側は namespace `app` の edit だけ
+  4. kubectl の認証と認可。`aws eks get-token` が帽子の鍵でトークンを作り、EKS の Access Entry が「この帽子は Kubernetes のこの権限」に対応づける。IAM ポリシーには Kubernetes の権限は書かない
+  5. ノードと Pod。ノードは EC2、Pod はその上のコンテナ。ノードは builder が terraform で増減し、Pod は deployer が kubectl で増減する
+  6. URL からアプリまでの経路。NLB(terraform 管理)→ ノードの 30080 → Service → Pod。数字 30080 だけが両者の約束
+  7. なぜ namespace 限定と ResourceQuota か。cluster-admin は platform だけ。quota で deployer が terraform 外の ELB や EBS を作れないようにし、destroy で必ず戻せるようにする
+  8. マネージャーへの頼み方。渡すのは `create-builder-role.sh` と `tf-builder-policy.json`、頼むのは実行 1 回。候補ポリシーは実験で検証済みだが硬い境界ではないこと
 - 「builder の権限(申請用)」を `jq . bootstrap/tf-builder-policy.json` の確定版に差し替え、「初版」の注記を外す
 - 実験ログに、第 3 段の結果、最終 destroy とバケット削除の結果、足した Action の総数
 - 申請文のたたき台を最終化(依頼は `create-builder-role.sh` 1 件、添付 3 つ、範囲の説明 4 点、撤去手順)
