@@ -22,8 +22,11 @@ while :; do
     --output json)"
   count="$(jq '.Objects | length' <<<"$objects")"
   [[ "$count" -eq 0 ]] && break
+  # Quiet: true のため成功時は出力が空。空でなく Errors があるときだけ失敗にする
   out="$(aws s3api delete-objects --bucket "$BUCKET" --delete "$objects" --output json)"
-  jq -e '(.Errors // []) | length == 0' <<<"$out" >/dev/null || { echo "$out" >&2; exit 1; }
+  if [[ -n "$out" ]] && ! jq -e '(.Errors // []) | length == 0' <<<"$out" >/dev/null; then
+    echo "$out" >&2; exit 1
+  fi
   echo "deleted $count versions" >&2
 done
 
