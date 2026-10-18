@@ -159,46 +159,6 @@
         "ec2:DisassociateAddress"
       ],
       "Resource": "*"
-    },
-    {
-      "Sid": "LegacyDeployerNamesForTeardown",
-      "Effect": "Allow",
-      "Action": [
-        "iam:DeleteRole",
-        "iam:UpdateRole",
-        "iam:UpdateRoleDescription",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:PassRole"
-      ],
-      "Resource": "arn:aws:iam::*:role/app-deployer"
-    },
-    {
-      "Sid": "LegacyDeployerAttachForTeardown",
-      "Effect": "Allow",
-      "Action": [
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy"
-      ],
-      "Resource": "arn:aws:iam::*:role/app-deployer",
-      "Condition": {
-        "ArnEquals": {
-          "iam:PolicyARN": "arn:aws:iam::*:policy/app-deployer-policy"
-        }
-      }
-    },
-    {
-      "Sid": "LegacyDeployerPolicyForTeardown",
-      "Effect": "Allow",
-      "Action": [
-        "iam:DeletePolicy",
-        "iam:CreatePolicyVersion",
-        "iam:DeletePolicyVersion",
-        "iam:TagPolicy",
-        "iam:UntagPolicy"
-      ],
-      "Resource": "arn:aws:iam::*:policy/app-deployer-policy"
     }
   ]
 }
