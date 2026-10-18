@@ -572,3 +572,47 @@ NLB の作成には約 2 分半かかりました。
 
 回避策は使っていません。
 kubernetes provider の接続エラーも起きず、NLB の代替ルール(VPC CIDR からの許可)も不要でした。
+
+### 第 2 段(2026-10-18 実施)
+
+builder の権限だけで destroy し、残骸が無いことを確認しました。
+
+#### 負の対照
+
+- `app` namespace で `LoadBalancer` の Service を作ると、`no-cloud-resources` の quota に拒否されました。
+- `default` namespace では、同じ Service が作れてしまいました。
+- destroy 前の確認スクリプトは、その Service を検出して異常終了しました。
+- Service と Deployment を消すと、確認スクリプトは通りました。
+
+#### destroy の 2 回
+
+1 回目の destroy は、38 個のうち 37 個を消して止まりました。
+止まったのは EIP で、`ec2:DisassociateAddress` が許可されていなかったためです。
+この Action を `Network` の Statement に追加し、ロールのポリシーを更新して、2 回目の destroy を実行しました。
+2 回目は EIP の 1 個だけを消し、約 1 秒で終わりました。
+
+apply では EIP を関連付けるだけなので、この権限は不要でした。
+関連付けの解除は、NAT ゲートウェイを消した後の EIP 解放で初めて呼ばれます。
+apply では、destroy にだけ必要な権限は見つかりません。
+権限の不足を洗い出すには、builder で destroy まで通す必要があります。
+
+#### 所要時間
+
+1 回目の destroy は、全体で十数分かかりました。
+内訳は、ノードグループが約 8 分、EKS クラスターが約 3 分、NAT ゲートウェイが約 1 分半、NLB が約 30 秒です。
+1 回目が止まった時点で、EKS、ノード、NAT、NLB はすでに消えていました。
+計算資源の費用は、そこで終わっています。
+
+#### 残骸の確認
+
+確認スクリプトで、次の結果になりました。
+
+- EKS、ECR、ロードバランサー、ターゲットグループ、Auto Scaling グループ、NAT ゲートウェイ、EIP は `ok` でした。
+- VPC、セキュリティグループ、ログ group、タグ `Project=eks-exp` のリソースも `ok` でした。
+- 残ったのは、IAM ロール `tf-builder` と IAM ポリシー `tf-builder-policy` だけです。
+- state バケットも残っています。
+
+3 つとも、実験の土台として意図して残したものです。
+片付けの手順で、最後に消します。
+
+kubeconfig の `eks-exp-deployer` と `eks-exp-builder` の context、cluster、user も削除しました。
