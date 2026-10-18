@@ -47,5 +47,11 @@ else
   echo "created role: $ROLE" >&2
 fi
 
+for managed in \
+  arn:aws:iam::aws:policy/AmazonVPCFullAccess \
+  arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess \
+  arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess; do
+  aws iam attach-role-policy --role-name "$ROLE" --policy-arn "$managed"
+done
 aws iam attach-role-policy --role-name "$ROLE" --policy-arn "$POLICY_ARN"
 echo "arn:aws:iam::${ACCOUNT_ID}:role/${ROLE}"
