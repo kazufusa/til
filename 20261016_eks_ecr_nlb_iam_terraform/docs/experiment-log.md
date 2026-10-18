@@ -89,3 +89,76 @@ apply では、destroy にだけ必要な権限は見つかりません。
 片付けの手順で、最後に消します。
 
 kubeconfig の `eks-exp-deployer` と `eks-exp-builder` の context、cluster、user も削除しました。
+
+## 第 3 段 deployer の境界確認
+
+### 再構築
+
+builder で apply を流し直しました。
+追加は 39 リソースで、AccessDenied は 1 件も出ませんでした。
+前回までに確定した権限だけで通ったので、新しい権限の追加はありません。
+所要時間は十数分でした。EKS クラスターの作成が約 8 分半、ノードグループが約 2 分、NLB が約 3 分です。
+
+### AWS 側の境界
+
+deployer の profile で 5 つの操作を試すと、すべて拒否されました。
+
+| 操作 | 結果 |
+| --- | --- |
+| ec2 describe-instances | UnauthorizedOperation |
+| eks list-clusters | AccessDenied |
+| ecr create-repository | AccessDenied |
+| iam list-roles | AccessDenied |
+| elbv2 describe-load-balancers | AccessDenied |
+
+`eks describe-cluster` だけは通り、`ACTIVE` が返りました。
+
+### Kubernetes 側の境界
+
+権限は、namespace `app` の `AmazonEKSAdminPolicy` と、クラスター全体の `AmazonEKSViewPolicy` です。
+`auth can-i` の結果は次のとおりでした。
+
+| 確認 | 期待 | 結果 |
+| --- | --- | --- |
+| app で create deployments | yes | yes |
+| app で create services | yes | yes |
+| app で delete pods | yes | yes |
+| app で create rolebindings | yes | yes |
+| list nodes | yes | no |
+| list namespaces | yes | yes |
+| kube-system で list pods | yes | yes |
+| create namespaces | no | no |
+| kube-system で delete pods | no | no |
+| kube-system で get secrets | no | no |
+| app で update resourcequotas | no | no |
+| app で delete namespaces | no | no |
+
+期待と違ったのは `list nodes` だけです。
+`kubectl get nodes` も Forbidden になり、終了コードは 1 でした。
+`AmazonEKSViewPolicy` は、ノードの参照を含まないことが分かりました。
+ノードを見せたい場合は、別の ClusterRole を deployer のグループに結び付ける必要があります。
+
+### quota による拒否
+
+app で Deployment を作る操作は通りました。
+`type=LoadBalancer` の Service を作ろうとすると、次のとおり拒否されました。
+
+```
+exceeded quota: no-cloud-resources, requested: services.loadbalancers=1, used: services.loadbalancers=0, limited: services.loadbalancers=0
+```
+
+確認に使った Deployment は、その後で削除しました。
+
+### 確認時の落とし穴
+
+builder 用の context を `update-kubeconfig` で作ると、deployer の context も builder の認証を使うようになりました。
+2 つの context が、同じ user エントリを共有するためです。
+このとき `auth can-i` はすべて yes を返し、権限が広すぎるように見えました。
+`kubectl auth whoami` でユーザーを確かめ、deployer の profile で作り直してから、上の表を取り直しました。
+
+### サンプルアプリの再配備
+
+ECR リポジトリは作り直されていたので、イメージを build し直して push しました。
+deployer の権限だけでマニフェストを適用でき、rollout も完了しました。
+NLB の URL に curl すると、1 回目で `hello from eks-exp` が返りました。
+環境は稼働したままです。
