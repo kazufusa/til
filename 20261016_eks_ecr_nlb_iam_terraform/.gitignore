@@ -3,3 +3,4 @@
 *.tfstate.*
 kubeconfig*
 tfplan
+bootstrap/rendered/

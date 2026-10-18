@@ -53,7 +53,7 @@
       ],
       "Resource": [
         "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/app-deployer"
+        "arn:aws:iam::*:role/eks-exp-deployer"
       ]
     },
     {
@@ -65,7 +65,7 @@
       ],
       "Resource": [
         "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/app-deployer"
+        "arn:aws:iam::*:role/eks-exp-deployer"
       ],
       "Condition": {
         "ArnEquals": {
@@ -74,7 +74,7 @@
             "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
             "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
             "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-            "arn:aws:iam::*:policy/app-deployer-policy"
+            "arn:aws:iam::*:policy/eks-exp-deployer-policy"
           ]
         }
       }
@@ -90,7 +90,7 @@
         "iam:TagPolicy",
         "iam:UntagPolicy"
       ],
-      "Resource": "arn:aws:iam::*:policy/app-deployer-policy"
+      "Resource": "arn:aws:iam::*:policy/eks-exp-deployer-policy"
     },
     {
       "Sid": "ServiceLinkedRoles",
@@ -144,6 +144,46 @@
         "ec2:DisassociateAddress"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "LegacyDeployerNamesForTeardown",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:PassRole"
+      ],
+      "Resource": "arn:aws:iam::*:role/app-deployer"
+    },
+    {
+      "Sid": "LegacyDeployerAttachForTeardown",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/app-deployer",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": "arn:aws:iam::*:policy/app-deployer-policy"
+        }
+      }
+    },
+    {
+      "Sid": "LegacyDeployerPolicyForTeardown",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeletePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy"
+      ],
+      "Resource": "arn:aws:iam::*:policy/app-deployer-policy"
     }
   ]
 }

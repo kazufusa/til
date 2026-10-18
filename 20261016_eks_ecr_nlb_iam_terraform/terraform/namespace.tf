@@ -50,7 +50,7 @@ resource "kubernetes_cluster_role" "node_viewer" {
 
 resource "kubernetes_cluster_role_binding" "deployer_node_viewer" {
   metadata {
-    name = "app-deployers-node-viewer"
+    name = "${var.cluster_name}-deployers-node-viewer"
   }
 
   role_ref {
@@ -62,6 +62,6 @@ resource "kubernetes_cluster_role_binding" "deployer_node_viewer" {
   subject {
     api_group = "rbac.authorization.k8s.io"
     kind      = "Group"
-    name      = "app-deployers"
+    name      = "${var.cluster_name}-deployers"
   }
 }

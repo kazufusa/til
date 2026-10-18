@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # terraform destroy の前に、Kubernetes 側が terraform 外のクラウド資源を持っていないか確認する。
-# 使い方: scripts/preflight-destroy.sh [cluster-name]
+# 使い方: [PROJECT=<名前>] scripts/preflight-destroy.sh [cluster-name]
 set -euo pipefail
 
-CLUSTER="${1:-eks-exp}"
+CLUSTER="${1:-${PROJECT:-eks-exp}}"
 ctx="$(kubectl config current-context)"
 # context 名は alias で変わるので、その context が指すクラスタ(ARN の末尾が cluster/<名前>)で判定する
 ctx_cluster="$(kubectl config view --minify -o jsonpath='{.contexts[0].context.cluster}')"

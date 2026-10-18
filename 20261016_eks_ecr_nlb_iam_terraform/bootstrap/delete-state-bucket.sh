@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # state 用 S3 バケットを、全オブジェクトバージョンと削除マーカーごと消す。
-# 使い方: bootstrap/delete-state-bucket.sh [bucket-name]
+# 使い方: [PROJECT=<名前>] bootstrap/delete-state-bucket.sh [bucket-name]
 set -euo pipefail
 
+PROJECT="${PROJECT:-eks-exp}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-BUCKET="${1:-tfstate-${ACCOUNT_ID}-eks-exp}"
+BUCKET="${1:-tfstate-${ACCOUNT_ID}-${PROJECT}}"
 
 if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
   echo "bucket not found: $BUCKET" >&2

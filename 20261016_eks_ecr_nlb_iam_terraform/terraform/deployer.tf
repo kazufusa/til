@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "deployer_assume" {
 }
 
 resource "aws_iam_role" "deployer" {
-  name               = "app-deployer"
+  name               = "${var.cluster_name}-deployer"
   description        = "ECR push and kubectl against ${var.cluster_name}"
   assume_role_policy = data.aws_iam_policy_document.deployer_assume.json
 }
@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "deployer" {
 }
 
 resource "aws_iam_policy" "deployer" {
-  name   = "app-deployer-policy"
+  name   = "${var.cluster_name}-deployer-policy"
   policy = data.aws_iam_policy_document.deployer.json
 }
 
@@ -62,7 +62,7 @@ resource "aws_eks_access_entry" "deployer" {
   principal_arn = aws_iam_role.deployer.arn
   type          = "STANDARD"
 
-  kubernetes_groups = ["app-deployers"]
+  kubernetes_groups = ["${var.cluster_name}-deployers"]
 }
 
 # namespace 内は admin(Role/RoleBinding も作れる。ResourceQuota と namespace 自体は変更不可)

@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 # terraform を回すロール tf-builder を作る。マネージャーが管理者権限で実行する。
-# 使い方: bootstrap/create-builder-role.sh <スイッチを許可する principal の ARN> [ARN...]
+# 使い方: [PROJECT=<名前>] bootstrap/create-builder-role.sh <スイッチを許可する principal の ARN> [ARN...]
 #   例: bootstrap/create-builder-role.sh arn:aws:iam::123456789012:role/aws-reserved/sso.amazonaws.com/ap-northeast-1/AWSReservedSSO_Foo_abc
 # 2 回目以降は、ポリシーを新バージョンに更新し、信頼ポリシーを置き換える。
 set -euo pipefail
 
 [[ $# -ge 1 ]] || { echo "usage: $0 <principal-arn> [principal-arn...]" >&2; exit 1; }
 DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT="${PROJECT:-eks-exp}"
 ROLE="tf-builder"
 POLICY="tf-builder-policy"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+# 既定の名前ならコミット済みの JSON、違う名前なら scripts/render-policy.sh の出力を使う
+if [[ "$PROJECT" == "eks-exp" ]]; then
+  POLICY_JSON="${DIR}/tf-builder-policy.json"
+else
+  POLICY_JSON="${DIR}/rendered/${PROJECT}/tf-builder-policy.json"
+  [[ -f "$POLICY_JSON" ]] || { echo "run: scripts/render-policy.sh ${PROJECT}" >&2; exit 1; }
+fi
 POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY}"
 
 principals="$(printf '"%s",' "$@")"
@@ -27,11 +35,11 @@ if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
     aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$old"
   fi
   aws iam create-policy-version --policy-arn "$POLICY_ARN" \
-    --policy-document "file://${DIR}/tf-builder-policy.json" --set-as-default >/dev/null
+    --policy-document "file://${POLICY_JSON}" --set-as-default >/dev/null
   echo "updated policy: $POLICY_ARN" >&2
 else
   aws iam create-policy --policy-name "$POLICY" \
-    --policy-document "file://${DIR}/tf-builder-policy.json" \
+    --policy-document "file://${POLICY_JSON}" \
     --tags Key=Project,Value=eks-exp >/dev/null
   echo "created policy: $POLICY_ARN" >&2
 fi

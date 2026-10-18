@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # destroy 後に実験の資源が残っていないかを確認する。残骸があれば終了コード 1。
-# state バケット(Project=eks-exp-state)は意図して対象外。
+# state バケット(Project=${PROJECT}-state)は意図して対象外。
+# 使い方: [PROJECT=<名前>] scripts/check-leftovers.sh
 set -uo pipefail
 
+PROJECT="${PROJECT:-eks-exp}"
 REGION="${AWS_REGION:-ap-northeast-1}"
 export AWS_DEFAULT_REGION="$REGION"
 fail=0
@@ -31,8 +33,8 @@ non_default_sgs() {
     --query "SecurityGroups[?GroupName!='default'].GroupId" --output text
 }
 
-check "tag Project=eks-exp" \
-  aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=eks-exp \
+check "tag Project=${PROJECT}" \
+  aws resourcegroupstaggingapi get-resources --tag-filters "Key=Project,Values=${PROJECT}" \
   --query 'ResourceTagMappingList[].ResourceARN' --output text
 check "eks clusters" \
   aws eks list-clusters --query 'clusters[]' --output text
@@ -54,11 +56,11 @@ check "non-default vpcs" \
 check "security groups in non-default vpcs" non_default_sgs
 check "iam roles" \
   aws iam list-roles \
-  --query "Roles[?starts_with(RoleName,'eks-exp') || RoleName=='app-deployer' || RoleName=='tf-builder'].RoleName" \
+  --query "Roles[?starts_with(RoleName,'${PROJECT}') || RoleName=='tf-builder'].RoleName" \
   --output text
 check "iam policies" \
   aws iam list-policies --scope Local \
-  --query "Policies[?starts_with(PolicyName,'eks-exp') || starts_with(PolicyName,'app-deployer') || starts_with(PolicyName,'tf-builder')].PolicyName" \
+  --query "Policies[?starts_with(PolicyName,'${PROJECT}') || starts_with(PolicyName,'tf-builder')].PolicyName" \
   --output text
 check "eks log groups" \
   aws logs describe-log-groups --log-group-name-prefix /aws/eks/ \

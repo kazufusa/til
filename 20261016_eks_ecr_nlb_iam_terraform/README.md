@@ -12,14 +12,14 @@
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
 - kubectl で、アプリをデプロイできる
 - image を置く ECR がある
-- `app-deployer` ロールで、image の push とデプロイができる
+- deployer ロール(既定は `eks-exp-deployer`)で、image の push とデプロイができる
 
 ## 2 つのロール
 
 | 役割 | 誰 | ロール | 作る人 | できること |
 | --- | --- | --- | --- | --- |
 | builder | 環境を作る人 | `tf-builder` | マネージャー | terraform の apply と destroy |
-| deployer | アプリ開発者 | `app-deployer` | terraform | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
+| deployer | アプリ開発者 | `eks-exp-deployer` | terraform | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
 
 ## 最短手順
 
@@ -49,7 +49,7 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 
 | 渡すもの | 出所 | 用途 |
 | --- | --- | --- |
-| `app-deployer` ロールの ARN | `terraform output deployer_role_arn` | `~/.aws/config` の role_arn |
+| deployer ロールの ARN | `terraform output deployer_role_arn` | `~/.aws/config` の role_arn |
 | クラスタ名とリージョン | `cluster_name`、`region` | update-kubeconfig |
 | ECR リポジトリの URL | `ecr_repository_url` | push と manifest の image |
 | namespace | `deployer_namespaces`(既定 `app`) | デプロイ先 |
@@ -60,10 +60,12 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 
 ## 名前を変えるときの注意
 
-- 名前の元になる語は、今は `eks-exp` です。
+- 名前の元になる語は、今は `eks-exp` です。deployer ロールの名前も `cluster_name` から決まります。
   クラスタ、ロール、NLB、バケット、タグ、ポリシー JSON に接頭辞として入っています。
-- 変えるときは、terraform の変数 `cluster_name` を変え、builder のポリシー JSON も作り直します。
-  手順は `docs/permissions.md` にあります。
+- 変えるときは、次の 3 手順を踏みます。
+  1. terraform の変数 `cluster_name` を変えます。
+  2. `scripts/render-policy.sh <名前>` で、builder のポリシー JSON を作ります。
+  3. 以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
 - NLB の名前は 32 文字までです。稼働後に変えると、terraform が作り直します。
 
 ## ディレクトリ構成
