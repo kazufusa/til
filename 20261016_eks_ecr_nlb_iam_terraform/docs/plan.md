@@ -1985,6 +1985,79 @@ cd .. && git add README.md && git commit -m "20261016_eks_ecr_nlb_iam_terraform:
 
 ---
 
+### Task 12b: builder 権限を「AWS 管理ポリシー 3 + カスタム 1」に組み替える(PR 向けの可読性)
+
+**Files:**
+- Modify: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/create-builder-role.sh`(管理ポリシー 3 つの attach を追加。detach 側も `delete-builder-role.sh` で対応)
+- Modify: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.json`(カスタム部分だけに縮める)
+- Create: `20261016_eks_ecr_nlb_iam_terraform/bootstrap/tf-builder-policy.minimal.json`(実験で検証した細かい JSON。監査が厳しい環境向けの代替)
+
+**Interfaces:**
+- Consumes: Task 11/12 で確定した細かい JSON(2 つの発見 Action を含む)
+- Produces: 粗い構成の `tf-builder`。Task 13 の destroy とバケット再作成で検証する
+
+- [ ] **Step 1: minimal を退避する**
+
+```bash
+cd 20261016_eks_ecr_nlb_iam_terraform/bootstrap
+cp tf-builder-policy.json tf-builder-policy.minimal.json
+```
+
+- [ ] **Step 2: tf-builder-policy.json をカスタム部分だけにする**
+
+残す Sid: `Eks`(`eks:*` に置き換えて 1 Action に)、`AutoScalingAttach`、`IamRolesScoped`、`IamAttachOnlyKnownPolicies`、`IamPoliciesScoped`、`ServiceLinkedRoles`、`StateBucketAdmin`、`StateBucketObjects`、`StateBucketDiscovery`、`ReadOnlyDiscovery`(`iam:Get*`/`iam:List*`/`sts:GetCallerIdentity`/`eks:Describe*` 以外は管理ポリシー側で足りるが、残しても害はないのでそのまま)。
+`Network`、`Ecr`、`Elb` の Sid は削除し、代わりに次の Sid を足す。
+
+```json
+{
+  "Sid": "FoundByExperiment",
+  "Effect": "Allow",
+  "Action": [
+    "ec2:GetSecurityGroupsForVpc",
+    "ec2:DisassociateAddress"
+  ],
+  "Resource": "*"
+}
+```
+
+`jq empty` で検証する。
+
+- [ ] **Step 3: create-builder-role.sh に管理ポリシーの attach を足す**
+
+`aws iam attach-role-policy --role-name "$ROLE" --policy-arn "$POLICY_ARN"` の直前に次を足す。
+
+```bash
+for managed in \
+  arn:aws:iam::aws:policy/AmazonVPCFullAccess \
+  arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess \
+  arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess; do
+  aws iam attach-role-policy --role-name "$ROLE" --policy-arn "$managed"
+done
+```
+
+`delete-builder-role.sh` は attach 済みポリシーを全て detach する実装なので変更不要(確認する)。
+
+- [ ] **Step 4: 管理者でロールを更新し、builder で plan が通ることを確認する**
+
+```bash
+bootstrap/create-builder-role.sh "$SSO_ROLE_ARN"
+sleep 10
+aws iam list-attached-role-policies --role-name tf-builder --query 'AttachedPolicies[].PolicyName' --output text
+terraform -chdir=terraform plan -var aws_profile=builder 2>&1 | tail -3
+```
+Expected: 4 ポリシーが attach。plan は `No changes.`(環境が稼働中のため)。
+
+- [ ] **Step 5: commit**
+
+```bash
+git add bootstrap/
+git commit -m "20261016_eks_ecr_nlb_iam_terraform: builder権限をAWS管理ポリシー3つ+カスタム1つに組み替え、検証済み最小JSONはminimalとして保持"
+```
+
+粗い構成の検証は Task 13 で行う(destroy、バケット削除と再作成が builder で通ること)。
+
+---
+
 ### Task 13: 片付けと README の完成
 
 **Files:**
@@ -2052,7 +2125,7 @@ kubectl config delete-cluster arn:aws:eks:ap-northeast-1:$(aws sts get-caller-id
   6. URL からアプリまでの経路。NLB(terraform 管理)→ ノードの 30080 → Service → Pod。数字 30080 だけが両者の約束
   7. なぜ namespace 限定と ResourceQuota か。cluster-admin は platform だけ。quota で deployer が terraform 外の ELB や EBS を作れないようにし、destroy で必ず戻せるようにする
   8. マネージャーへの頼み方。渡すのは `create-builder-role.sh` と `tf-builder-policy.json`、頼むのは実行 1 回。候補ポリシーは実験で検証済みだが硬い境界ではないこと
-- 「builder の権限(申請用)」を `jq . bootstrap/tf-builder-policy.json` の確定版に差し替え、「初版」の注記を外す
+- 「builder の権限(申請用)」を 2 段構成にする。本文は「AWS 管理ポリシー 3 つ + カスタム 1 つ」の表と 3 行の説明(ネットワーク/ELB/ECR は AWS 管理、EKS は全権、IAM と state バケットだけ名前で縛る)。カスタム JSON は `jq . bootstrap/tf-builder-policy.json`。付録として `tf-builder-policy.minimal.json` を「監査が厳しい環境向けの代替(実験で検証済み)」として載せる
 - 同じ節に「権限一覧」の表を置く。列は「サービス」「主な Action」「何のために必要か」。行は ec2(ネットワーク)、eks、ecr、elasticloadbalancing、autoscaling、iam、s3、sts
 - 「実験で見つかった権限」の表を置く。列は「Action」「どの操作で必要になったか」「候補に無かった理由」。行は `ec2:GetSecurityGroupsForVpc`(SG 付き NLB の作成)、`ec2:DisassociateAddress`(NAT 用 EIP の解放、destroy 時)、ほか実験中に追加したもの全て
 - 「deployer の権限(terraform 管理)」を、AWS 側(JSON)と Kubernetes 側(`AmazonEKSAdminPolicy` namespace `app`、`AmazonEKSViewPolicy` cluster)の 2 段で書き、「できること / できないこと」の表を付ける(get nodes 可、他 namespace の参照可、Secret 参照不可、namespace 作成不可、quota 変更不可、LoadBalancer 作成不可)
