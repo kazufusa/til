@@ -2,29 +2,38 @@
 
 builder と deployer の権限を、実際のコードに合わせてまとめます。
 AWS 側の JSON は、そのまま申請や確認に使えます。
+`<cluster_name>` は terraform の変数 `cluster_name` の値で、既定は `eks-exp` です。
 
 ## builder の権限
 
 ### 申請向け構成
 
-申請では、AWS 管理ポリシー 3 つと、カスタムポリシー 1 つをロールに付けます。
-管理ポリシーは名前で内容を引けるので、審査する人が読む量が減ります。
+申請では、AWS 管理ポリシー 3 つとカスタムポリシー 1 つを `tf-builder` に付けます。
+カスタムポリシー `tf-builder-policy` の実体は `bootstrap/tf-builder-policy.json` です。
 
-| 種類 | ポリシー | 担当 |
+| ポリシー | 種類 | 役割 |
 | --- | --- | --- |
-| 管理 | `AmazonVPCFullAccess` | VPC、サブネット、NAT、ルートテーブル、セキュリティグループ |
-| 管理 | `ElasticLoadBalancingFullAccess` | NLB、target group、listener |
-| 管理 | `AmazonEC2ContainerRegistryFullAccess` | ECR リポジトリと image |
-| カスタム | `tf-builder-policy` | EKS、IAM、state バケット、Auto Scaling の関連付け |
+| `AmazonVPCFullAccess` | AWS 管理 | VPC、サブネット、NAT、EIP、SG などのネットワーク一式 |
+| `ElasticLoadBalancingFullAccess` | AWS 管理 | NLB、target group、listener |
+| `AmazonEC2ContainerRegistryFullAccess` | AWS 管理 | ECR リポジトリの作成と削除 |
+| `tf-builder-policy` | カスタム | 下記の 7 領域 |
 
-この構成の考え方は、次の 3 点です。
+カスタムポリシーの内容は、次の 7 領域です。
 
-1. ネットワーク、ELB、ECR は、作る資源の範囲が広いので管理ポリシーに任せます。
-2. IAM は、操作できるロール名とポリシー名、付けられる管理ポリシーを、カスタム側で限ります。
-3. 管理ポリシーで足りない 2 Action は、カスタム側の `FoundByExperiment` に書きます。
+- EKS: `eks:*`
+- Auto Scaling: 負荷分散先の関連付けだけ
+- IAM: 資源名と PolicyARN で限定
+- S3: state バケットの名前で限定
+- CloudFront: HTTPS の入口の作成と削除
+- 参照: 各サービスの Describe、Get、List
+- 実験で見つかった ec2 の 2 Action
 
-カスタムポリシーの JSON は次のとおりです。
-実体は `bootstrap/tf-builder-policy.json` です。
+管理ポリシーは AWS が更新するので、申請の手間が減ります。
+その代わり、権限は検証済みの最小構成より広くなります。
+共有アカウントでは、付録の最小構成を申請します。
+
+次のカスタム JSON から、一時的な 3 つの Statement(`Legacy` で始まる Sid)を省いています。
+これらは旧環境を片付けるために一時的に付けたもので、最後に取り除きます。
 
 ```json
 {
@@ -166,6 +175,21 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Resource": "*"
     },
     {
+      "Sid": "CloudFront",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateDistribution",
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:DeleteDistribution",
+        "cloudfront:TagResource",
+        "cloudfront:UntagResource",
+        "cloudfront:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "FoundByExperiment",
       "Effect": "Allow",
       "Action": [
@@ -178,108 +202,61 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 }
 ```
 
-実験で検証したのは、Action を 1 つずつ数えた細かい JSON です。
-管理ポリシーより狭いので、監査が厳しい環境ではこちらを使えます。
-`bootstrap/tf-builder-policy.minimal.json` が実体で、全文はこのページの付録にあります。
+### 権限一覧
 
-### 名前の変更手順
+| サービス | 主な Action | 何のために必要か |
+| --- | --- | --- |
+| EC2(ネットワーク) | VPC、サブネット、IGW、NAT、ルートテーブル、SG、EIP の作成と削除 | クラスタを置くネットワークの構築 |
+| EKS | `eks:*` | クラスタ、ノードグループ、Access Entry の管理 |
+| ECR | リポジトリの作成と削除、image の削除 | image の置き場所 |
+| ELB | LB、target group、listener の作成と削除 | NLB の構築 |
+| Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
+| IAM(ロール) | `<cluster_name>-*` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
+| IAM(ポリシー) | 既知の 5 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
+| IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
+| S3 | `tfstate-*-<cluster_name>` の管理と読み書き | terraform の state |
+| CloudFront | ディストリビューションの作成、更新、削除、タグ | HTTPS の入口 |
 
-名前の源は、terraform の `cluster_name` と、スクリプトの環境変数 `PROJECT` の 2 つです。
-両方に同じ値を入れます。
+### 実験で見つかった権限
+
+初版の JSON では足りず、実験で AccessDenied になって追加した Action は次の 2 件です。
+
+| Action | 何のために必要か |
+| --- | --- |
+| `ec2:GetSecurityGroupsForVpc` | セキュリティグループ付き NLB の作成 |
+| `ec2:DisassociateAddress` | NAT 用 EIP の解放(destroy 時) |
+
+どちらも `ec2:Describe*` には含まれません。
+`Describe*` は、名前が Describe で始まる Action だけに一致するためです。
+`DisassociateAddress` は、apply では呼ばれません。
+destroy にだけ必要な権限は、apply を通しただけでは見つかりません。
+
+### 作れるものと作れないもの
+
+作れるものは、ネットワーク、EKS、ECR、ELB、CloudFront、`<cluster_name>-*` の IAM ロールです。
+名前が `tfstate-*-<cluster_name>` の S3 バケットの作成、設定、削除もできます。
+
+次の 4 点を、申請文でそのまま説明します。
+
+1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
+   AWS 管理の EKS と ECR のポリシー 4 つと、deployer のポリシーだけです。
+   builder が作るロールに `AdministratorAccess` は付けられません。
+2. builder は deployer のポリシーの中身(`CreatePolicyVersion`)を書き換えられます。
+   deployer ロールの信頼ポリシーも書き換えられます。
+   この候補は厳密な境界ではありません。
+3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
+4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
+
+### 名前を変える手順
 
 1. terraform の変数 `cluster_name` を変えます。
-2. `scripts/render-policy.sh <名前>` で、2 つの JSON を `bootstrap/rendered/<名前>/` に作ります。
+2. `scripts/render-policy.sh <名前>` で、builder 用の JSON を `bootstrap/rendered/<名前>/` に作ります。
 3. 以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
 
-`cluster_name` は 1 から 20 文字の英小文字、数字、ハイフンです。
-NLB の名前の上限が 32 文字なので、接尾辞を足しても収まる長さにしています。
+### 付録 検証済みの最小権限
 
-## deployer の権限
-
-terraform が管理する権限で、AWS 側と Kubernetes 側があります。
-
-### AWS 側
-
-`terraform/deployer.tf` の 3 文を JSON にしたものです。
-`<ACCOUNT_ID>` は実際のアカウント ID に置き換わります。
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "EcrLogin",
-      "Effect": "Allow",
-      "Action": "ecr:GetAuthorizationToken",
-      "Resource": "*"
-    },
-    {
-      "Sid": "EcrPushPullAppRepo",
-      "Effect": "Allow",
-      "Action": [
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload",
-        "ecr:PutImage",
-        "ecr:BatchGetImage",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:DescribeImages",
-        "ecr:ListImages",
-        "ecr:DescribeRepositories"
-      ],
-      "Resource": "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
-    },
-    {
-      "Sid": "EksKubeconfig",
-      "Effect": "Allow",
-      "Action": "eks:DescribeCluster",
-      "Resource": "arn:aws:eks:ap-northeast-1:<ACCOUNT_ID>:cluster/eks-exp"
-    }
-  ]
-}
-```
-
-### Kubernetes 側
-
-EKS の Access Policy を 2 つ関連付けています。
-
-- `AmazonEKSAdminPolicy`: namespace `app` に限る。Role や RoleBinding も作れる
-- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない
-
-namespace 自体の作成と、ResourceQuota の変更は、この権限に含まれません。
-
-| 操作 | 可否 |
-| --- | --- |
-| `get nodes` | できる |
-| namespace の一覧 | できる |
-| 他の namespace の Pod の参照 | できる |
-| Secret の参照 | できない |
-| namespace の作成 | できない |
-| ResourceQuota の変更 | できない |
-| 他の namespace への書き込み | できない |
-| Service type=LoadBalancer の作成 | できない(ResourceQuota が 0 に制限) |
-
-## 設計の方針
-
-AWS の推奨に合わせた点は次のとおりです。
-
-- IAM ユーザーではなくロールを使い、長期のアクセスキーを発行しない
-- 権限は最小にし、IAM の対象は資源名の接頭辞(`eks-exp-*`、`app-*`)で限定する
-- EKS の認可は aws-auth ConfigMap ではなく Access Entry で行う
-- cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
-- namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
-- deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
-- 段 0 でマネージャーに頼むのは terraform 実行ロールの作成 1 件だけにし、残りは builder の権限内で完結させる
-
-申請向けに、AWS 管理ポリシー 3 つとカスタムポリシー 1 つへ組み替えた構成を準備中です。完成したら、この文書に追加します。
-
-## 付録 検証済みの最小 JSON
-
-実験で検証済みです。
-apply から destroy までを builder の権限だけで通し、足りない Action を 2 件足した結果です。
-JSON の実体は `bootstrap/tf-builder-policy.minimal.json` です。
-監査が厳しく、管理ポリシーを使えない環境では、こちらを申請します。
+管理ポリシーを使わず、この 1 つのポリシーだけで apply から destroy まで通した JSON です。
+実体は `bootstrap/tf-builder-policy.minimal.json` です。
 
 ```json
 {
@@ -400,6 +377,21 @@ JSON の実体は `bootstrap/tf-builder-policy.minimal.json` です。
       "Resource": "*"
     },
     {
+      "Sid": "CloudFront",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateDistribution",
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:DeleteDistribution",
+        "cloudfront:TagResource",
+        "cloudfront:UntagResource",
+        "cloudfront:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "AutoScalingAttach",
       "Effect": "Allow",
       "Action": [
@@ -512,50 +504,109 @@ JSON の実体は `bootstrap/tf-builder-policy.minimal.json` です。
 }
 ```
 
-### サービスごとの Action
+## deployer の権限
 
-| サービス | 主な Action | 何のために必要か |
-| --- | --- | --- |
-| EC2(参照) | `Describe*`、`GetSecurityGroupsForVpc` | 既存資源の確認と、terraform の plan |
-| EC2(ネットワーク) | VPC、サブネット、IGW、NAT、ルートテーブル、SG、EIP の作成と削除 | クラスタを置くネットワークの構築 |
-| EKS | クラスタ、ノードグループ、Access Entry の作成と削除 | EKS 環境と、deployer の権限の対応づけ |
-| ECR | リポジトリの作成と削除、image の削除 | image の置き場所 |
-| ELB | LB、target group、listener の作成と削除 | 外部から届く URL |
-| Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
-| IAM(ロール) | `eks-exp-*` と `eks-exp-deployer` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
-| IAM(ポリシー) | 既知の 5 ポリシーの Attach と Detach、`eks-exp-deployer-policy` の作成 | ロールへの権限付与 |
-| IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
-| S3 | `tfstate-*-eks-exp` バケットの管理とオブジェクトの読み書き | terraform の state |
+terraform が管理する権限で、AWS 側と Kubernetes 側があります。
+ロールの名前は `<cluster_name>-deployer` で、ポリシーの名前は `<cluster_name>-deployer-policy` です。
 
-### 実験で見つかった権限
+### AWS 側
 
-初版の JSON では足りず、実験で AccessDenied になって追加した Action は次の 2 件です。
+`terraform/deployer.tf` の 3 文を JSON にしたものです。
+`<ACCOUNT_ID>` は実際のアカウント ID に、`<cluster_name>` はクラスタ名に置き換わります。
 
-| Action | 追加先の Sid | 何のために必要か |
-| --- | --- | --- |
-| `ec2:GetSecurityGroupsForVpc` | `ReadOnlyDiscovery` | セキュリティグループ付き NLB の作成 |
-| `ec2:DisassociateAddress` | `Network` | NAT 用 EIP の解放(destroy 時) |
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrLogin",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPushPullAppRepo",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:DescribeImages",
+        "ecr:ListImages",
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
+    },
+    {
+      "Sid": "EksKubeconfig",
+      "Effect": "Allow",
+      "Action": "eks:DescribeCluster",
+      "Resource": "arn:aws:eks:ap-northeast-1:<ACCOUNT_ID>:cluster/<cluster_name>"
+    }
+  ]
+}
+```
 
-どちらも `ec2:Describe*` には含まれません。
-`Describe*` は名前が Describe で始まる Action だけに一致します。
-`GetSecurityGroupsForVpc` は名前が Get で始まり、`DisassociateAddress` は Disassociate で始まるためです。
+### Kubernetes 側
 
-`DisassociateAddress` は、apply では呼ばれません。
-NAT ゲートウェイを消した後に EIP を解放するときに、初めて呼ばれます。
-destroy にだけ必要な権限は、apply を通しただけでは見つかりません。
+EKS の Access Entry に、次の 3 つを結びつけています。
 
-### 作れるものと作れないもの
+- `AmazonEKSAdminPolicy`: namespace `app` に限る。Role や RoleBinding も作れる
+- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない
+- ClusterRole `node-viewer`: nodes の get、list、watch だけ。
+  Kubernetes グループ `<cluster_name>-deployers` に結びつく
 
-作れるものは、ネットワーク、EKS、ECR、ELB、`eks-exp-*` と `eks-exp-deployer` の IAM ロールです。
-名前が `tfstate-*-eks-exp` の S3 バケットの作成、設定、削除もできます。
+`AmazonEKSViewPolicy` はクラスタ直下の nodes を含みません。
+そのため、ノードの参照は `node-viewer` が補っています。
 
-次の 4 点を、申請文でそのまま説明します。
+| 操作 | 可否 |
+| --- | --- |
+| namespace `app` の中の操作 | できる |
+| `get nodes` | できる |
+| namespace の一覧 | できる |
+| 他の namespace の Pod の参照 | できる |
+| Secret の参照 | できない |
+| `delete nodes` | できない |
+| namespace の作成 | できない |
+| ResourceQuota の変更 | できない |
+| 他の namespace への書き込み | できない |
+| Service type=LoadBalancer の作成 | できない(ResourceQuota が 0 に制限) |
 
-1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
-   AWS 管理の EKS と ECR のポリシー 4 つと `eks-exp-deployer-policy` だけです。
-   builder が作るロールに `AdministratorAccess` は付けられません。
-2. builder は `eks-exp-deployer-policy` の中身(`CreatePolicyVersion`)を書き換えられます。
-   `eks-exp-deployer` の信頼ポリシーも書き換えられます。
-   この候補は厳密な境界ではありません。
-3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
-4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
+## 設計の方針
+
+AWS の推奨に合わせた点は次のとおりです。
+
+- IAM ユーザーではなくロールを使い、長期のアクセスキーを発行しない
+- 権限は最小にし、IAM の対象は資源名の接頭辞(`<cluster_name>-*`)で限定する
+- EKS の認可は aws-auth ConfigMap ではなく Access Entry で行う
+- cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
+- namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
+- deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
+- 段 0 でマネージャーに頼むのは terraform 実行ロールの作成 1 件だけにし、残りは builder の権限内で完結させる
+
+## セキュリティの現状
+
+| 領域 | 守れている点 |
+| --- | --- |
+| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは NLB の 80 番だけで、外へ出るのは NAT の固定 IP だけ |
+| 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
+| builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。`AdministratorAccess` は付けられない |
+| deployer | 書き込みは namespace `app` の中だけ。Secret の参照、namespace の作成、quota の変更はできない |
+| 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
+| state | S3 のバージョニング、暗号化、パブリックアクセスブロックを有効にしている |
+
+## 本番で追加を検討する対策
+
+| 対策 | 内容 |
+| --- | --- |
+| 独自ドメインと証明書 | ACM と独自ドメインを使う。または CloudFront の既定ドメインのまま使う |
+| EKS endpoint の制限 | API サーバーに接続できる CIDR を限定する |
+| Permissions Boundary | builder が作るロールの権限に上限を設ける |
+| 申請する権限の絞り込み | 共有アカウントでは、管理ポリシーを使わず最小構成を申請する |
+| 監査ログ | CloudTrail と EKS の audit ログを有効にする |
+| image の脆弱性検査 | ECR の scan_on_push を有効にする |
+| Pod への権限付与 | EKS Pod Identity で、Pod ごとに AWS の権限を分ける |

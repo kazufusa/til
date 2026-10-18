@@ -1,7 +1,8 @@
 # 初学者向けの解説
 
-AWS の IAM も Kubernetes も知らない人を想定して、この環境の仕組みを 9 つの話題に分けて説明します。
+AWS の IAM も Kubernetes も知らない人を想定して、この環境の仕組みを 10 の話題に分けて説明します。
 手順の詳細と構成図は、末尾の付録にまとめています。
+この文書のシェルのコマンドは、bash で実行する前提です。
 
 ## 1. ロールと帽子
 
@@ -40,7 +41,7 @@ terraform を回すための帽子は、terraform 自身では作れません。
 これが段 0 です。
 
 段 1 では、その帽子(`tf-builder`)をかぶった builder が、残りのすべてを terraform で作ります。
-ネットワーク、EKS、ECR、NLB、そして `app-deployer` の帽子まで含みます。
+ネットワーク、EKS、ECR、NLB、そして `<cluster_name>-deployer` の帽子まで含みます。
 マネージャーに頼むのは段 0 の 1 回だけで済みます。
 
 ## 3. builder と deployer の分担
@@ -61,11 +62,14 @@ kubectl は、このトークンをクラスタに見せます。
 
 次に認可があります。
 EKS の Access Entry が、帽子と Kubernetes 上の権限を対応づけます。
-たとえば `app-deployer` の帽子には、namespace `app` の admin という権限が結びついています。
+たとえば `<cluster_name>-deployer` の帽子には、namespace `app` の admin という権限が結びついています。
 
 IAM ポリシーには Kubernetes の権限を書けません。
 IAM ポリシーは AWS の API の許可であり、Kubernetes の中の操作は別の仕組みで決まるからです。
-そのため、`app-deployer` には IAM ポリシーと Access Entry の 2 か所で権限を与えています。
+そのため、`<cluster_name>-deployer` には IAM ポリシーと Access Entry の 2 か所で権限を与えています。
+
+`aws eks update-kubeconfig` には `--user-alias` も付けます。
+kubeconfig の user エントリは、名前が同じだと別のプロファイルのものと共有され、上書きされるためです。
 
 ## 5. ノードと Pod
 
@@ -87,10 +91,21 @@ terraform の NLB は、全ノードの 30080 に転送します。
 deployer の Service は、`nodePort` を 30080 に固定して受けます。
 この数字がずれると、NLB のヘルスチェックが通らず、URL に届きません。
 
+ノードは private subnet にあり、パブリック IP を持ちません。
+外から届くのは NLB の 80 番だけで、外へ出るのは NAT の固定 IP だけです。
+
 Pod から外へ出る通信は、NAT Gateway を通ります。
 送信元の IP は NAT Gateway の固定 EIP になるので、通信先の許可リストに入れられます。
 
-## 7. namespace の権限と ResourceQuota
+## 7. HTTPS の入口
+
+ELB の既定ドメインには、証明書を発行できません。
+そのため、CloudFront の既定ドメイン(`*.cloudfront.net`)で HTTPS にしています。
+キャッシュは無効にしてあり、HTTP で来たリクエストは HTTPS へ転送します。
+CloudFront の後ろは、これまでどおり NLB です。
+CloudFront から NLB へは HTTP で届き、NLB の HTTP の URL も残ります。
+
+## 8. namespace の権限と ResourceQuota
 
 namespace は、クラスタを区切る名前の箱です。
 deployer は、namespace `app` の中では admin です。
@@ -105,7 +120,7 @@ Service の LoadBalancer と PVC(ディスクの要求)を 0 個に制限する�
 quota で塞いでおけば、destroy で必ず元に戻せます。
 quota の変更は deployer にはできません。
 
-## 8. ECR と Pod の紐付け
+## 9. ECR と Pod の紐付け
 
 ECR は、コンテナの image を置く AWS の倉庫です。
 deployer が manifest に書くのは、image の名前だけです。
@@ -113,11 +128,11 @@ Pod を起こすときは、ノードが ECR から image を引いてきます�
 
 pull の権限は、ノードの帽子(ノードロール)にあります。
 これは builder が terraform で付けています。
-push の権限は、`app-deployer` の帽子にあります。
+push の権限は、`<cluster_name>-deployer` の帽子にあります。
 こちらも builder が terraform で付けています。
 deployer 自身は、どちらの権限も変更できません。
 
-## 9. マネージャーへの頼み方
+## 10. マネージャーへの頼み方
 
 マネージャーに渡すのは、スクリプト 2 本とポリシーの JSON 1 つです。
 作成用の `create-builder-role.sh` と、撤去用の `delete-builder-role.sh` です。
@@ -126,7 +141,7 @@ deployer 自身は、どちらの権限も変更できません。
 
 ポリシーは、実験で apply から destroy まで通して検証した候補です。
 ただし、硬い境界ではありません。
-builder が `app-deployer` の権限を書き換えられるなど、限界があります。
+builder が `<cluster_name>-deployer` の権限を書き換えられるなど、限界があります。
 その限界は、申請文で説明します。
 詳細は `docs/permissions.md` と `docs/request.md` にあります。
 
@@ -275,4 +290,4 @@ destroy 後に残ることを許容するものは 3 種類です。
 
 `scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
 EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
-IAM ロール(`app-deployer`、`tf-builder`、`eks-exp-*`)と、`/aws/eks/` 配下のロググループも対象です。
+IAM ロール(`eks-exp-deployer`、`tf-builder`、`eks-exp-*`)と、`/aws/eks/` 配下のロググループも対象です。

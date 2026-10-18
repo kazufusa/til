@@ -8,7 +8,7 @@
 
 ## できること
 
-- NLB の URL で、アプリにアクセスできる
+- HTTPS の URL(CloudFront)で、アプリにアクセスできる(NLB の HTTP の URL も残る)
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
 - kubectl で、アプリをデプロイできる
 - image を置く ECR がある

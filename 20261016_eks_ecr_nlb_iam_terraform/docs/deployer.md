@@ -9,13 +9,13 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 
 | 項目 | 値 |
 | --- | --- |
-| ロール ARN | `arn:aws:iam::123456789012:role/app-deployer` |
+| ロール ARN | `arn:aws:iam::123456789012:role/eks-exp-deployer` |
 | クラスタ名 | `eks-exp` |
 | リージョン | `ap-northeast-1` |
 | ECR リポジトリ | `123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app` |
 | namespace | `app` |
 | NodePort | `30080` |
-| 公開 URL(HTTPS) | `https://d0123456789abc.cloudfront.net/` |
+| 公開 URL(HTTPS) | `https://d1234abcd5678.cloudfront.net/` |
 | 公開 URL(NLB 直、HTTP) | `http://eks-exp-nlb-0123456789abcdef.elb.ap-northeast-1.amazonaws.com/` |
 | 外向き通信の送信元 IP | `203.0.113.10` |
 
@@ -25,13 +25,13 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 
 ```ini
 [profile deployer]
-role_arn       = arn:aws:iam::123456789012:role/app-deployer
+role_arn       = arn:aws:iam::123456789012:role/eks-exp-deployer
 source_profile = <自分のログインプロファイル>
 region         = ap-northeast-1
 ```
 
 設定できたかは、次のコマンドで確かめます。
-出力の ARN に `app-deployer` が含まれていれば成功です。
+出力の ARN に `eks-exp-deployer` が含まれていれば成功です。
 
 ```bash
 aws sts get-caller-identity --profile deployer
@@ -56,7 +56,7 @@ kubeconfig を作り、manifest の image 名を置き換えて apply します�
 aws eks update-kubeconfig --name eks-exp --region ap-northeast-1 --profile deployer --alias <alias> --user-alias <alias>
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
 kubectl -n app rollout status deploy/web
-curl https://d0123456789abc.cloudfront.net/
+curl https://d1234abcd5678.cloudfront.net/
 ```
 
 Service の `nodePort` は、必ず 30080 にします。

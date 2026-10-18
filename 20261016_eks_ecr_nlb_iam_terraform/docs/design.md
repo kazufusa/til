@@ -6,14 +6,14 @@
 
 成果物は 2 つです。
 
-1. ロール。自分が本番で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `app-deployer`(terraform 管理)
+1. ロール。自分が本番で申請する `tf-builder` の権限 JSON(実験で検証済み)と、その人物に付与する `<cluster_name>-deployer`(terraform 管理)
 2. EKS 環境を作る terraform。apply すると次の 5 点が満たされます
 
 - 外部から HTTPS の URL でアプリにアクセスできる(CloudFront の `*.cloudfront.net`、証明書は AWS が自動付与。NLB の HTTP の URL も残る)
 - アプリからインターネットへアウトバウンドできる(NAT Gateway 経由、送信元は固定 EIP)
 - kubectl でアプリをデプロイできる(EKS、namespace `app`)
 - image を置く ECR がある
-- `app-deployer` ロールで image の push とデプロイができる
+- `<cluster_name>-deployer` ロールで image の push とデプロイができる
 
 実験は、`tf-builder` の権限だけでこの terraform を apply し、5 点を確認し、destroy で完全に戻せることを証明する工程です。
 AWS 上で行い、何度でも完全に戻せる形にします。
@@ -25,11 +25,11 @@ builder は自分です。terraform apply/destroy で環境を作り、壊しま
 
 deployer はその人物です。ECR に image を push し、kubectl で EKS を操作します。
 本番の組織は SSO ログイン後に作業用ロールへスイッチロールする運用です。
-そのため deployer の実体は IAM ロール `app-deployer` にします。
+そのため deployer の実体は IAM ロール `<cluster_name>-deployer` にします。
 アクセスキーは発行しません。
 deployer の権限も同じ terraform で管理します。
 
-実験では、自分の `default` プロファイルから `app-deployer` にスイッチして deployer 役を演じます。
+実験では、自分の `default` プロファイルから `<cluster_name>-deployer` にスイッチして deployer 役を演じます。
 本番では、信頼ポリシーの「誰がスイッチできるか」をその人物のログイン identity に変えるだけです。
 
 terraform のコードは実験と本番で同一にします。
@@ -43,7 +43,7 @@ namespace と ResourceQuota は builder が terraform で作ります。
 
 IAM の方針も推奨に合わせます。
 IAM ユーザーではなくロールを使い、長期キーは発行しません。
-資源名の接頭辞(`eks-exp-*`、`app-*`)で IAM の対象を限定します。
+資源名の接頭辞(`<cluster_name>-*`)で IAM の対象を限定します。
 EKS の認可は aws-auth ConfigMap ではなく Access Entry で行います。
 
 ## 構成
@@ -74,7 +74,7 @@ deployer は Service type=NodePort(nodePort 30080)で Pod を公開します。
 いずれも `source_profile = default` からのスイッチロールです。
 
 - `builder`: `tf-builder` ロール(申請候補の権限)
-- `deployer`: `app-deployer` ロール(deployer の権限)
+- `deployer`: `<cluster_name>-deployer` ロール(deployer の権限)
 
 ## terraform のレイアウト
 
@@ -164,8 +164,8 @@ KMS のカスタマーキーは使いません。削除に待機期間がある�
 
 ## deployer の資源
 
-- IAM ロール `app-deployer`。信頼ポリシーは変数 `deployer_trusted_principals` に列挙した ARN からの `sts:AssumeRole` を許可
-- カスタマー管理ポリシー `app-deployer-policy`(下記)をロールにアタッチ
+- IAM ロール `<cluster_name>-deployer`。信頼ポリシーは変数 `deployer_trusted_principals` に列挙した ARN からの `sts:AssumeRole` を許可
+- カスタマー管理ポリシー `<cluster_name>-deployer-policy`(下記)をロールにアタッチ
 - EKS Access Entry(principal は上記ロール)
 - Access Policy の関連付けを 2 つ
   - `AmazonEKSAdminPolicy` を namespace スコープ(変数 `deployer_namespaces`、既定 `["app"]`)。自分の namespace では Role や RoleBinding も作れ、チームメイトを自分で追加できます。ResourceQuota と namespace 自体は変更できません
@@ -195,7 +195,7 @@ deployer は AWS 側ではこれ以外の操作ができません。
 Service type=LoadBalancer は ResourceQuota で namespace `app` では作れません。
 cluster-admin である builder 自身が他の namespace で作る事故に備え、destroy 前に `preflight-destroy.sh` で検出します。
 
-output は `app-deployer` ロールの ARN です。
+output は `<cluster_name>-deployer` ロールの ARN です。
 deployer にはこの ARN を渡し、スイッチロール先として設定してもらいます。
 
 ## builder の権限
@@ -290,7 +290,7 @@ destroy 後に残ることを許容するもの。
 
 - タグ `Project=eks-exp` の資源がゼロ(Resource Groups Tagging API)
 - EKS クラスタ、ECR リポジトリ、ELB、ASG、NAT Gateway、EIP、VPC(default 以外)がゼロ
-- IAM ロール `app-deployer`、`tf-builder`、`eks-exp-*` がゼロ
+- IAM ロール `<cluster_name>-deployer`、`tf-builder`、`eks-exp-*` がゼロ
 - CloudWatch ロググループ `/aws/eks/` 配下がゼロ
 
 state バケットは周回中は残すため、`check-leftovers.sh` の対象から除きます。
@@ -307,7 +307,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 ## 対象外
 
-- 独自ドメインと ACM 証明書(HTTPS は CloudFront の既定ドメインで実現)
+- 独自ドメインと ACM 証明書(HTTPS は CloudFront の既定ドメインで代替)
 - AWS Load Balancer Controller、Ingress
 - オートスケール、監視、ログ基盤
 - 複数環境(dev/prod)の切り替え
@@ -316,13 +316,14 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 ## 成果物
 
 - `terraform/` 一式。本番にそのまま持っていく EKS 環境のコード
-- `bootstrap/` 一式。マネージャーに渡す `create-builder-role.sh` と、検証済みの `tf-builder-policy.json`
+- `bootstrap/` 一式。マネージャーに渡す `create-builder-role.sh` と、`tf-builder-policy.json`(管理ポリシー 3 つと組み合わせるカスタム 1 つ)、検証済みの `tf-builder-policy.minimal.json`
 - README.md。概要と最短手順を載せた入口
 - docs/guide.md。初学者向けの解説と手順の詳細
-- docs/permissions.md。builder の確定ポリシー JSON と deployer のポリシー JSON
+- docs/permissions.md。builder の申請構成と最小 JSON、deployer のポリシー JSON、セキュリティの現状
 - docs/request.md。マネージャーへの申請文のたたき台
+- docs/deployer.md と docs/deployer.md.tmpl。開発者向けの手引きと、terraform output から値を埋める雛形
 - docs/experiment-log.md。実験ログ
-- `scripts/` と `app/`。実験用の残骸チェックとサンプルアプリ
+- `scripts/` と `app/`。実験用の残骸チェック、`render-deployer-doc.sh` と `render-policy.sh`、サンプルアプリ
 
 ## コストと所要時間
 

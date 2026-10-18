@@ -31,7 +31,7 @@ region         = {{REGION}}
 ```
 
 設定できたかは、次のコマンドで確かめます。
-出力の ARN に `app-deployer` が含まれていれば成功です。
+出力の ARN に `{{CLUSTER_NAME}}-deployer` が含まれていれば成功です。
 
 ```bash
 aws sts get-caller-identity --profile deployer

@@ -7,25 +7,27 @@
 
 依頼は 1 件です。
 `create-builder-role.sh <自分の identity の ARN>` を実行して、ロール `tf-builder` を作ってください。
+スクリプトは、AWS 管理ポリシー 3 つとカスタムポリシー 1 つをこのロールに付けます。
 
-代案として、ロールを作らず、私の identity に `tf-builder-policy.json` を直接付けても構いません。
+代案として、ロールを作らず、私の identity に同じポリシーを直接付けても構いません。
 
 ## 添付
 
 - `create-builder-role.sh`
 - `delete-builder-role.sh`
-- `tf-builder-policy.json`
+- `tf-builder-policy.json`(本文は、管理ポリシー 3 つと組み合わせるカスタム 1 つ)
+- 付録として `tf-builder-policy.minimal.json`(管理ポリシーを使わない、検証済みの最小権限)
 
 ## 範囲の説明
 
-このポリシーで作れるものは、ネットワーク、EKS、ECR、ELB、`eks-exp-*` と `app-deployer` の IAM ロールです。
+このポリシーで作れるものは、ネットワーク、EKS、ECR、ELB、CloudFront、`<cluster_name>-*` の IAM ロールです。
 IAM の対象は、資源名の接頭辞で限定しています。
 次の 4 点を、あらかじめ説明します。
 
 1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
-   AWS 管理の EKS と ECR のポリシー 4 つと `app-deployer-policy` だけです。
+   AWS 管理の EKS と ECR のポリシー 4 つと、deployer のポリシーだけです。
    builder が作るロールに `AdministratorAccess` は付けられません。
-2. builder は `app-deployer-policy` の中身と、`app-deployer` の信頼ポリシーを書き換えられます。
+2. builder は deployer のポリシーの中身と、deployer ロールの信頼ポリシーを書き換えられます。
    この候補は厳密な境界ではありません。
 3. 境界が必要な場合は、Permissions Boundary の付与をお願いします。
 4. EC2 のネットワーク系 Action は Resource が `*` です。builder は自分が作っていない VPC も削除できます。
