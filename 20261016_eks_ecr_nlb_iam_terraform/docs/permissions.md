@@ -396,7 +396,14 @@ EKS の資源限定と Pod Security のラベルは、最終検証周回の後�
         "eks:DeleteAccessEntry",
         "eks:UpdateAccessEntry",
         "eks:AssociateAccessPolicy",
-        "eks:DisassociateAccessPolicy"
+        "eks:DisassociateAccessPolicy",
+        "eks:CreateAddon",
+        "eks:DescribeAddon",
+        "eks:UpdateAddon",
+        "eks:DeleteAddon",
+        "eks:DescribeAddonVersions",
+        "eks:ListAddons",
+        "eks:DescribeAddonConfiguration"
       ],
       "Resource": [
         "arn:aws:eks:*:*:cluster/eks-exp",
