@@ -698,7 +698,7 @@ AWS の推奨に合わせた点は次のとおりです。
 | builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。`AdministratorAccess` は付けられない |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
 | 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
-| ログ | 全 Pod の標準出力を CloudWatch Logs に転送し、7 日間保存する。deployer が読めるのは自分のクラスタのロググループだけ |
+| ログ | 全 Pod の標準出力を CloudWatch Logs に転送し、30 日間保存する。deployer が読めるのは自分のクラスタのロググループだけ |
 | state | S3 のバージョニング、暗号化、パブリックアクセスブロックを有効にしている |
 
 ## 本番で追加を検討する対策

@@ -110,7 +110,9 @@ NLB のセキュリティグループは CloudFront のプレフィックスリ�
 ログも、入口と同じく最初から用意します。
 `kubectl logs` で見えるのは動いている Pod のログだけで、Pod が作り直されると消えます。
 開発環境でもログを転送しておくのが普通です。
-AWS 公式のアドオンが全 Pod の標準出力を CloudWatch Logs に送り、7 日間残します。
+AWS 公式のアドオンが全 Pod の標準出力を CloudWatch Logs に送り、30 日間残します。
+保存日数の目安は、開発が 7〜14 日、検証が 30 日、本番が 90 日以上です。
+変数 `log_retention_days` で変えます。
 読み取りの権限は deployer に付けてあります。
 
 ## 8. namespace の権限と ResourceQuota

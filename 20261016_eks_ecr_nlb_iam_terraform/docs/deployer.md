@@ -107,7 +107,7 @@ kubectl -n app logs deploy/web --tail=100 -f
 ```
 
 Pod が消えると、kubectl では見えなくなります。
-全 Pod の標準出力は CloudWatch Logs にも転送してあり、Pod が消えたあとも 7 日間残ります。
+全 Pod の標準出力は CloudWatch Logs にも転送してあり、Pod が消えたあとも 30 日間残ります。
 次のコマンドで読めます。
 
 ```bash

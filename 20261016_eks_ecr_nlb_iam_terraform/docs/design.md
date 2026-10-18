@@ -153,7 +153,7 @@ apply と destroy を何周してもバケットは残します。
 - node 用 IAM ロール(`AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryPullOnly`)
 - ECR リポジトリ `app`。`force_delete = true`。イメージスキャンは無効
 - NLB(internet-facing)、NLB 用 SG(80/tcp を CloudFront のプレフィックスリストから許可)
-- ログ転送。CloudWatch Observability アドオン、ロググループ 4 つ(保存 7 日)、ノードロールへの `CloudWatchAgentServerPolicy`
+- ログ転送。CloudWatch Observability アドオン、ロググループ 4 つ(保存 30 日)、ノードロールへの `CloudWatchAgentServerPolicy`
 - target group(instance, port 30080, health check は traffic port)、listener 80
 - node group の Auto Scaling Group と target group の紐づけ(`aws_autoscaling_attachment`)
 - EKS クラスタ SG への ingress ルール(30080/tcp を NLB の SG から許可)
@@ -310,7 +310,7 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 
 - 独自ドメインと ACM 証明書(HTTPS は CloudFront の既定ドメインで代替)
 - AWS Load Balancer Controller、Ingress
-- オートスケール、監視、ログの分析基盤(転送と 7 日間の保存だけ行う)
+- オートスケール、監視、ログの分析基盤(転送と 30 日間の保存だけ行う)
 - 複数環境(dev/prod)の切り替え
 - state バケットの terraform 管理(管理者がスクリプトで作る)
 

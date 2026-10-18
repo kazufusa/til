@@ -77,7 +77,7 @@ variable "enable_log_shipping" {
 variable "log_retention_days" {
   description = "CloudWatch Logs の保存日数"
   type        = number
-  default     = 7
+  default     = 30
 
   validation {
     condition     = contains([1, 3, 5, 7, 14, 30, 60, 90], var.log_retention_days)

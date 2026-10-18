@@ -11,7 +11,7 @@
 - HTTPS の URL(CloudFront)で、アプリにアクセスできる(入口は CloudFront だけで、NLB には直接届かない)
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
 - kubectl で、サンプルの Slack アプリ(署名検証、メンション返信)をデプロイできる
-- 全 Pod のログが CloudWatch Logs に転送され、7 日間残る
+- 全 Pod のログが CloudWatch Logs に転送され、30 日間残る
 - image を置く ECR がある(リポジトリは複数指定できる)
 - deployer ロール(既定は `eks-exp-deployer`)で、image の push とデプロイができる
 
