@@ -19,15 +19,22 @@
 
 ## マネージャー(1 回だけ)
 
-builder から、builder のログイン identity の ARN を受け取ります。
+builder から、builder の個人ロール名(`aws sts get-caller-identity` の `assumed-role/<ここ>/...`)を受け取ります。
 
 ```bash
-bootstrap/create-builder-role.sh <builder の ARN>
+bootstrap/attach-builder-policy.sh <builder の個人ロール名>
 ```
 
-出力されたロール ARN(`arn:aws:iam::<ACCOUNT_ID>:role/tf-builder`)を builder に返します。
-ポリシーを更新するときは、`bootstrap/delete-builder-role.sh` で消してから、もう一度同じコマンドを実行します。
-撤去するときは `bootstrap/delete-builder-role.sh` を実行します。
+これで、そのロールに AWS 管理ポリシー 3 つと `tf-builder-policy` が付きます。
+builder が複数いる、または CI にも使わせる場合は、共有の作業ロールを作ります。
+
+```bash
+bootstrap/create-builder-role.sh <スイッチを許可する principal の ARN>
+```
+
+撤去は `bootstrap/detach-builder-policy.sh <ロール名>`(個人ロールの場合)か、
+`bootstrap/delete-builder-role.sh`(共有ロールの場合)です。
+ポリシーの中身を更新するときは、撤去してからもう一度付けます。
 
 ## builder
 
@@ -114,7 +121,7 @@ yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
 scripts/check-leftovers.sh
 ```
 
-最後にマネージャーに `bootstrap/delete-builder-role.sh` を頼みます。
+最後にマネージャーに `bootstrap/detach-builder-policy.sh <ロール名>`(共有ロールなら `delete-builder-role.sh`)を頼みます。
 
 ## deployer(アプリ開発者)
 

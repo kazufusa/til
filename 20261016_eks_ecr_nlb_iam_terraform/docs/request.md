@@ -6,15 +6,16 @@
 ## 依頼
 
 依頼は 1 件です。
-`create-builder-role.sh <自分の identity の ARN>` を実行して、ロール `tf-builder` を作ってください。
+`attach-builder-policy.sh <私の個人ロール名>` を実行して、私のロールに権限を付けてほしい。
+共有の作業ロールを新設する方針なら、`create-builder-role.sh <私の ARN>` を実行して、ロール `tf-builder` を作ってください。
 スクリプトは、AWS 管理ポリシー 3 つとカスタムポリシー 1 つをこのロールに付けます。
 
 代案として、ロールを作らず、私の identity に同じポリシーを直接付けても構いません。
 
 ## 添付
 
-- `create-builder-role.sh`
-- `delete-builder-role.sh`
+- `attach-builder-policy.sh`、`detach-builder-policy.sh`(個人ロールに付ける/外す)
+- `create-builder-role.sh`、`delete-builder-role.sh`(共有ロールを作る/消す)
 - `tf-builder-policy.json`(本文は、管理ポリシー 3 つと組み合わせるカスタム 1 つ)
 - 付録として `tf-builder-policy.minimal.json`(管理ポリシーを使わない、検証済みの最小権限)
 
@@ -46,7 +47,7 @@ EKS の資源限定は、簡易版の builder で apply と destroy を通し、
 ## 撤去
 
 作業後に、私が terraform destroy を実行します。
-ロールの削除は `delete-builder-role.sh` で行うので、マネージャーが削除しても構いません。
+権限の撤去は `detach-builder-policy.sh`(共有ロールなら `delete-builder-role.sh`)で行うので、マネージャーが削除しても構いません。
 
 state 用のバケットは、付与された権限で私が作ります。
 マネージャーは terraform を使えない前提なので、この依頼で使うのは aws コマンドのスクリプトだけです。

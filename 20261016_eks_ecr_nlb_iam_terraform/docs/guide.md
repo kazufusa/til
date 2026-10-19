@@ -147,9 +147,10 @@ deployer 自身は、どちらの権限も変更できません。
 ## 10. マネージャーへの頼み方
 
 マネージャーに渡すのは、スクリプト 2 本とポリシーの JSON 1 つです。
-作成用の `create-builder-role.sh` と、撤去用の `delete-builder-role.sh` です。
+付与用の `attach-builder-policy.sh` と、撤去用の `detach-builder-policy.sh` です。
+共有の作業ロールを新設する会社では、`create-builder-role.sh` と `delete-builder-role.sh` を使います。
 ポリシーは `tf-builder-policy.json` です。
-頼むのは、`create-builder-role.sh` の実行 1 回だけです。
+頼むのは、`attach-builder-policy.sh <自分のロール名>` の実行 1 回だけです。
 
 ポリシーは、実験で apply から destroy まで通して検証した候補です。
 ただし、硬い境界ではありません。
@@ -201,7 +202,7 @@ terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
 #### 0-a. ロール作成(マネージャー)
 
 ```bash
-bootstrap/create-builder-role.sh <builder のログイン identity の ARN>
+bootstrap/attach-builder-policy.sh <builder の個人ロール名>
 ```
 
 マネージャーは、できあがったロールの ARN を builder に伝えます。
@@ -266,14 +267,14 @@ scripts/preflight-destroy.sh
 (cd terraform && terraform destroy)
 bootstrap/delete-state-bucket.sh   # 最後の周回だけ
 # 管理者
-bootstrap/delete-builder-role.sh
+bootstrap/detach-builder-policy.sh <builder の個人ロール名>
 scripts/check-leftovers.sh
 ```
 
 destroy に約 15 分かかります。
 state バケットは周回の間は残し、最後に一度だけ削除します。
 `delete-state-bucket.sh` は builder の権限で実行するので、builder ロールの削除より先に行います。
-`delete-builder-role.sh` は管理者の操作です。
+`detach-builder-policy.sh` は管理者の操作です。
 `check-leftovers.sh` は個人アカウント専用で、共有アカウントではタグ検索の結果だけを見ます。
 
 ### 実験用プロファイル

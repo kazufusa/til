@@ -318,7 +318,7 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 実体は `bootstrap/tf-builder-policy.minimal.json` です。
 参考資料で、スクリプトはこの版を使いません。
 使う場合は、`tf-builder-policy.json` をこの JSON で差し替え、
-`create-builder-role.sh` の AWS 管理ポリシーを付ける 3 行を消します。
+`attach-builder-policy.sh` の AWS 管理ポリシーを付ける 3 行を消します。
 
 ```json
 {

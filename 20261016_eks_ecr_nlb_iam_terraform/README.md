@@ -27,7 +27,8 @@
 マネージャーが、builder のロールを 1 回作ります。
 
 ```bash
-bootstrap/create-builder-role.sh <builder のログイン identity の ARN>
+bootstrap/attach-builder-policy.sh <builder の個人ロール名>   # 例: cli-fl-taro.yamada
+# 共有の作業ロールを新設する場合は bootstrap/create-builder-role.sh <builder の ARN>
 ```
 
 builder が、state バケットを作って terraform を回します。
