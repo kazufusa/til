@@ -41,6 +41,7 @@ terraform output
 ```
 
 deployer は、`docs/deployer.md` の手順で image を push してデプロイします。
+役割ごとの実施コマンドを順に並べた一覧は `docs/runbook.md` にあります。
 
 ## deployer への引き渡し
 
@@ -82,6 +83,7 @@ docs/        解説、権限、申請文、実験ログ、設計、計画
 
 ## 文書の案内
 
+- `docs/runbook.md`: マネージャー、builder、deployer が打つコマンドを役割別に順に並べた一覧
 - `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説と、手順の詳細
 - `docs/deployer.md`: アプリ開発者が最初に読む手順書(雛形は `docs/deployer.md.tmpl`)
 - `docs/permissions.md`: builder と deployer の権限、検証で見つかった Action
