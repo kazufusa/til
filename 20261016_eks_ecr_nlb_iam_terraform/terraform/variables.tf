@@ -38,7 +38,7 @@ variable "ecr_repository_names" {
 }
 
 variable "deployer_trusted_principals" {
-  description = "deployer ロールにスイッチできる IAM principal の ARN。空なら terraform を実行している本人の帽子(ロール)を信頼する。移植先(dev 環境)ではその人物の ARN を default に書く。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を書く"
+  description = "deployer ロールにスイッチできる IAM principal の ARN。空なら terraform を実行している実行者自身のロールを信頼する。移植先(dev 環境)ではその人物の ARN を default に書く。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を書く"
   type        = list(string)
   default     = []
 
