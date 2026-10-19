@@ -12,9 +12,10 @@
 | builder | terraform 1.10 以上、aws cli v2、kubectl、jq、docker |
 | deployer | aws cli v2、kubectl、docker |
 
-名前(`eks-exp`)を変える場合は、builder が先に `terraform/variables.tf` の `cluster_name` を変え、
-`scripts/render-policy.sh <名前>` で builder 用の JSON を作ってからマネージャーに渡します。
-以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
+名前(`eks-exp`)を変える場合は、builder が先に `terraform/variables.tf` の `cluster_name` を変えます。
+次に `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 2 本と JSON)を
+`bootstrap/rendered/<名前>/` に作り、そのフォルダごと渡します。
+以後の builder のスクリプトは `PROJECT=<名前>` を付けて実行します。
 
 ## マネージャー(1 回だけ)
 
@@ -24,13 +25,6 @@ builder から、builder のログイン identity の ARN を受け取ります�
 bootstrap/create-builder-role.sh <builder の ARN>
 ```
 
-最小権限版(管理ポリシーを使わず、検証済みの細かい JSON だけ)で作る場合は、先頭に `VARIANT=minimal` を付けます。
-
-```bash
-VARIANT=minimal bootstrap/create-builder-role.sh <builder の ARN>
-```
-
-同じコマンドを打ち直せば、簡易版と最小権限版を切り替えられます。
 出力されたロール ARN(`arn:aws:iam::<ACCOUNT_ID>:role/tf-builder`)を builder に返します。
 builder のポリシーを更新するときも、同じコマンドをもう一度実行するだけです。
 撤去するときは `bootstrap/delete-builder-role.sh` を実行します。

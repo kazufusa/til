@@ -316,8 +316,9 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 
 管理ポリシーを使わず、この 1 つのポリシーだけで apply から destroy まで通した JSON です。
 実体は `bootstrap/tf-builder-policy.minimal.json` です。
-この版でロールを作るには `VARIANT=minimal bootstrap/create-builder-role.sh <ARN>` を実行します。
-管理ポリシーは付かず、この JSON だけが付きます。
+参考資料で、スクリプトはこの版を使いません。
+使う場合は、`tf-builder-policy.json` をこの JSON で差し替え、
+`create-builder-role.sh` の `MANAGED_POLICIES` を空にします。
 
 ```json
 {
