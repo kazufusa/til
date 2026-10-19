@@ -8,14 +8,14 @@ cd "$(dirname "$0")"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-# 1. 何ができるか(tf-builder-policy.json)をポリシーにする
+# 1. 自作ポリシーを作る(tf-builder-policy.json)。AWS 管理ポリシー 3 つは既製なので作らない
 aws iam create-policy --policy-name tf-builder-policy --policy-document file://tf-builder-policy.json >/dev/null
 
 # 2. 誰がスイッチできるか(引数の ARN)を書いたロールを作る
 TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"'"$1"'"},"Action":"sts:AssumeRole"}]}'
 aws iam create-role --role-name tf-builder --assume-role-policy-document "$TRUST" >/dev/null
 
-# 3. ロールにポリシーを付ける(AWS 管理 3 つ + 上の 1 つ)
+# 3. ロールにポリシーを 4 つ付ける。ロールの権限 = AWS 管理 3 つ + 自作 1 つの合計
 aws iam attach-role-policy --role-name tf-builder --policy-arn arn:aws:iam::aws:policy/AmazonVPCFullAccess
 aws iam attach-role-policy --role-name tf-builder --policy-arn arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess
 aws iam attach-role-policy --role-name tf-builder --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
