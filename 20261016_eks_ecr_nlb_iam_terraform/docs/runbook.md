@@ -37,7 +37,8 @@ aws sts get-caller-identity --query Arn --output text
 ```
 
 SSO の場合は、出てきた値の末尾の `/<自分の名前>` を外し、
-先頭を `arn:aws:iam::`、`assumed-role/` を `role/aws-reserved/sso.amazonaws.com/<リージョン>/` に直します。
+先頭を `arn:aws:iam::` に直します。
+`assumed-role/` は `role/aws-reserved/sso.amazonaws.com/<リージョン>/` に直します。
 
 ### 1. builder の帽子にスイッチする設定
 
@@ -54,7 +55,8 @@ region         = ap-northeast-1
 aws sts get-caller-identity --profile builder
 ```
 
-自分の identity に直接権限を付けてもらった場合は、この節を飛ばし、以後の `--profile builder` と `-var aws_profile=builder` を省きます。
+自分の identity に直接権限を付けてもらった場合は、この節を飛ばします。
+以後の `--profile builder` と `-var aws_profile=builder` も省きます。
 
 ### 2. state バケットの作成(1 回だけ)
 
@@ -82,8 +84,8 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を deployer に渡します。
-deployer のログイン identity の ARN を `terraform/variables.tf` の `deployer_trusted_principals` に書いてから apply すると、
-その人が `eks-exp-deployer` にスイッチできるようになります。
+deployer の identity の ARN を `terraform/variables.tf` の `deployer_trusted_principals` に書きます。
+apply すると、その人が `eks-exp-deployer` にスイッチできるようになります。
 
 ```bash
 cd terraform && terraform apply -var aws_profile=builder && cd ..
