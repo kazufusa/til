@@ -84,7 +84,7 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を deployer に渡します。
-deployer の identity の ARN を `terraform/variables.tf` の `deployer_trusted_principals` に書きます。
+deployer の ARN を `terraform/variables.tf` の `deployer_trusted_principals` に書きます。
 apply すると、その人が `eks-exp-deployer` にスイッチできるようになります。
 
 ```bash
