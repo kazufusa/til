@@ -26,7 +26,7 @@ bootstrap/create-builder-role.sh <builder の ARN>
 ```
 
 出力されたロール ARN(`arn:aws:iam::<ACCOUNT_ID>:role/tf-builder`)を builder に返します。
-builder のポリシーを更新するときも、同じコマンドをもう一度実行するだけです。
+ポリシーを更新するときは、`bootstrap/delete-builder-role.sh` で消してから、もう一度同じコマンドを実行します。
 撤去するときは `bootstrap/delete-builder-role.sh` を実行します。
 
 ## builder
