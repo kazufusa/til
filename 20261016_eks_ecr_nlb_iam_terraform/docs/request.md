@@ -18,6 +18,13 @@
 - `tf-builder-policy.json`(本文は、管理ポリシー 3 つと組み合わせるカスタム 1 つ)
 - 付録として `tf-builder-policy.minimal.json`(管理ポリシーを使わない、検証済みの最小権限)
 
+最小権限版で作る場合は、同じスクリプトに `VARIANT=minimal` を付けて実行します。
+管理ポリシーを付けず、`tf-builder-policy.minimal.json` だけを付けます。
+
+```bash
+VARIANT=minimal bootstrap/create-builder-role.sh <builder の ARN>
+```
+
 ## 範囲の説明
 
 ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。

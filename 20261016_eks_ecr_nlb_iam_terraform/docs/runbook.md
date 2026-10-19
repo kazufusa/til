@@ -24,6 +24,13 @@ builder から、builder のログイン identity の ARN を受け取ります�
 bootstrap/create-builder-role.sh <builder の ARN>
 ```
 
+最小権限版(管理ポリシーを使わず、検証済みの細かい JSON だけ)で作る場合は、先頭に `VARIANT=minimal` を付けます。
+
+```bash
+VARIANT=minimal bootstrap/create-builder-role.sh <builder の ARN>
+```
+
+同じコマンドを打ち直せば、簡易版と最小権限版を切り替えられます。
 出力されたロール ARN(`arn:aws:iam::<ACCOUNT_ID>:role/tf-builder`)を builder に返します。
 builder のポリシーを更新するときも、同じコマンドをもう一度実行するだけです。
 撤去するときは `bootstrap/delete-builder-role.sh` を実行します。
