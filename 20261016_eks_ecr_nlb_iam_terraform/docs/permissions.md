@@ -303,8 +303,8 @@ NAT ができないまま、ノードも出口がなくて起動に失敗しま�
 4. EC2、ELB、ECR、CloudFront は Resource が `*` です。builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
 5. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
 
-EKS の資源限定と Pod Security のラベルは、最終検証周回の後に入れたため未検証です。
-移植先の最初の apply で確認します。
+EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10-19)。
+簡易版の builder で apply から destroy まで通り、AccessDenied は出ませんでした。
 
 ### 名前を変える手順
 

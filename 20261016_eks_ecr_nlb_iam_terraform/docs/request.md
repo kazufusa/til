@@ -46,7 +46,7 @@ deployer のポリシー内容と信頼先は builder が書けるため、完�
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
 7. 実験で見つかった 3 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)、`ec2:DescribeAddressesAttribute`(EIP 作成後の読み取り)
 
-EKS の資源限定は最終検証周回の後に入れたため未検証で、移植先の最初の apply で確認します。
+EKS の資源限定は、簡易版の builder で apply と destroy を通し、検証済みです(2026-10-19)。
 
 検証済みの最小権限の JSON は、`docs/permissions.md` の付録にあります。
 
