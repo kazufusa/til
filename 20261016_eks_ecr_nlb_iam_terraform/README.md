@@ -84,6 +84,7 @@ docs/        解説、権限、申請文、実験ログ、設計、計画
 
 ## 文書の案内
 
+- `docs/practice.md`: 1 人で 3 役を演じて作成から撤去まで通す練習手順
 - `docs/runbook.md`: マネージャー、builder、deployer が打つコマンドを役割別に順に並べた一覧
 - `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説と、手順の詳細
 - `docs/deployer.md`: アプリ開発者が最初に読む手順書(雛形は `docs/deployer.md.tmpl`)

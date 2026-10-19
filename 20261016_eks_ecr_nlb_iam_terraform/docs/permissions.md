@@ -250,6 +250,21 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 }
 ```
 
+### 自作ポリシーが要る理由
+
+AWS 管理ポリシー 3 つで足りるのはネットワーク、ELB、ECR だけです。
+残りは既製品が無いか、既製品では広すぎるため、自作ポリシーに書きます。
+
+| 自作ポリシーに入っているもの | 既製品で代わりになるか |
+| --- | --- |
+| EKS の操作(`eks-exp` のクラスタ関連に限定) | 無い。作成までできる EKS 用の既製品は無い |
+| CloudFront | `CloudFrontFullAccess` はあるが全 distribution が対象 |
+| IAM ロールの作成(名前 `eks-exp-*` 限定、付けられるポリシー限定) | `IAMFullAccess` だと何でもできて危険 |
+| S3 の state バケット(名前限定) | `AmazonS3FullAccess` だと全バケット |
+| CloudWatch Logs のロググループ(名前限定) | 同上 |
+| Auto Scaling への target group 紐づけ | 無い |
+| 実験で見つかった ec2 の 3 つ | `AmazonVPCFullAccess` に含まれていなかった |
+
 ### 権限一覧
 
 | サービス | 主な Action | 何のために必要か |
