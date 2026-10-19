@@ -51,10 +51,13 @@ aws sts get-caller-identity --query Arn --output text
 
 `docs/runbook.md` の builder の手順どおりに進めます。
 
-1. `PROJECT=<名前> bootstrap/create-state-bucket.sh`
-2. `terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-<名前>"`
-3. `terraform apply`
-4. `terraform output`
+```bash
+PROJECT=<名前> bootstrap/create-state-bucket.sh
+cd terraform
+terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-<名前>"
+terraform apply
+terraform output
+```
 
 apply は 15〜20 分です。
 
