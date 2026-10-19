@@ -4,15 +4,15 @@ AWS の IAM も Kubernetes も知らない人を想定して、この環境の�
 手順の詳細と構成図は、末尾の付録にまとめています。
 この文書のシェルのコマンドは、bash で実行する前提です。
 
-## 1. ロールと帽子
+## 1. ロールとスイッチロール
 
 IAM ユーザーは、ログインした本人に固定で紐づく権限の持ち主です。
-IAM ロールは、人に付けたり外したりできる帽子のようなものです。
-帽子をかぶり替えることを、スイッチロールと呼びます。
+IAM ロールは、権限をまとめた役割で、人や仕組みが一時的に引き受けて使います。
+今の役割から別の役割に切り替えることを、スイッチロールと呼びます。
 
-SSO でログインした時点で、すでに 1 つ目の帽子(SSO のロール)をかぶっています。
-帽子には ID があり、それが ARN です。
-今かぶっている帽子の ARN は、次のコマンドで見られます。
+SSO でログインした時点で、すでに 1 つ目のロール(SSO のロール)を引き受けています。
+ロールには ID があり、それが ARN です。
+今引き受けているロールの ARN は、次のコマンドで見られます。
 
 ```bash
 aws sts get-caller-identity --query Arn --output text
@@ -35,20 +35,20 @@ arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/<リージョン>/
 
 ## 2. 段 0 と段 1
 
-terraform を回すための帽子は、terraform 自身では作れません。
-帽子がなければ terraform を動かせず、帽子を作るのに terraform が要るからです。
+terraform を回すためのロールは、terraform 自身では作れません。
+ロールがなければ terraform を動かせず、ロールを作るのに terraform が要るからです。
 そこで、この最初の 1 個だけは、マネージャーがスクリプトで作ります。
 これが段 0 です。
 
-段 1 では、その帽子(`tf-builder`)をかぶった builder が、残りのすべてを terraform で作ります。
-ネットワーク、EKS、ECR、NLB、そして `<cluster_name>-deployer` の帽子まで含みます。
+段 1 では、そのロール(`tf-builder`)にスイッチした builder が、残りのすべてを terraform で作ります。
+ネットワーク、EKS、ECR、NLB、そして `<cluster_name>-deployer` のロールまで含みます。
 マネージャーに頼むのは段 0 の 1 回だけで済みます。
 
 ## 3. builder と deployer の分担
 
 builder は環境を作る人で、terraform の apply と destroy を担当します。
 deployer はアプリの開発者で、image を ECR に置き、kubectl でアプリを動かします。
-2 人の帽子が違うので、できることも違います。
+2 人のロールが違うので、できることも違います。
 
 builder はクラスタそのものとネットワークを作れます。
 deployer は、できあがった環境の中でアプリを入れ替えるだけです。
@@ -57,12 +57,12 @@ deployer はクラスタの設定や権限を変えられません。
 ## 4. kubectl の認証と認可
 
 kubectl がクラスタに入るとき、まず認証があります。
-`aws eks get-token` が、今かぶっている帽子の鍵を使って、短時間だけ有効なトークンを作ります。
+`aws eks get-token` が、今引き受けているロールの認証情報で、短時間だけ有効なトークンを作ります。
 kubectl は、このトークンをクラスタに見せます。
 
 次に認可があります。
-EKS の Access Entry が、帽子と Kubernetes 上の権限を対応づけます。
-たとえば `<cluster_name>-deployer` の帽子には、namespace `app` の admin という権限が結びついています。
+EKS の Access Entry が、IAM ロールと Kubernetes 上の権限を対応づけます。
+たとえば `<cluster_name>-deployer` のロールには、namespace `app` の admin という権限が結びついています。
 
 IAM ポリシーには Kubernetes の権限を書けません。
 IAM ポリシーは AWS の API の許可であり、Kubernetes の中の操作は別の仕組みで決まるからです。
@@ -138,9 +138,9 @@ ECR は、コンテナの image を置く AWS の倉庫です。
 deployer が manifest に書くのは、image の名前だけです。
 Pod を起こすときは、ノードが ECR から image を引いてきます。
 
-pull の権限は、ノードの帽子(ノードロール)にあります。
+pull の権限は、ノードのロール(`<cluster_name>-node`)にあります。
 これは builder が terraform で付けています。
-push の権限は、`<cluster_name>-deployer` の帽子にあります。
+push の権限は、`<cluster_name>-deployer` のロールにあります。
 こちらも builder が terraform で付けています。
 deployer 自身は、どちらの権限も変更できません。
 

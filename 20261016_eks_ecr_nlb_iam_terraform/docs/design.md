@@ -132,7 +132,7 @@ terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --q
 
 変数の値は `variables.tf` の `default` にべた書きします。
 tfvars は使いません。
-`deployer_trusted_principals` の既定値は空リストで、空のときは terraform を実行している本人の帽子(`aws_iam_session_context` の `issuer_arn`)を信頼します。
+`deployer_trusted_principals` の既定値は空リストで、空のときは terraform を実行している本人のロール(`aws_iam_session_context` の `issuer_arn`)を信頼します。
 実験では自分が deployer 役を兼ねるので、固有値を一切書かずに動きます。
 移植先ではその人物の ARN を `default` に書いて commit します。
 
@@ -187,7 +187,7 @@ KMS のカスタマーキーは使いません。削除に待機期間がある�
 ResourceQuota は、deployer が terraform 外のクラウド資源(ELB、EBS)を作れないようにする仕組みです。
 admin 権限では ResourceQuota を変更できません。
 
-実験では `deployer_trusted_principals` を空のままにし、実行者本人の帽子を信頼します。
+実験では `deployer_trusted_principals` を空のままにし、実行者自身のロールを信頼します。
 移植先ではその人物のログイン identity(SSO のロールまたは IAM ユーザー)の ARN を `default` に書きます。
 
 deployer の IAM ポリシーは次の 3 文です。
@@ -253,7 +253,7 @@ AccessDenied が出たら候補ポリシーに Action を足し、管理者が `
 
 1. 管理者で `check-leftovers.sh` を実行し、基準点が clean であることを確認
 2. 管理者で `create-builder-role.sh <自分の SSO ロール ARN>` を実行
-3. `~/.aws/config` に `builder` を追加し、`get-caller-identity` で帽子が `tf-builder` に替わったことを確認
+3. `~/.aws/config` に `builder` を追加し、`get-caller-identity` でロールが `tf-builder` に替わったことを確認
 
 第 1 段は builder での構築と疎通確認です。
 

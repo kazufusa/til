@@ -11,7 +11,7 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 # 1. 何ができるか(tf-builder-policy.json)をポリシーにする
 aws iam create-policy --policy-name tf-builder-policy --policy-document file://tf-builder-policy.json >/dev/null
 
-# 2. 誰がかぶれるか(引数の ARN)を書いたロールを作る
+# 2. 誰がスイッチできるか(引数の ARN)を書いたロールを作る
 cat > trust.json <<JSON
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"$1"},"Action":"sts:AssumeRole"}]}
 JSON

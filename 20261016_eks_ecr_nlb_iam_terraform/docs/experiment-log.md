@@ -15,7 +15,7 @@
 
 state バケットの作成と 2 回目の再実行は、builder で AccessDenied なく通りました。
 `init` と `plan` も通り、plan は 38 個の追加でした。
-`deployer_trusted_principals` は、実行者の帽子である `tf-builder` になりました。
+`deployer_trusted_principals` は、実行者のロールである `tf-builder` になりました。
 
 ### 足りなかった Action
 

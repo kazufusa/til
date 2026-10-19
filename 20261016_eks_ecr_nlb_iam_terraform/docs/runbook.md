@@ -41,7 +41,7 @@ SSO の場合は、出てきた値の末尾の `/<自分の名前>` を外し、
 先頭を `arn:aws:iam::` に直します。
 `assumed-role/` は `role/aws-reserved/sso.amazonaws.com/<リージョン>/` に直します。
 
-### 1. builder の帽子にスイッチする設定
+### 1. builder ロールにスイッチする設定
 
 `~/.aws/config` に追記します。`<ロール ARN>` はマネージャーから受け取った値です。
 
@@ -120,7 +120,7 @@ scripts/check-leftovers.sh
 
 値は builder から受け取った `docs/deployer.md` に書いてあります。
 
-### 1. deployer の帽子にスイッチする設定
+### 1. deployer ロールにスイッチする設定
 
 ```ini
 [profile deployer]

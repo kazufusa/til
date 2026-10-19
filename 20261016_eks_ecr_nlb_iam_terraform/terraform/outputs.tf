@@ -43,7 +43,7 @@ output "nat_public_ip" {
 }
 
 output "deployer_trusted_principals" {
-  description = "deployer ロールにスイッチできる principal(空指定なら実行者の帽子)"
+  description = "deployer ロールにスイッチできる principal(空指定なら実行者自身のロール)"
   value       = local.deployer_trusted_principals
 }
 
