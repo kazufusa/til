@@ -15,8 +15,8 @@
 
 | # | 役 | やること | 目安 |
 | --- | --- | --- | --- |
-| 1 | マネージャー | 個人ロールの代役 `cli-fl-kazufusa` を空で作り、`bootstrap/attach-builder-policy.sh cli-fl-kazufusa` で権限 4 つを付ける | 1 分 |
-| 2 | builder | `~/.aws/config` の `builder` プロファイルの `role_arn` を `cli-fl-kazufusa` にして、スイッチできるか確認(`aws sts get-caller-identity --profile builder`) | 1 分 |
+| 1 | マネージャー | 個人ロールの代役 `practice-personal-role` を空で作り、`bootstrap/attach-builder-policy.sh practice-personal-role` で権限 4 つを付ける | 1 分 |
+| 2 | builder | `~/.aws/config` の `builder` プロファイルの `role_arn` を `practice-personal-role` にして、スイッチできるか確認(`aws sts get-caller-identity --profile builder`) | 1 分 |
 | 3 | builder | `AWS_PROFILE=builder bootstrap/create-state-bucket.sh` | 1 分 |
 | 4 | builder | `terraform init`(バケット名とプロファイルを引数で渡す) | 1 分 |
 | 5 | builder | `terraform plan` → `terraform apply`(48 資源) | 15 分 |
@@ -27,7 +27,7 @@
 | 10 | deployer | 確認: HTTPS の URL、`/news`、`kubectl get nodes`、`kubectl logs`、CloudWatch のログ | 5 分 |
 | 11 | builder | `scripts/preflight-destroy.sh` → `terraform destroy`(48 資源) | 15 分 |
 | 12 | builder | `bootstrap/delete-state-bucket.sh` → `scripts/check-leftovers.sh`(残骸ゼロ) | 2 分 |
-| 13 | マネージャー | `bootstrap/detach-builder-policy.sh cli-fl-kazufusa` で権限を外し、代役のロールを消す | 1 分 |
+| 13 | マネージャー | `bootstrap/detach-builder-policy.sh practice-personal-role` で権限を外し、代役のロールを消す | 1 分 |
 
 ## 会社との違い
 
@@ -45,8 +45,8 @@
 
 | # | 期待する出力 |
 | --- | --- |
-| 1 | `aws iam list-attached-role-policies --role-name cli-fl-kazufusa` に 4 つ並ぶ |
-| 2 | `assumed-role/cli-fl-kazufusa/...` |
+| 1 | `aws iam list-attached-role-policies --role-name practice-personal-role` に 4 つ並ぶ |
+| 2 | `assumed-role/practice-personal-role/...` |
 | 3 | `created: tfstate-<ACCOUNT_ID>-eks-exp` |
 | 4 | `Terraform has been successfully initialized!` |
 | 5 | `Apply complete! Resources: 48 added, 0 changed, 0 destroyed.` |
@@ -57,4 +57,4 @@
 | 10 | HTTPS で `hello from eks-exp`、`/news` に日本語の見出し、`get nodes` でノード 1 台が `Ready` |
 | 11 | `Destroy complete! Resources: 48 destroyed.` |
 | 12 | `RESULT: clean`(削除直後はタグ索引の遅れで数件残って見えることがある) |
-| 13 | `aws iam get-role --role-name cli-fl-kazufusa` が `NoSuchEntity` |
+| 13 | `aws iam get-role --role-name practice-personal-role` が `NoSuchEntity` |
