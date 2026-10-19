@@ -64,7 +64,7 @@ apply は 15〜20 分です。
 
 | 確認 | 方法 |
 | --- | --- |
-| AccessDenied が出ない | apply のログに `not authorized to perform` が無い。出たら `docs/permissions.md` の手順で JSON に足し、マネージャーに付け直してもらう |
+| AccessDenied が出ない | apply のログに `not authorized to perform` が無い。出たら JSON に足し、マネージャーに付け直してもらう(`docs/permissions.md`) |
 | HTTPS の URL が応答する | `curl -s $(terraform output -raw https_url)` |
 | Pod から外に出られる | `curl -s $(terraform output -raw https_url)news` |
 | NLB の直叩きが届かない | `curl --max-time 8 http://$(terraform output -raw nlb_dns_name)/` がタイムアウト |
