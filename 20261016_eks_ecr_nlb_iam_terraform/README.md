@@ -84,12 +84,18 @@ docs/        解説、権限、申請文、実験ログ、設計、計画
 
 ## 文書の案内
 
-- `docs/practice.md`: 1 人で 3 役を演じて作成から撤去まで通す練習手順
+移植に使うもの。
+
+- `docs/porting.md`: 移植ガイド。何をコピーし、何を変え、何を頼み、最初の apply で何を確認するか
 - `docs/runbook.md`: マネージャー、builder、deployer が打つコマンドを役割別に順に並べた一覧
-- `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説と、手順の詳細
-- `docs/deployer.md`: アプリ開発者が最初に読む手順書(雛形は `docs/deployer.md.tmpl`)
-- `docs/permissions.md`: builder と deployer の権限、検証で見つかった Action
+- `docs/deployer.md`: 開発者に渡すページ(`scripts/render-deployer-doc.sh` で値を埋めて生成)
+- `docs/permissions.md`: builder と deployer の権限、申請向け構成、検証で見つかった Action
 - `docs/request.md`: マネージャーへの申請文のたたき台
-- `docs/experiment-log.md`: 各段の実験ログ
-- `docs/design.md`: 設計と判断の記録
-- `docs/plan.md`: 実装の計画
+- `docs/guide.md`: IAM と Kubernetes を知らない人向けの解説
+
+この実験の記録。移植には不要。
+
+- `docs/practice.md`: 個人アカウントで 3 役を演じる練習手順
+- `docs/history/experiment-log.md`: 各段の実験ログ
+- `docs/history/design.md`: 設計と判断の記録
+- `docs/history/plan.md`: 実装の計画
