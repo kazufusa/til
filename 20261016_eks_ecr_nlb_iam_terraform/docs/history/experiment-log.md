@@ -420,4 +420,34 @@ apply と destroy は背景で実行し、15 分ごとの見張りと、開始 3
 
 ### 結果
 
-(実施後に記入)
+14 手すべて合格でした。所要時間は apply が 11 分、destroy が 12 分で、どちらも AccessDenied は 0 件です。
+費用は約 0.3 USD です。
+
+| # | 結果 |
+| --- | --- |
+| 1 | 空のロール 2 つを作成。どちらもポリシー 0 |
+| 2 | `attach-builder-policy.sh` で builder 役にポリシー 4 つが付いた。既存のロールへの付与が動いた |
+| 3 | `builder`、`dev-login` ともスイッチ成功。開発者役は VPC 参照が AccessDenied |
+| 4 | state バケットを builder 役で作成 |
+| 5 | init 成功 |
+| 6 | 48 資源の追加。`deployer_trusted_principals` は開発者役の ARN を `-var` で渡した |
+| 7 | developer ページの置換し忘れ 0 |
+| 8 | 開発者役から `eks-exp-deployer` への 2 段スイッチ(SSO → 個人ロール → deployer)成功 |
+| 9 | ECR へ `v1` を push |
+| 10 | `app` namespace に deploy、rollout 完了。restricted の警告は出るが baseline で受理 |
+| 11 | 公開 URL が応答、`/news` が NHK の見出しを返す、HTTP は 301、NLB 直叩きは 8 秒で打ち切り、ノード 1 台 Ready、Pod ログ、CloudWatch 4 群が 30 日、Secret は `app` で作成でき `kube-system` は forbidden |
+| 12 | 48 資源の削除 |
+| 13 | バケット削除。残骸チェックはタグ索引の遅れで 5 件を報告したが、直接参照すると NAT は deleted、subnet は NotFound、VPC は 0 |
+| 14 | detach でポリシー 4 つを外して `tf-builder-policy` を削除、空のロール 2 つを削除。どちらも NoSuchEntity |
+
+### 確かめられたこと
+
+- 既存のロールに `attach-builder-policy.sh` で付けた権限だけで、apply から destroy まで通る
+- 会社で builder が自分の個人ロールのまま terraform を回す形は、この権限で足りる
+- 開発者は自分のロールから deployer ロールにスイッチすれば deploy できる。
+  開発者のロール自体に権限は要らない
+
+### 手順上の反省
+
+計画を書く前に空のロール作成と attach まで進めてしまい、やり直しになりました。
+次からは、計画の記録と見張りの用意を済ませてから最初のコマンドを打ちます。
