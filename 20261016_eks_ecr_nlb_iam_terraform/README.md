@@ -24,14 +24,18 @@
 
 ## 最短手順
 
-マネージャーが、builder のロールを 1 回作ります。
+### 1. マネージャー: builder の個人ロールに権限を付ける(1 回だけ)
 
 ```bash
 bootstrap/attach-builder-policy.sh <builder の個人ロール名>   # 例: cli-fl-taro.yamada
-# 共有の作業ロールを新設する場合は bootstrap/create-builder-role.sh <builder の ARN>
 ```
 
-builder が、state バケットを作って terraform を回します。
+実行すると、隣にある `tf-builder-policy.json` から自作ポリシー `tf-builder-policy` が AWS に登録されます。
+続けて、AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と、その自作ポリシーが、指定したロールに付きます。
+builder はこれで terraform を回せる権限を持ちます。
+共有の作業ロールを新設する会社では、代わりに `bootstrap/create-builder-role.sh <builder の ARN>` を実行します。
+
+### 2. builder: state バケットを作り、terraform を回す
 
 ```bash
 bootstrap/create-state-bucket.sh
@@ -41,8 +45,14 @@ terraform apply
 terraform output
 ```
 
-deployer は、`docs/deployer.md` の手順で image を push してデプロイします。
-役割ごとの実施コマンドを順に並べた一覧は `docs/runbook.md` にあります。
+最初の行で、state を置く S3 バケットが作られます。
+`init` でそのバケットを terraform に教え、`apply` で VPC から EKS、ECR、NLB、CloudFront、deployer ロールまで作ります。
+`output` で、deployer に渡す値(ロール ARN、ECR の URL、公開 URL など)が表示されます。
+
+### 3. deployer: image を push してデプロイする
+
+`docs/deployer.md` の手順どおりに、ECR へ push し、kubectl で namespace `app` へ配置します。
+役割ごとのコマンドを順に並べた一覧は `docs/runbook.md` にあります。
 
 ## deployer への引き渡し
 
