@@ -387,3 +387,37 @@ deployer は EKS のアドオン一覧を読めません。設計どおりで、
 
 状態バケットとビルダーのロールを削除し、残りはタグ索引の遅れだけでした。
 この周回の追加費用は、約 0.3 USD です。
+
+## 個人ロール直付け方式の再現(2026-10-20)
+
+### 目的
+
+会社の builder は、個人ロール `cli-fl-<名前>` にマネージャーが権限を付ける方式だと分かりました。
+これまでの検証は、新設した `tf-builder` にスイッチする方式で行っています。
+この周回では、`attach-builder-policy.sh` で既存のロールに付けた権限だけで
+apply から destroy まで通ることと、開発者が自分のロールから deployer ロールに
+スイッチして deploy できることを確かめます。
+
+### 配役
+
+| 会社 | 再現 |
+| --- | --- |
+| builder の個人ロール | 空のロール `practice-builder-login` |
+| マネージャーの権限付与 | 管理者権限で `attach-builder-policy.sh practice-builder-login` |
+| 開発者の個人ロール | 空のロール `practice-developer-login` |
+| 開発者の deploy | `practice-developer-login` から `eks-exp-deployer` へスイッチ |
+
+### 初期状態
+
+- AWS 側は前回の撤去後で残骸なし
+- 計画を書く前に、空のロール 2 つの作成と attach まで進めてしまったため、
+  その時点を初期状態として記録します。`check-leftovers.sh` は `tf-builder-policy` だけを報告
+
+### 手順と合否
+
+`docs/practice.md` の 14 手に従います。合否の基準も同じ表に書いてあります。
+apply と destroy は背景で実行し、15 分ごとの見張りと、開始 3 時間後の自動 destroy を仕掛けます。
+
+### 結果
+
+(実施後に記入)
