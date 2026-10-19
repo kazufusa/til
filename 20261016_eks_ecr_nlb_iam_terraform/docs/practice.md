@@ -15,8 +15,8 @@
 
 | # | 役 | やること | 目安 |
 | --- | --- | --- | --- |
-| 1 | マネージャー | `bootstrap/create-builder-role.sh <自分の SSO ロール ARN>`。中で `attach-builder-policy.sh` が動き、権限 4 つが付く | 1 分 |
-| 2 | builder | `~/.aws/config` の `builder` プロファイルで `tf-builder` にスイッチできるか確認(`aws sts get-caller-identity --profile builder`) | 1 分 |
+| 1 | マネージャー | 個人ロールの代役 `cli-fl-kazufusa` を空で作り、`bootstrap/attach-builder-policy.sh cli-fl-kazufusa` で権限 4 つを付ける | 1 分 |
+| 2 | builder | `~/.aws/config` の `builder` プロファイルの `role_arn` を `cli-fl-kazufusa` にして、スイッチできるか確認(`aws sts get-caller-identity --profile builder`) | 1 分 |
 | 3 | builder | `AWS_PROFILE=builder bootstrap/create-state-bucket.sh` | 1 分 |
 | 4 | builder | `terraform init`(バケット名とプロファイルを引数で渡す) | 1 分 |
 | 5 | builder | `terraform plan` → `terraform apply`(48 資源) | 15 分 |
@@ -27,7 +27,7 @@
 | 10 | deployer | 確認: HTTPS の URL、`/news`、`kubectl get nodes`、`kubectl logs`、CloudWatch のログ | 5 分 |
 | 11 | builder | `scripts/preflight-destroy.sh` → `terraform destroy`(48 資源) | 15 分 |
 | 12 | builder | `bootstrap/delete-state-bucket.sh` → `scripts/check-leftovers.sh`(残骸ゼロ) | 2 分 |
-| 13 | マネージャー | `bootstrap/delete-builder-role.sh`(共有ロールを消す) | 1 分 |
+| 13 | マネージャー | `bootstrap/detach-builder-policy.sh cli-fl-kazufusa` で権限を外し、代役のロールを消す | 1 分 |
 
 ## 会社との違い
 
@@ -35,9 +35,9 @@
 
 | # | 個人アカウント(練習) | 会社 |
 | --- | --- | --- |
-| 1 | `create-builder-role.sh <ARN>` で共有ロールを新設 | マネージャーに `attach-builder-policy.sh <自分の個人ロール名>` を頼む |
-| 2 | `builder` プロファイルでスイッチ | 不要。ログインした権限のまま。以後の `--profile builder` と `-var aws_profile=builder` も省く |
-| 13 | `delete-builder-role.sh` | マネージャーに `detach-builder-policy.sh <自分の個人ロール名>` を頼む |
+| 1 | 個人ロールの代役を自分で作ってから attach | 個人ロールは最初からあるので、マネージャーに `attach-builder-policy.sh <自分の個人ロール名>` を頼むだけ |
+| 2 | `builder` プロファイルで代役にスイッチ | 不要。ログインした権限のまま。以後の `--profile builder` と `-var aws_profile=builder` も省く |
+| 13 | detach のあと代役のロールを消す | マネージャーに `detach-builder-policy.sh <自分の個人ロール名>` を頼むだけ |
 
 3 から 12 は同じです。
 
@@ -45,8 +45,8 @@
 
 | # | 期待する出力 |
 | --- | --- |
-| 1 | 最後の行が `arn:aws:iam::<ACCOUNT_ID>:role/tf-builder` |
-| 2 | `assumed-role/tf-builder/...` |
+| 1 | `aws iam list-attached-role-policies --role-name cli-fl-kazufusa` に 4 つ並ぶ |
+| 2 | `assumed-role/cli-fl-kazufusa/...` |
 | 3 | `created: tfstate-<ACCOUNT_ID>-eks-exp` |
 | 4 | `Terraform has been successfully initialized!` |
 | 5 | `Apply complete! Resources: 48 added, 0 changed, 0 destroyed.` |
@@ -57,4 +57,4 @@
 | 10 | HTTPS で `hello from eks-exp`、`/news` に日本語の見出し、`get nodes` でノード 1 台が `Ready` |
 | 11 | `Destroy complete! Resources: 48 destroyed.` |
 | 12 | `RESULT: clean`(削除直後はタグ索引の遅れで数件残って見えることがある) |
-| 13 | `deleted role: tf-builder` |
+| 13 | `aws iam get-role --role-name cli-fl-kazufusa` が `NoSuchEntity` |
