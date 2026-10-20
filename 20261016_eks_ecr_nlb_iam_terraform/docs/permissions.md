@@ -750,7 +750,7 @@ AWS の推奨に合わせた点は次のとおりです。
 
 | 領域 | 守れている点 |
 | --- | --- |
-| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。NLB は内部向けで、CloudFront から VPC origin で届く。CloudFront から NLB までの HTTP はインターネットを通らない。外へ出るのは NAT の固定 IP だけ。CloudFront の URL は誰でも開けるため、アプリ側の認証(Slack 署名など)が前提 |
+| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。NLB は内部向けで、CloudFront から VPC origin で届く。NLB の SG は CloudFront が作る SG からの 80 だけを許可する。CloudFront から NLB までの HTTP はインターネットを通らない。外へ出るのは NAT の固定 IP だけ。CloudFront の URL は誰でも開けるため、アプリ側の認証(Slack 署名など)が前提 |
 | 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
 | builder | IAM のロールとポリシーを作れない。できるのは EKS へのロールの受け渡しと deployer ロールの信頼先の書き換えだけで、自分の権限を広げる経路がない |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |

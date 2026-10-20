@@ -108,6 +108,8 @@ ELB の既定ドメインには、証明書を発行できません。
 CloudFront の後ろは、これまでどおり NLB です。
 CloudFront から NLB へは、VPC origin を通って HTTP で届きます。
 この区間はインターネットを通りません。NLB は内部向けなので、NLB の URL を直接開いても届きません。
+CloudFront は VPC origin を作るときに、VPC に `CloudFront-VPCOrigins-Service-SG` という SG を作ります。
+NLB の SG はこの SG からの 80 番だけを許可します。VPC の CIDR を許可しても VPC origin の通信は通りません。
 
 ログも、入口と同じく最初から用意します。
 `kubectl logs` で見えるのは動いている Pod のログだけで、Pod が作り直されると消えます。

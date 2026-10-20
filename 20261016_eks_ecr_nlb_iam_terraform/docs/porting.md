@@ -68,6 +68,7 @@ apply は 15〜20 分です。
 | AccessDenied が出ない | apply のログに `not authorized to perform` が無い。出たら JSON に足し、マネージャーに付け直してもらう(`docs/permissions.md`) |
 | HTTPS の URL が応答する | `curl -s $(terraform output -raw https_url)` |
 | Pod から外に出られる | `curl -s $(terraform output -raw https_url)news` |
+| VPC origin の SG がある | `CloudFront-VPCOrigins-Service-SG` が VPC にでき、NLB の SG がそれを参照している(apply が作る) |
 | NLB に外から届かない | `curl --max-time 8 http://$(terraform output -raw nlb_dns_name)/` が失敗する(内部向け NLB) |
 | ログが届く | `aws logs tail /aws/containerinsights/<名前>/application --since 10m` |
 | 戻せる | `scripts/preflight-destroy.sh` → `terraform destroy` → `PROJECT=<名前> scripts/check-leftovers.sh` |
