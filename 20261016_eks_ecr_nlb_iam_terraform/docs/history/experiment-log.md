@@ -468,4 +468,47 @@ apply と destroy は背景で実行し、15 分ごとの見張りと、開始 3
 
 ### 結果
 
-(実施後に記入)
+3 周しました。1 周目は設計変更直後のコード、2 周目はレビュー対応後のコード(途中で NLB の SG の不具合を発見して修正)、
+3 周目は最終のコード(3eefd09)でゼロから通しました。3 周目の結果は次のとおりです。
+
+| 本番行動 | 結果 |
+| --- | --- |
+| 1 マネージャー `setup-iam.sh` | ロール 3 つとポリシー 2 つができ、builder の個人ロール(代役)に 4 つが付いた |
+| 2 builder | スイッチ成功。`create-role` と `create-policy` は AccessDenied。state バケット作成 |
+| 3 builder apply | 39 資源、16 分、AccessDenied 0。VPC origin の作成に約 10 分 |
+| 4 builder output | 11 個の値。developer ページの置換し忘れ 0 |
+| 5 builder `set-deployers.sh` | 信頼先が builder 役 + 開発者役の 2 つになった。builder は deployer ロールにポリシーを付けられない(AccessDenied) |
+| 6 deployer | 2 段スイッチ成功。ECR へ push(タグ条件)、deploy 完了 |
+| 6 動作確認 | HTTPS で 12 回連続 200、`/news` が NHK の見出し、HTTP は 301、NLB は private IP に解決され外から不達、ノード 1 台 Ready、CloudWatch 4 群 30 日でログ到達、Pod に計測エージェントの注入なし、Secret は `app` のみで `kube-system` は forbidden、EC2 は UnauthorizedOperation、特権 Pod は baseline で拒否 |
+| 7 builder destroy | 39 資源、13 分、AccessDenied 0。バケット削除 |
+| 8 マネージャー `teardown-iam.sh` | ロール 3 つとポリシー 2 つが NoSuchEntity。代役ロール 2 つも削除 |
+| 残骸 | VPC 0、VPC origin 0、CloudFront の SG 0。タグ索引の遅れ以外は無し |
+
+### 見つかった不具合と修正
+
+NLB の SG を「VPC の CIDR から 80」にしていたところ、CloudFront 経由の HTTPS が 504 になりました。
+ターゲットは healthy、VPC origin は Deployed、Reachability Analyzer も到達可能と判定しましたが、
+NLB の新規フロー数が 0 で、CloudFront の ENI からの接続が NLB に届いていませんでした。
+ノード SG への追加許可、クライアント IP 保持の無効化では変わらず、
+NLB の SG に `CloudFront-VPCOrigins-Service-SG` からの 80 を SG 参照で足した直後に 200 が返りました。
+terraform では、VPC origin の作成後にこの SG を名前で引き、SG 参照の ingress にしました。
+あわせて NLB の SG に `create_before_destroy` を付け、NLB に付いたまま差し替えられるようにしました。
+3 周目のゼロからの apply で、この構成がそのまま作られることを確認しました。
+
+### レビュー指摘の反映
+
+移植先でのレビュー 7 点(apne1-az3 の除外、Application Signals の自動計測の無効化、terraform 1.11 以上、
+kubernetes リソースの `_v1`、API エンドポイントの CIDR 変数、`set-deployers.sh` のロール ARN 解決、再検証の記録)は
+2 周目の前に反映し、3 周目で apply から destroy まで通りました。
+アドオンの設定値は `describe-addon` で `monitorAllServices=false` を確認し、Pod には init コンテナが注入されていません。
+
+### 手順上の反省
+
+- SG の説明文を変えたら SG の作り直しになり、NLB に付いたままの旧 SG を消せず apply が止まりました。
+  LB に付く SG には最初から `create_before_destroy` を付けます
+- 代役ロールを作り直したあと、CLI のキャッシュに旧ロールの一時資格が残り、スイッチが失敗しました。
+  ロールを作り直したら `~/.aws/cli/cache` を消します
+
+### 費用
+
+3 周で約 1 USD です。
