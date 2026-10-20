@@ -61,6 +61,8 @@ region         = ap-northeast-1
 | 15 | マネージャー | `bootstrap/teardown-iam.sh practice-builder-login`、空のロール 2 つを削除、`scripts/check-leftovers.sh` | 2 分 |
 
 会社では 1 と 15 の空ロールの作成と削除が無く、3 のスイッチも不要です。
+そのため builder の `AWS_PROFILE=builder`、`-backend-config="profile=builder"`、`-var aws_profile=builder` も付けません。
+開発者の `--profile deployer` は、会社でも必要です(deployer ロールへのスイッチは本物の運用でも行います)。
 会社では `variables.tf` の `allowed_account_ids` にアカウント ID を書きます(この練習では空のまま)。
 
 ## 各手順の合格の目安
