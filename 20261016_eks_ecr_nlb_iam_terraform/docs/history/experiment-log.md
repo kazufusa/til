@@ -530,4 +530,24 @@ deployer ロールを廃止し、開発者の個人ロールに `eks-exp-deploye
 
 ### 結果
 
-(実施後に記入)
+すべて合格でした。費用は約 0.3 USD です。
+
+| 段階 | 結果 |
+| --- | --- |
+| 準備 | 残骸ゼロを確認し、代役の空ロール 2 つを作成 |
+| マネージャー | `setup-iam.sh` で EKS 用ロール 2 つとポリシー 2 つ、builder 役に 4 つ。`attach-deployer-policy.sh` で開発者役に `eks-exp-deployer-policy`。deployer ロールは作られない |
+| builder の境界 | `create-role`、`attach-role-policy`、`update-assume-role-policy` はすべて AccessDenied |
+| builder apply | 39 資源、16 分、AccessDenied 0。Access Entry が開発者役の個人ロールにできた |
+| developer ページ | 置換し忘れ 0、`--profile` の記述 0 |
+| 開発者役 | スイッチ先ロール無しで ECR へ push、`app` へ deploy |
+| 動作確認 | HTTPS 12 回連続 200、`/news` が NHK の見出し、HTTP は 301、NLB は外から不達、ノード Ready、CloudWatch 4 群 30 日でログ到達、計測エージェントの注入なし |
+| 開発者役の境界 | `app` の Secret は作れる、`kube-system` は forbidden、EC2 は拒否、自分のロールへの IAM 付与は AccessDenied、特権 Pod は baseline で拒否 |
+| builder destroy | 39 資源、12 分、AccessDenied 0。バケット削除 |
+| マネージャー撤去 | `teardown-iam.sh` で開発者役のロールからもポリシーが外れた(1 → 0)。ロール 2 つとポリシー 2 つが NoSuchEntity |
+| 残骸 | VPC、VPC origin、CloudFront の SG、バケット、EKS、ECR、CloudFront すべて 0 |
+
+### 確かめられたこと
+
+- builder の IAM の書き込みは PassRole だけで、apply から destroy まで通る
+- 開発者は個人ロールに `eks-exp-deployer-policy` と Access Entry があれば、スイッチ無しで作業できる
+- 開発者の追加はマネージャー 1 回(IAM)と builder の apply 1 回(EKS)で済む
