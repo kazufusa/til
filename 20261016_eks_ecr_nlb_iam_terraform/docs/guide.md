@@ -305,4 +305,5 @@ destroy 後に残ることを許容するものは 3 種類です。
 
 `scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
 EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
-IAM ロール(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer`)とポリシー 2 つ、`/aws/eks/` 配下のロググループも対象です。
+IAM ロール 3 つ(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer`)とポリシー 2 つも対象です。
+`/aws/eks/` 配下のロググループも確かめます。

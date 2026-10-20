@@ -19,7 +19,8 @@
 
 ## マネージャー(1 回だけ)
 
-builder から、builder の個人ロール名(`aws sts get-caller-identity` の `assumed-role/<ここ>/...`)を受け取ります。
+builder から、builder の個人ロール名を受け取ります。
+`aws sts get-caller-identity` の出力の `assumed-role/<ここ>/...` の部分です。
 
 ```bash
 bootstrap/setup-iam.sh <builder の個人ロール名>

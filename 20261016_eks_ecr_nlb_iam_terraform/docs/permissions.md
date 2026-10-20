@@ -25,7 +25,8 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
 5. 各サービスの参照(Describe、List、Get)
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
-7. 実験で見つかった 3 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)、`ec2:DescribeAddressesAttribute`(EIP 作成後の読み取り)
+7. 実験で見つかった ec2 の 3 つ。`GetSecurityGroupsForVpc`(NLB 作成時)、`DisassociateAddress`(EIP 解放時)、
+   `DescribeAddressesAttribute`(EIP 作成後の読み取り)
 
 ### deployer(<名前>-deployer、マネージャーが作り builder が信頼先を書く側)
 
@@ -313,7 +314,8 @@ IAM のロールとポリシーは作れません。
    deployer ロールの権限(ポリシー)は変えられません。
 2. builder は deployer ロールの信頼先に任意の ARN を書けます。
    チームの検証環境として受け入れ、信頼先の変更は `scripts/set-deployers.sh` の実行記録で追います。
-3. EC2、ELB、ECR、CloudFront は Resource が `*` です。builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
+3. EC2、ELB、ECR、CloudFront は Resource が `*` です。
+   builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
 4. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
 
 EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10-19)。
@@ -708,7 +710,8 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
 EKS の Access Entry に、次の 3 つを結びつけています。
 
 - `AmazonEKSAdminPolicy`: namespace `app` に限る。Role や RoleBinding も作れる
-- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない(自分の namespace の Secret は admin 権限で扱えます)
+- `AmazonEKSViewPolicy`: クラスタ全体。読み取り専用で、Secret の参照は含まれない。
+  自分の namespace の Secret は admin 権限で扱えます
 - ClusterRole `node-viewer`: nodes の get、list、watch だけ。
   Kubernetes グループ `<cluster_name>-deployers` に結びつく
 
