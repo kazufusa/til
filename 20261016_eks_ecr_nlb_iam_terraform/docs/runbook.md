@@ -13,7 +13,7 @@
 | deployer | aws cli v2、kubectl、docker |
 
 名前(`eks-exp`)を変える場合は、builder が先に `terraform/variables.tf` の `cluster_name` を変えます。
-次に `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 2 本と JSON)を
+次に `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 2 本と JSON 3 枚)を
 `bootstrap/rendered/<名前>/` に作り、そのフォルダごと渡します。
 以後の builder のスクリプトは `PROJECT=<名前>` を付けて実行します。
 
@@ -22,35 +22,27 @@
 builder から、builder の個人ロール名(`aws sts get-caller-identity` の `assumed-role/<ここ>/...`)を受け取ります。
 
 ```bash
-bootstrap/attach-builder-policy.sh <builder の個人ロール名>
+bootstrap/setup-iam.sh <builder の個人ロール名>
 ```
 
-これで、そのロールに AWS 管理ポリシー 3 つと `tf-builder-policy` が付きます。
-builder が複数いる、または CI にも使わせる場合は、共有の作業ロールを作ります。
-
-```bash
-bootstrap/create-builder-role.sh <スイッチを許可する principal の ARN>
-```
-
-撤去は `bootstrap/detach-builder-policy.sh <ロール名>`(個人ロールの場合)か、
-`bootstrap/delete-builder-role.sh`(共有ロールの場合)です。
-ポリシーの中身を更新するときは、撤去してからもう一度付けます。
+これで、ロール 3 つ(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer`)とポリシー 2 つができ、
+builder の個人ロールに AWS 管理ポリシー 3 つと `eks-exp-builder-policy` が付きます。
+撤去は `bootstrap/teardown-iam.sh <builder の個人ロール名>` です。
+ポリシーの中身を更新するときは、撤去してからもう一度作ります。
 
 ## builder
 
-### 0. 自分の ARN を調べてマネージャーに渡す
+### 0. 自分のロール名を調べてマネージャーに渡す
 
 ```bash
 aws sts get-caller-identity --query Arn --output text
+# arn:aws:sts::<ACCOUNT_ID>:assumed-role/<ここがロール名>/<セッション名>
 ```
 
-SSO の場合は、出てきた値の末尾の `/<自分の名前>` を外し、
-先頭を `arn:aws:iam::` に直します。
-`assumed-role/` は `role/aws-reserved/sso.amazonaws.com/<リージョン>/` に直します。
+### 1. (実験のみ)builder 役のロールにスイッチする設定
 
-### 1. builder ロールにスイッチする設定
-
-`~/.aws/config` に追記します。`<ロール ARN>` はマネージャーから受け取った値です。
+個人アカウントの実験では、個人ロールの代役にスイッチして builder を演じます。
+移植先では自分の個人ロールに権限が付くので、この節は不要です。
 
 ```ini
 [profile builder]
@@ -63,8 +55,7 @@ region         = ap-northeast-1
 aws sts get-caller-identity --profile builder
 ```
 
-自分の identity に直接権限を付けてもらった場合は、この節を飛ばします。
-以後の `--profile builder` と `-var aws_profile=builder` も省きます。
+移植先では、以後の `--profile builder` と `-var aws_profile=builder` も省きます。
 
 ### 2. state バケットの作成(1 回だけ)
 
@@ -92,18 +83,19 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を deployer に渡します。
-deployer の ARN を `terraform/variables.tf` の `deployer_trusted_principals` に書きます。
-apply すると、その人が `eks-exp-deployer` にスイッチできるようになります。
+deployer の IAM ロールの ARN を、`eks-exp-deployer` の信頼先に足します。
 
 ```bash
-cd terraform && terraform apply -var aws_profile=builder && cd ..
+AWS_PROFILE=builder scripts/set-deployers.sh <deployer の IAM ロールの ARN> ...
 ```
+
+渡した ARN と自分が、スイッチできる全員になります。増減するときも全員分を渡します。
 
 ### 5. 日々の運用
 
 | やること | コマンド |
 | --- | --- |
-| 開発者を足す | `variables.tf` の `deployer_trusted_principals` に ARN を追加して apply |
+| 開発者を足す、外す | `scripts/set-deployers.sh <ARN> ...` に全員分を渡す(terraform は不要) |
 | namespace を足す | `variables.tf` の `deployer_namespaces` に追加して apply |
 | ECR を足す | `variables.tf` の `ecr_repository_names` に追加して apply |
 | ノードを増やす | `variables.tf` の `node_count` を変えて apply |
@@ -121,7 +113,7 @@ yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
 scripts/check-leftovers.sh
 ```
 
-最後にマネージャーに `bootstrap/detach-builder-policy.sh <ロール名>`(共有ロールなら `delete-builder-role.sh`)を頼みます。
+最後にマネージャーに `bootstrap/teardown-iam.sh <builder の個人ロール名>` を頼みます。
 
 ## deployer(アプリ開発者)
 

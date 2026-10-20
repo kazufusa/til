@@ -24,7 +24,7 @@ output "ecr_repository_urls" {
 
 output "deployer_role_arn" {
   description = "deployer に渡すスイッチロール先"
-  value       = aws_iam_role.deployer.arn
+  value       = data.aws_iam_role.deployer.arn
 }
 
 output "node_port" {
@@ -40,11 +40,6 @@ output "deployer_namespaces" {
 output "nat_public_ip" {
   description = "Pod の外向き通信の送信元 IP(通信先の許可リスト用)"
   value       = aws_eip.nat.public_ip
-}
-
-output "deployer_trusted_principals" {
-  description = "deployer ロールにスイッチできる principal(空指定なら実行者自身のロール)"
-  value       = local.deployer_trusted_principals
 }
 
 output "https_url" {

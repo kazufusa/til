@@ -22,13 +22,13 @@
 | --- | --- | --- |
 | `terraform/variables.tf` の `cluster_name` | 環境の名前(例: `dev-web`) | 2〜20 文字、英小文字と数字とハイフン。全資源の接頭辞になる |
 | `terraform/variables.tf` の `region`、`terraform/backend.tf` の `region` | リージョン | 両方を同じ値にする |
-| `terraform/variables.tf` の `deployer_trusted_principals` | アプリ開発者のロールの ARN | 開発者に `aws sts get-caller-identity` を打ってもらう |
+| `terraform/variables.tf` の `allowed_account_ids` | 構築先のアカウント ID | `["123456789012"]` の形で直書きする。別のアカウントでは plan の段階で止まる |
 | `terraform/variables.tf` の `ecr_repository_names` | ECR の名前 | サービスごとに 1 つ |
 | `terraform/variables.tf` の `log_retention_days` | ログの保存日数 | dev は 30 日 |
 | `terraform/variables.tf` の `node_count` | ノード数 | dev は 1 |
 
 名前を変えたら、`scripts/render-policy.sh <名前>` を実行します。
-`bootstrap/rendered/<名前>/` に、名前を置き換えた権限 JSON とスクリプトがそろいます。
+`bootstrap/rendered/<名前>/` に、名前を置き換えた JSON 3 枚とスクリプト 2 本がそろいます。
 マネージャーに渡すのはこのフォルダです。
 
 ## 3. 自分の権限を頼む
@@ -40,12 +40,10 @@ aws sts get-caller-identity --query Arn --output text
 # arn:aws:sts::<ACCOUNT_ID>:assumed-role/<ここがロール名>/<セッション名>
 ```
 
-`docs/request.md` の文面で、マネージャーに `attach-builder-policy.sh <ロール名>` の実行を頼みます。
+`docs/request.md` の文面で、マネージャーに `setup-iam.sh <ロール名>` の実行を頼みます。
 渡すのは `bootstrap/rendered/<名前>/` の中身です。
-付くのは AWS 管理ポリシー 3 つと自作ポリシー 1 つで、内容は `docs/permissions.md` にあります。
-
-会社が「共有の作業ロールを作る」方針なら、代わりに `create-builder-role.sh <自分の ARN>` を頼みます。
-その場合だけ、以後の builder のコマンドに `--profile builder` と `-var aws_profile=builder` を付けます。
+実行すると、ロール 3 つとポリシー 2 つができ、自分の個人ロールに権限が付きます。
+付くのは AWS 管理ポリシー 3 つと `<名前>-builder-policy` で、内容は `docs/permissions.md` にあります。
 
 ## 4. 作る
 
@@ -70,7 +68,7 @@ apply は 15〜20 分です。
 | AccessDenied が出ない | apply のログに `not authorized to perform` が無い。出たら JSON に足し、マネージャーに付け直してもらう(`docs/permissions.md`) |
 | HTTPS の URL が応答する | `curl -s $(terraform output -raw https_url)` |
 | Pod から外に出られる | `curl -s $(terraform output -raw https_url)news` |
-| NLB の直叩きが届かない | `curl --max-time 8 http://$(terraform output -raw nlb_dns_name)/` がタイムアウト |
+| NLB に外から届かない | `curl --max-time 8 http://$(terraform output -raw nlb_dns_name)/` が失敗する(内部向け NLB) |
 | ログが届く | `aws logs tail /aws/containerinsights/<名前>/application --since 10m` |
 | 戻せる | `scripts/preflight-destroy.sh` → `terraform destroy` → `PROJECT=<名前> scripts/check-leftovers.sh` |
 
@@ -81,7 +79,7 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を渡します。会社のリポジトリ(private)なら、そのまま commit して構いません。
-開発者を増やすときは、`deployer_trusted_principals` に ARN を足して apply します。
+開発者を足すときは、`scripts/set-deployers.sh <ARN> ...` に全員分の ARN を渡します。terraform は触りません。
 
 ## 7. 本番へ持っていくとき(dev の後)
 
@@ -92,6 +90,6 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 | ログ保存 | 30 日 | 90 日以上 |
 | HTTPS | CloudFront の既定ドメイン | ACM 証明書と独自ドメイン |
 | EKS の API エンドポイント | パブリック | 社内 IP に限定 |
-| builder の権限 | 管理ポリシー 3 つ + 自作 1 つ | 共有アカウントなら最小権限版(`docs/permissions.md` の付録)や Permissions Boundary |
+| builder の権限 | 管理ポリシー 3 つ + 自作 1 つ(IAM は作れない) | 共有アカウントなら最小権限版(`docs/permissions.md` の付録) |
 
 詳細は `docs/permissions.md` の「本番で追加を検討する対策」にあります。

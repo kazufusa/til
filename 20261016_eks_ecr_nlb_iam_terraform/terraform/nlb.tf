@@ -5,7 +5,7 @@ locals {
 
 resource "aws_security_group" "nlb" {
   name        = "${local.name_prefix}-nlb"
-  description = "NLB: allow HTTP from CloudFront only"
+  description = "NLB: allow HTTP from within the VPC"
   vpc_id      = aws_vpc.main.id
 
   tags = {
@@ -13,15 +13,11 @@ resource "aws_security_group" "nlb" {
   }
 }
 
-# 入口を CloudFront 1 本にする。NLB の DNS 名を直接叩いても届かない
-data "aws_ec2_managed_prefix_list" "cloudfront" {
-  name = "com.amazonaws.global.cloudfront.origin-facing"
-}
-
+# NLB は internal なので、届くのは VPC 内の送信元(ノード、CloudFront の VPC origin の ENI)だけ
 resource "aws_vpc_security_group_ingress_rule" "nlb_http" {
   security_group_id = aws_security_group.nlb.id
-  description       = "HTTP from CloudFront"
-  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+  description       = "HTTP from within the VPC"
+  cidr_ipv4         = aws_vpc.main.cidr_block
   from_port         = 80
   to_port           = 80
   ip_protocol       = "tcp"
@@ -47,8 +43,8 @@ resource "aws_vpc_security_group_ingress_rule" "node_from_nlb" {
 resource "aws_lb" "main" {
   name               = "${local.name_prefix}-nlb"
   load_balancer_type = "network"
-  internal           = false
-  subnets            = aws_subnet.public[*].id
+  internal           = true
+  subnets            = aws_subnet.private[*].id
   security_groups    = [aws_security_group.nlb.id]
 
   # ノードが1台だけだと、ターゲットのいないAZのNLBノードに当たった接続が

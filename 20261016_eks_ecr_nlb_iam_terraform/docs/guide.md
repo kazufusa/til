@@ -35,13 +35,13 @@ arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/<リージョン>/
 
 ## 2. 段 0 と段 1
 
-terraform を回すためのロールは、terraform 自身では作れません。
-ロールがなければ terraform を動かせず、ロールを作るのに terraform が要るからです。
-そこで、この最初の 1 個だけは、マネージャーがスクリプトで作ります。
-これが段 0 です。
+IAM のロールとポリシーは、terraform では作りません。
+builder がロールを作れると、自分に任意の権限を与えられてしまうからです。
+そこで、マネージャーが `setup-iam.sh` で、ロール 3 つとポリシー 2 つをまとめて作り、
+builder の個人ロールに権限を付けます。これが段 0 です。
 
-段 1 では、そのロール(`tf-builder`)にスイッチした builder が、残りのすべてを terraform で作ります。
-ネットワーク、EKS、ECR、NLB、そして `<cluster_name>-deployer` のロールまで含みます。
+段 1 では、権限の付いた builder が、残りのすべてを terraform で作ります。
+ネットワーク、EKS、ECR、NLB、CloudFront です。IAM ロールは名前で参照するだけです。
 マネージャーに頼むのは段 0 の 1 回だけで済みます。
 
 ## 3. builder と deployer の分担
@@ -94,7 +94,7 @@ NLB はクロスゾーン負荷分散を有効にしています。
 ノードが 1 つの AZ にしか無くても、どの AZ の入口からも届くようにするためです。
 
 ノードは private subnet にあり、パブリック IP を持ちません。
-外から届くのは CloudFront 経由の通信だけで、NLB は CloudFront 以外からの接続を受けません。
+NLB は内部向けで、インターネットからは届きません。CloudFront は VPC origin という仕組みで VPC の中に入って NLB に届きます。
 外へ出るのは NAT の固定 IP だけです。
 
 Pod から外へ出る通信は、NAT Gateway を通ります。
@@ -106,8 +106,8 @@ ELB の既定ドメインには、証明書を発行できません。
 そのため、CloudFront の既定ドメイン(`*.cloudfront.net`)で HTTPS にしています。
 キャッシュは無効にしてあり、HTTP で来たリクエストは HTTPS へ転送します。
 CloudFront の後ろは、これまでどおり NLB です。
-CloudFront から NLB へは HTTP で届きます。
-NLB のセキュリティグループは CloudFront のプレフィックスリストだけを許すので、NLB の URL を直接開いても届きません。
+CloudFront から NLB へは、VPC origin を通って HTTP で届きます。
+この区間はインターネットを通りません。NLB は内部向けなので、NLB の URL を直接開いても届きません。
 
 ログも、入口と同じく最初から用意します。
 `kubectl logs` で見えるのは動いている Pod のログだけで、Pod が作り直されると消えます。
@@ -139,23 +139,20 @@ deployer が manifest に書くのは、image の名前だけです。
 Pod を起こすときは、ノードが ECR から image を引いてきます。
 
 pull の権限は、ノードのロール(`<cluster_name>-node`)にあります。
-これは builder が terraform で付けています。
 push の権限は、`<cluster_name>-deployer` のロールにあります。
-こちらも builder が terraform で付けています。
+どちらもマネージャーが `setup-iam.sh` で付けています。builder は変更できません。
 deployer 自身は、どちらの権限も変更できません。
 
 ## 10. マネージャーへの頼み方
 
-マネージャーに渡すのは、スクリプト 2 本とポリシーの JSON 1 つです。
-付与用の `attach-builder-policy.sh` と、撤去用の `detach-builder-policy.sh` です。
-共有の作業ロールを新設する会社では、`create-builder-role.sh` と `delete-builder-role.sh` を使います。
-ポリシーは `tf-builder-policy.json` です。
-頼むのは、`attach-builder-policy.sh <自分のロール名>` の実行 1 回だけです。
+マネージャーに渡すのは、スクリプト 2 本とポリシーの JSON 3 枚です。
+作成用の `setup-iam.sh` と、撤去用の `teardown-iam.sh` です。
+JSON は builder 用の `builder-policy.json`、deployer 用の `deployer-policy.json`、参考の最小権限版です。
+頼むのは、`setup-iam.sh <自分のロール名>` の実行 1 回だけです。
 
-ポリシーは、実験で apply から destroy まで通して検証した候補です。
-ただし、硬い境界ではありません。
-builder が `<cluster_name>-deployer` の権限を書き換えられるなど、限界があります。
-その限界は、申請文で説明します。
+ポリシーは、実験で apply から destroy まで通して検証したものです。
+builder は IAM のロールとポリシーを作れないので、自分の権限を広げることはできません。
+builder にできる IAM の書き込みは、`<cluster_name>-deployer` の信頼先の書き換えだけです。
 詳細は `docs/permissions.md` と `docs/request.md` にあります。
 
 ## 付録 構成と手順の詳細
@@ -199,13 +196,13 @@ terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
 以降の builder の操作は、実験では `AWS_PROFILE=builder` で実行します。
 移植先(dev 環境)では、マネージャーが付与した identity で実行します。
 
-#### 0-a. ロール作成(マネージャー)
+#### 0-a. IAM の作成(マネージャー)
 
 ```bash
-bootstrap/attach-builder-policy.sh <builder の個人ロール名>
+bootstrap/setup-iam.sh <builder の個人ロール名>
 ```
 
-マネージャーは、できあがったロールの ARN を builder に伝えます。
+ロール 3 つとポリシー 2 つができ、builder の個人ロールに権限が付きます。
 実験では、自分が管理者としてこのスクリプトを実行します。
 
 #### 0-b. state バケット作成(builder)
@@ -214,7 +211,7 @@ builder は `~/.aws/config` に `builder` プロファイルを足します。
 
 ```ini
 [profile builder]
-role_arn       = <tf-builder のロール ARN>
+role_arn       = <builder 役のロールの ARN(実験では代役の空ロール)>
 source_profile = default
 region         = ap-northeast-1
 ```
@@ -228,9 +225,10 @@ bootstrap/create-state-bucket.sh
 
 #### 1. 固有値と init
 
-移植先(dev 環境)では、その人物の identity の ARN を書いて commit します。
-書く場所は `terraform/variables.tf` の `deployer_trusted_principals` の `default` です。
-空のままだと terraform を実行した本人が deployer になります(実験用)。
+移植先(dev 環境)では、構築先のアカウント ID を書いて commit します。
+書く場所は `terraform/variables.tf` の `allowed_account_ids` の `default` です。
+空のままだとどのアカウントでも動きます(実験用)。
+開発者の ARN は terraform には書かず、apply の後に `scripts/set-deployers.sh` で deployer ロールの信頼先に足します。
 tfvars と backend.hcl は使いません。
 
 ```bash
@@ -267,14 +265,14 @@ scripts/preflight-destroy.sh
 (cd terraform && terraform destroy)
 bootstrap/delete-state-bucket.sh   # 最後の周回だけ
 # 管理者
-bootstrap/detach-builder-policy.sh <builder の個人ロール名>
+bootstrap/teardown-iam.sh <builder の個人ロール名>
 scripts/check-leftovers.sh
 ```
 
 destroy に約 15 分かかります。
 state バケットは周回の間は残し、最後に一度だけ削除します。
 `delete-state-bucket.sh` は builder の権限で実行するので、builder ロールの削除より先に行います。
-`detach-builder-policy.sh` は管理者の操作です。
+`teardown-iam.sh` は管理者の操作です。
 `check-leftovers.sh` は個人アカウント専用で、共有アカウントではタグ検索の結果だけを見ます。
 
 ### 実験用プロファイル
@@ -307,4 +305,4 @@ destroy 後に残ることを許容するものは 3 種類です。
 
 `scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
 EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
-IAM ロール(`eks-exp-deployer`、`tf-builder`、`eks-exp-*`)と、`/aws/eks/` 配下のロググループも対象です。
+IAM ロール(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer`)とポリシー 2 つ、`/aws/eks/` 配下のロググループも対象です。

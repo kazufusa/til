@@ -58,11 +58,11 @@ check "cloudfront distributions" \
   aws cloudfront list-distributions --query "(DistributionList.Items || \`[]\`)[?contains(Comment, \`${PROJECT}\`)].Id" --output text
 check "iam roles" \
   aws iam list-roles \
-  --query "Roles[?starts_with(RoleName,'${PROJECT}') || RoleName=='tf-builder'].RoleName" \
+  --query "Roles[?starts_with(RoleName,'${PROJECT}')].RoleName" \
   --output text
 check "iam policies" \
   aws iam list-policies --scope Local \
-  --query "Policies[?starts_with(PolicyName,'${PROJECT}') || starts_with(PolicyName,'tf-builder')].PolicyName" \
+  --query "Policies[?starts_with(PolicyName,'${PROJECT}')].PolicyName" \
   --output text
 check "eks log groups" \
   aws logs describe-log-groups --log-group-name-prefix /aws/eks/ \

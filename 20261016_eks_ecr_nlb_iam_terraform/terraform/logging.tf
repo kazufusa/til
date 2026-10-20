@@ -12,13 +12,6 @@ resource "aws_cloudwatch_log_group" "insights" {
   retention_in_days = var.log_retention_days
 }
 
-resource "aws_iam_role_policy_attachment" "node_cloudwatch" {
-  count = var.enable_log_shipping ? 1 : 0
-
-  role       = aws_iam_role.node.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-}
-
 # AWS 公式アドオン。全 Pod の標準出力を CloudWatch Logs の /aws/containerinsights/<cluster>/application に送る。
 # メトリクス(Container Insights)も有効になり、少額の課金がある
 resource "aws_eks_addon" "cloudwatch" {
@@ -32,6 +25,5 @@ resource "aws_eks_addon" "cloudwatch" {
   depends_on = [
     aws_eks_node_group.main,
     aws_cloudwatch_log_group.insights,
-    aws_iam_role_policy_attachment.node_cloudwatch,
   ]
 }

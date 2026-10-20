@@ -1,5 +1,20 @@
+resource "aws_cloudfront_vpc_origin" "main" {
+  vpc_origin_endpoint_config {
+    name                   = "${local.name_prefix}-nlb"
+    arn                    = aws_lb.main.arn
+    http_port              = 80
+    https_port             = 443
+    origin_protocol_policy = "http-only"
+
+    origin_ssl_protocols {
+      items    = ["TLSv1.2"]
+      quantity = 1
+    }
+  }
+}
+
 # ELB の既定ドメインには証明書を付けられないため、CloudFront の既定ドメイン(*.cloudfront.net)で HTTPS を提供する。
-# キャッシュは無効。HTTP で来た場合は HTTPS にリダイレクトする。CloudFront から NLB へは HTTP。
+# キャッシュは無効。HTTP で来た場合は HTTPS にリダイレクトする。CloudFront から NLB へは VPC origin を通り、インターネットを経由しない(HTTP)。
 resource "aws_cloudfront_distribution" "main" {
   enabled         = true
   comment         = "${local.name_prefix} HTTPS entry"
@@ -10,11 +25,8 @@ resource "aws_cloudfront_distribution" "main" {
     domain_name = aws_lb.main.dns_name
     origin_id   = "nlb"
 
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
+    vpc_origin_config {
+      vpc_origin_id = aws_cloudfront_vpc_origin.main.id
     }
   }
 

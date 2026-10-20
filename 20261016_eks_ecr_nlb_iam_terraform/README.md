@@ -2,38 +2,50 @@
 
 ## 概要
 
-このディレクトリには、EKS 環境と、その周りの 2 つの IAM ロールを作る terraform が入っています。
+このディレクトリには、EKS 環境を作る terraform と、その前後でマネージャーが使う IAM のスクリプトが入っています。
 個人のアカウントで何度も作って壊し、完全に戻せることを確かめました。
 移植先(dev 環境)のリポジトリへ移す前提で作っています。
 
 ## できること
 
-- HTTPS の URL(CloudFront)で、アプリにアクセスできる(入口は CloudFront だけで、NLB には直接届かない)
+- HTTPS の URL(CloudFront)で、アプリにアクセスできる。NLB は内部向けで、CloudFront から VPC origin で届く
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
 - kubectl で、サンプルの Slack アプリ(署名検証、メンション返信)をデプロイできる
 - 全 Pod のログが CloudWatch Logs に転送され、30 日間残る
 - image を置く ECR がある(リポジトリは複数指定できる)
 - deployer ロール(既定は `eks-exp-deployer`)で、image の push とデプロイができる
+- 構築先のアカウントを固定できる(`allowed_account_ids`)
 
-## 2 つのロール
+## 役割と IAM
 
-| 役割 | 誰 | ロール | 作る人 | できること |
-| --- | --- | --- | --- | --- |
-| builder | 環境を作る人 | `tf-builder` | マネージャー | terraform の apply と destroy |
-| deployer | アプリ開発者 | `eks-exp-deployer` | terraform | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
+| 役割 | 誰 | 使うロール | できること |
+| --- | --- | --- | --- |
+| マネージャー | 管理者 | 自分の管理者権限 | `setup-iam.sh` でロール 3 つとポリシー 2 つを作り、builder に権限を付ける(1 回)。撤去は `teardown-iam.sh` |
+| builder | 環境を作る人 | 自分の個人ロール(権限を付けてもらう) | terraform の apply と destroy、開発者の追加(`set-deployers.sh`) |
+| deployer | アプリ開発者 | `eks-exp-deployer`(スイッチ) | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
+
+IAM のロールとポリシーは terraform では作りません。
+builder がロールを作れると自分に任意の権限を与えられるため、マネージャーがまとめて作ります。
+
+| 名前 | 種類 | 用途 |
+| --- | --- | --- |
+| `eks-exp-cluster` | ロール | EKS のコントロールプレーン用 |
+| `eks-exp-node` | ロール | ノード(EC2)用。ECR の pull と CloudWatch Logs への書き込み |
+| `eks-exp-deployer` | ロール | 開発者がスイッチする。信頼先は builder が書き換える |
+| `eks-exp-builder-policy` | ポリシー | builder の個人ロールに付ける。AWS 管理ポリシー 3 つと組み合わせる |
+| `eks-exp-deployer-policy` | ポリシー | `eks-exp-deployer` に付ける |
 
 ## 最短手順
 
-### 1. マネージャー: builder の個人ロールに権限を付ける(1 回だけ)
+### 1. マネージャー: IAM を作る(1 回だけ)
 
 ```bash
-bootstrap/attach-builder-policy.sh <builder の個人ロール名>   # 例: cli-fl-taro.yamada
+bootstrap/setup-iam.sh <builder の個人ロール名>   # 例: cli-fl-taro.yamada
 ```
 
-実行すると、隣にある `tf-builder-policy.json` から自作ポリシー `tf-builder-policy` が AWS に登録されます。
-続けて、AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と、その自作ポリシーが、指定したロールに付きます。
-builder はこれで terraform を回せる権限を持ちます。
-共有の作業ロールを新設する会社では、代わりに `bootstrap/create-builder-role.sh <builder の ARN>` を実行します。
+実行すると、隣の JSON 2 枚からポリシー 2 つが登録され、ロール 3 つが作られます。
+続けて、builder の個人ロールに AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と
+`eks-exp-builder-policy` が付きます。builder はこれで terraform を回せます。
 
 ### 2. builder: state バケットを作り、terraform を回す
 
@@ -46,10 +58,20 @@ terraform output
 ```
 
 最初の行で、state を置く S3 バケットが作られます。
-`init` でそのバケットを terraform に教え、`apply` で VPC から EKS、ECR、NLB、CloudFront、deployer ロールまで作ります。
+`init` でそのバケットを terraform に教え、`apply` で VPC から EKS、ECR、NLB、CloudFront まで作ります。
+IAM ロールは名前で参照するだけです。
 `output` で、deployer に渡す値(ロール ARN、ECR の URL、公開 URL など)が表示されます。
 
-### 3. deployer: image を push してデプロイする
+### 3. builder: 開発者を deployer ロールの信頼先に足す
+
+```bash
+scripts/set-deployers.sh <開発者の IAM ロールの ARN> ...
+```
+
+渡した ARN の一覧(と自分)が、`eks-exp-deployer` にスイッチできる全員になります。
+開発者を増やすときも減らすときも同じコマンドで、terraform は触りません。
+
+### 4. deployer: image を push してデプロイする
 
 `docs/deployer.md` の手順どおりに、ECR へ push し、kubectl で namespace `app` へ配置します。
 役割ごとのコマンドを順に並べた一覧は `docs/runbook.md` にあります。
@@ -74,20 +96,19 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 
 ## 名前を変えるときの注意
 
-- 名前の元になる語は、今は `eks-exp` です。deployer ロールの名前も `cluster_name` から決まります。
-  クラスタ、ロール、NLB、バケット、タグ、ポリシー JSON に接頭辞として入っています。
+- 名前の元になる語は、今は `eks-exp` です。ロール、ポリシー、クラスタ、NLB、バケット、タグに接頭辞として入っています。
 - 変えるときは、次の 3 手順を踏みます。
   1. terraform の変数 `cluster_name` を変えます。
-  2. `scripts/render-policy.sh <名前>` で、builder のポリシー JSON を作ります。
+  2. `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 2 本と JSON 3 枚)を作ります。
   3. 以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
 - NLB の名前は 32 文字までです。稼働後に変えると、terraform が作り直します。
 
 ## ディレクトリ構成
 
 ```
-terraform/   EKS、ネットワーク、NLB、ECR、deployer ロールの terraform
-bootstrap/   マネージャーが実行するスクリプトと builder のポリシー JSON
-scripts/     destroy 前の確認と残骸の検査(実験用)
+terraform/   EKS、ネットワーク、NLB、CloudFront、ECR の terraform(IAM は名前で参照するだけ)
+bootstrap/   マネージャーが実行する IAM のスクリプトと、ポリシーの JSON
+scripts/     開発者の追加、deployer ページの生成、destroy 前の確認、残骸の検査
 app/         サンプルアプリの Dockerfile と manifest
 docs/        解説、権限、申請文、実験ログ、設計、計画
 ```

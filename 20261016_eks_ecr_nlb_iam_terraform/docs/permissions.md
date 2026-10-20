@@ -6,30 +6,28 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 ## 説明用の要約
 
-### builder(tf-builder、申請する側)
+### builder(個人ロールに権限を付けてもらう側)
 
 | 付けるもの | 中身 | 一言 |
 | --- | --- | --- |
 | AmazonVPCFullAccess | AWS 管理ポリシー | ネットワークを作る |
 | ElasticLoadBalancingFullAccess | AWS 管理ポリシー | 公開用の入口(NLB)を作る |
 | AmazonEC2ContainerRegistryFullAccess | AWS 管理ポリシー | image 置き場(ECR)を作る |
-| カスタム tf-builder-policy | 下の 7 項目 | EKS と、危険になりうる IAM と state だけ自前で縛る |
+| カスタム `<名前>-builder-policy` | 下の 7 項目 | EKS と、IAM の最小限の書き込みと state だけ自前で縛る |
 
 カスタムポリシーの 7 項目は次のとおりです。
 
 1. EKS の全操作(`eks:*`)。書き込みは、名前が `<名前>` のクラスタとその配下の資源に限ります。Auto Scaling は負荷分散先の関連付けだけ
 2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
-3. IAM ロールは名前が `<名前>-*` のものだけ作成と削除ができ、
-   付けられるポリシーは、AWS 管理ポリシー 5 つと `<名前>-deployer-policy` に限ります。
-   5 つは、EKS 用の 4 つと CloudWatchAgentServerPolicy です。
-   管理者ポリシーを直接付けることはできません。
-   deployer のポリシー内容と信頼先は builder が書けるため、完全な境界にするには Permissions Boundary が必要です
+3. IAM は、EKS へ渡すロール 2 つ(`<名前>-cluster`、`<名前>-node`)の PassRole と、
+   `<名前>-deployer` の信頼先の書き換え(UpdateAssumeRolePolicy)だけ。
+   ロールとポリシーの作成、削除、付け外しはできません
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
-5. 各サービスの参照(Describe、List、Get)と、CloudFront のプレフィックスリストの参照
+5. 各サービスの参照(Describe、List、Get)
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
 7. 実験で見つかった 3 つ: `ec2:GetSecurityGroupsForVpc`(NLB 作成時)、`ec2:DisassociateAddress`(EIP 解放時)、`ec2:DescribeAddressesAttribute`(EIP 作成後の読み取り)
 
-### deployer(<名前>-deployer、terraform で作って渡す側)
+### deployer(<名前>-deployer、マネージャーが作り builder が信頼先を書く側)
 
 | 層 | できること | できないこと |
 | --- | --- | --- |
@@ -43,8 +41,8 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 > ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
 > EKS は、自分のクラスタ名の資源に限った全権です。
-> 自分でロールを作る権限は名前で縛ってあり、管理者ポリシーを直接付けることはできません。
-> deployer のポリシー内容と信頼先は builder が書けるため、完全な境界にするには Permissions Boundary が必要です。
+> IAM のロールとポリシーは作れません。できるのは、EKS へのロールの受け渡しと、deployer ロールの信頼先の書き換えだけです。
+> 自分の権限を広げる経路はありません。
 
 細かい最小権限の JSON は付録にあり、厳しく見たい場合に示します。
 
@@ -52,23 +50,24 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 ### 申請向け構成
 
-申請では、AWS 管理ポリシー 3 つとカスタムポリシー 1 つを `tf-builder` に付けます。
-カスタムポリシー `tf-builder-policy` の実体は `bootstrap/tf-builder-policy.json` です。
+申請では、AWS 管理ポリシー 3 つとカスタムポリシー 1 つを builder の個人ロールに付けます。
+カスタムポリシー `<名前>-builder-policy` の実体は `bootstrap/builder-policy.json` です。
+付けるのはマネージャーで、`bootstrap/setup-iam.sh` が行います。
 
 | ポリシー | 種類 | 役割 |
 | --- | --- | --- |
 | `AmazonVPCFullAccess` | AWS 管理 | VPC、サブネット、NAT、EIP、SG などのネットワーク一式 |
 | `ElasticLoadBalancingFullAccess` | AWS 管理 | NLB、target group、listener |
 | `AmazonEC2ContainerRegistryFullAccess` | AWS 管理 | ECR リポジトリの作成と削除 |
-| `tf-builder-policy` | カスタム | 下記の 7 項目 |
+| `<名前>-builder-policy` | カスタム | 下記の 7 項目 |
 
 カスタムポリシーの内容は、次の 7 項目です。
 
 - EKS: `eks:*`(書き込みはクラスタ名で限定)と、Auto Scaling の負荷分散先の関連付け
-- IAM: 資源名と PolicyARN で限定
+- IAM: EKS へ渡すロール 2 つの PassRole と、deployer ロールの信頼先の書き換えだけ
 - S3: state バケットの名前で限定
 - CloudFront: HTTPS の入口の作成と削除
-- 参照: 各サービスの Describe、Get、List と、CloudFront のプレフィックスリスト
+- 参照: 各サービスの Describe、Get、List
 - CloudWatch Logs: `/aws/containerinsights/<名前>/` 配下のロググループの作成と削除
 - 実験で見つかった ec2 の 3 Action
 
@@ -303,20 +302,19 @@ NAT ができないまま、ノードも出口がなくて起動に失敗しま�
 
 ### 作れるものと作れないもの
 
-作れるものは、ネットワーク、EKS、ECR、ELB、CloudFront、`<cluster_name>-*` の IAM ロールです。
+作れるものは、ネットワーク、EKS、ECR、ELB、CloudFront です。
 名前が `tfstate-*-<cluster_name>` の S3 バケットの作成、設定、削除もできます。
+IAM のロールとポリシーは作れません。
 
-次の 5 点を、申請文でそのまま説明します。
+次の 4 点を、申請文でそのまま説明します。
 
-1. `iam:AttachRolePolicy` は `iam:PolicyARN` 条件で、付けられるポリシーを限っています。
-   AWS 管理の EKS、ECR、CloudWatch のポリシー 5 つと、deployer のポリシーだけです。
-   builder が作るロールに `AdministratorAccess` を直接付けることはできません。
-2. builder は deployer のポリシーの中身(`CreatePolicyVersion`)を書き換えられます。
-   deployer ロールの信頼ポリシーも書き換えられます。
-   この候補は厳密な境界ではありません。
-3. 境界が必要な組織では、マネージャーに Permissions Boundary の付与を依頼します。
-4. EC2、ELB、ECR、CloudFront は Resource が `*` です。builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
-5. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
+1. IAM の書き込みは 2 つだけです。EKS へ渡すロール 2 つの `iam:PassRole`(渡し先は eks.amazonaws.com に限定)と、
+   `<cluster_name>-deployer` の `iam:UpdateAssumeRolePolicy` です。
+   deployer ロールの権限(ポリシー)は変えられません。
+2. builder は deployer ロールの信頼先に任意の ARN を書けます。
+   チームの検証環境として受け入れ、信頼先の変更は `scripts/set-deployers.sh` の実行記録で追います。
+3. EC2、ELB、ECR、CloudFront は Resource が `*` です。builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
+4. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
 
 EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10-19)。
 簡易版の builder で apply から destroy まで通り、AccessDenied は出ませんでした。
@@ -324,16 +322,17 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 ### 名前を変える手順
 
 1. terraform の変数 `cluster_name` を変えます。
-2. `scripts/render-policy.sh <名前>` で、builder 用の JSON を `bootstrap/rendered/<名前>/` に作ります。
+2. `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式を `bootstrap/rendered/<名前>/` に作ります。
 3. 以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
 
 ### 付録 検証済みの最小権限
 
 管理ポリシーを使わず、この 1 つのポリシーだけで apply から destroy まで通した JSON です。
-実体は `bootstrap/tf-builder-policy.minimal.json` です。
+実体は `bootstrap/builder-policy.minimal.json` です。
 参考資料で、スクリプトはこの版を使いません。
-使う場合は、`tf-builder-policy.json` をこの JSON で差し替え、
-`attach-builder-policy.sh` の AWS 管理ポリシーを付ける 3 行を消します。
+使う場合は、`builder-policy.json` をこの JSON で差し替え、
+`setup-iam.sh` の AWS 管理ポリシーを付ける 3 行を消します。
+IAM を作らない形への追従は机上で行い、apply での再検証はしていません。
 
 ```json
 {
@@ -631,13 +630,14 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 
 ## deployer の権限
 
-terraform が管理する権限で、AWS 側と Kubernetes 側があります。
+AWS 側はマネージャーが `setup-iam.sh` で作り、Kubernetes 側は terraform が管理します。
 ロールの名前は `<cluster_name>-deployer` で、ポリシーの名前は `<cluster_name>-deployer-policy` です。
+スイッチできる人は、builder が `scripts/set-deployers.sh` で信頼先に書きます。
 
 ### AWS 側
 
-`terraform/deployer.tf` の 5 文を JSON にしたものです。
-`<ACCOUNT_ID>` は実際のアカウント ID に、`<cluster_name>` はクラスタ名に置き換わります。
+実体は `bootstrap/deployer-policy.json` で、5 文からなります。
+ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限定します(terraform が全資源に付けるタグです)。
 
 ```json
 {
@@ -664,9 +664,12 @@ terraform が管理する権限で、AWS 側と Kubernetes 側があります。
         "ecr:ListImages",
         "ecr:DescribeRepositories"
       ],
-      "Resource": [
-        "arn:aws:ecr:ap-northeast-1:<ACCOUNT_ID>:repository/app"
-      ]
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "<cluster_name>"
+        }
+      }
     },
     {
       "Sid": "EksKubeconfig",
@@ -732,20 +735,21 @@ EKS の Access Entry に、次の 3 つを結びつけています。
 AWS の推奨に合わせた点は次のとおりです。
 
 - IAM ユーザーではなくロールを使い、長期のアクセスキーを発行しない
-- 権限は最小にし、IAM の対象は資源名の接頭辞(`<cluster_name>-*`)で限定する
+- IAM のロールとポリシーは管理者が作り、builder は作れないようにする
 - EKS の認可は aws-auth ConfigMap ではなく Access Entry で行う
 - cluster-admin は platform だけが持ち、アプリ担当は namespace 限定にする
 - namespace と ResourceQuota は platform が terraform で管理し、アプリ担当は変更できない
 - deployer が terraform 外にクラウド資源を作れないよう、ResourceQuota で LoadBalancer と PVC を 0 にする
-- 段 0 でマネージャーに頼むのは terraform 実行ロールの作成 1 件だけにし、残りは builder の権限内で完結させる
+- 段 0 でマネージャーに頼むのは `setup-iam.sh` の 1 回だけにし、残りは builder の権限内で完結させる
+- 構築先のアカウントを `allowed_account_ids` で固定し、別のアカウントへの誤った構築を防ぐ
 
 ## セキュリティの現状
 
 | 領域 | 守れている点 |
 | --- | --- |
-| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。外から届くのは CloudFront 経由の HTTPS だけで、NLB はセキュリティグループで CloudFront 以外を拒否する。外へ出るのは NAT の固定 IP だけ。プレフィックスリストは他人の CloudFront も含むため、アプリ側の認証(Slack 署名など)が前提 |
+| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。NLB は内部向けで、CloudFront から VPC origin で届く。CloudFront から NLB までの HTTP はインターネットを通らない。外へ出るのは NAT の固定 IP だけ。CloudFront の URL は誰でも開けるため、アプリ側の認証(Slack 署名など)が前提 |
 | 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
-| builder | IAM の対象を資源名で限り、付けられるポリシーを PolicyARN 条件で限っている。管理者ポリシーは直接付けられない。ただし deployer のポリシーの書き換えで迂回できる |
+| builder | IAM のロールとポリシーを作れない。できるのは EKS へのロールの受け渡しと deployer ロールの信頼先の書き換えだけで、自分の権限を広げる経路がない |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
 | 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
 | Pod の権限 | namespace に Pod Security の baseline を強制し、特権 Pod と hostPath を拒否する |
@@ -758,7 +762,6 @@ AWS の推奨に合わせた点は次のとおりです。
 | --- | --- |
 | 独自ドメインと証明書 | ACM と独自ドメインを使う。または CloudFront の既定ドメインのまま使う |
 | EKS endpoint の制限 | API サーバーに接続できる CIDR を限定する |
-| Permissions Boundary | builder が作るロールの権限に上限を設ける |
 | 申請する権限の絞り込み | 共有アカウントでは、管理ポリシーを使わず最小構成を申請する |
 | 監査ログ | CloudTrail と EKS の audit ログを有効にする |
 | image の脆弱性検査 | ECR の scan_on_push を有効にする |

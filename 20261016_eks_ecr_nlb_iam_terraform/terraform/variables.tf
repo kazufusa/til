@@ -37,20 +37,6 @@ variable "ecr_repository_names" {
   }
 }
 
-variable "deployer_trusted_principals" {
-  description = "deployer ロールにスイッチできる IAM principal の ARN。空なら terraform を実行している実行者自身のロールを信頼する。移植先(dev 環境)ではその人物の ARN を default に書く。sts の assumed-role ARN ではなく iam のロール/ユーザー ARN を書く"
-  type        = list(string)
-  default     = []
-
-  validation {
-    condition = alltrue([
-      for arn in var.deployer_trusted_principals :
-      can(regex("^arn:aws:iam::[0-9]{12}:(role|user)/", arn))
-    ])
-    error_message = "各要素は arn:aws:iam::<account>:role/... または :user/... の形式にしてください。"
-  }
-}
-
 variable "deployer_namespaces" {
   description = "deployer が admin 権限を持つ namespace。terraform がこの namespace と ResourceQuota を作る"
   type        = list(string)
@@ -83,4 +69,10 @@ variable "log_retention_days" {
     condition     = contains([1, 3, 5, 7, 14, 30, 60, 90], var.log_retention_days)
     error_message = "log_retention_days は 1, 3, 5, 7, 14, 30, 60, 90 のいずれかにしてください。"
   }
+}
+
+variable "allowed_account_ids" {
+  description = "構築を許可するアカウント ID。空なら制限しない。移植先では ID を直書きして、別のアカウントでは止まるようにする"
+  type        = list(string)
+  default     = []
 }

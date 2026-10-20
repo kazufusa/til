@@ -3,21 +3,21 @@
 会社で行う流れを、個人アカウントで最初から最後まで再現する手順です。
 会社には builder と開発者の個人ロールが最初からありますが、個人アカウントには無いので、
 空のロールを 2 つ作って代役にします。それ以外は会社と同じコマンドです。
-所要時間は 1 時間弱で、費用は 0.3 USD ほどです。
+所要時間は 1 時間強で、費用は 0.3 USD ほどです。
 
 ## 会社と練習の対応
 
 | 会社 | 練習(個人アカウント) |
 | --- | --- |
 | builder の個人ロール `cli-fl-<名前>` | 空のロール `practice-builder-login`(信頼先は自分の SSO ロール) |
-| マネージャーが権限を付ける | 自分が管理者権限で `attach-builder-policy.sh practice-builder-login` |
+| マネージャーが IAM を作り権限を付ける | 自分が管理者権限で `setup-iam.sh practice-builder-login` |
 | builder はログインしたまま terraform | `builder` プロファイルで `practice-builder-login` にスイッチして terraform |
 | 開発者の個人ロール | 空のロール `practice-developer-login` |
-| terraform が開発者に deployer ロールを許可 | `deployer_trusted_principals` にその ARN を渡す |
+| builder が開発者を deployer ロールの信頼先に足す | `AWS_PROFILE=builder scripts/set-deployers.sh <開発者役の ARN>` |
 | 開発者が deployer ロールにスイッチして deploy | `dev-login` → `deployer` の 2 段スイッチ |
 
-代役のロールは権限ゼロで作ります。builder 役の権限は attach で付けたものだけ、
-開発者役の権限は terraform が許可した deployer ロールだけになり、会社と同じ条件で試せます。
+代役のロールは権限ゼロで作ります。builder 役の権限は `setup-iam.sh` が付けたものだけ、
+開発者役の権限は信頼先に足された deployer ロールだけになり、会社と同じ条件で試せます。
 
 ## 前提
 
@@ -45,38 +45,40 @@ region         = ap-northeast-1
 | # | 役 | やること | 目安 |
 | --- | --- | --- | --- |
 | 1 | マネージャー | 空のロール `practice-builder-login` と `practice-developer-login` を作る(信頼先は自分の SSO ロール) | 1 分 |
-| 2 | マネージャー | `bootstrap/attach-builder-policy.sh practice-builder-login` | 1 分 |
-| 3 | builder | `aws sts get-caller-identity --profile builder` でスイッチ確認 | 1 分 |
+| 2 | マネージャー | `bootstrap/setup-iam.sh practice-builder-login` | 1 分 |
+| 3 | builder | `aws sts get-caller-identity --profile builder` でスイッチ確認。`aws iam create-role` が拒否されることも確認 | 1 分 |
 | 4 | builder | `AWS_PROFILE=builder bootstrap/create-state-bucket.sh` | 1 分 |
 | 5 | builder | `terraform init`(`profile=builder` とバケット名を引数で渡す) | 1 分 |
-| 6 | builder | `terraform apply -var aws_profile=builder -var 'deployer_trusted_principals=["<開発者役の ARN>"]'`(48 資源) | 15 分 |
+| 6 | builder | `terraform apply -var aws_profile=builder` | 20 分 |
 | 7 | builder | `terraform output` を見る。`scripts/render-deployer-doc.sh` で developer ページを生成して読む | 2 分 |
-| 8 | deployer | `aws sts get-caller-identity --profile deployer` で `eks-exp-deployer` へのスイッチ確認 | 1 分 |
-| 9 | deployer | ECR にログイン、`docker build`、`docker push` | 3 分 |
-| 10 | deployer | `update-kubeconfig`(`--alias` と `--user-alias`)、manifest を `apply -n app`、`rollout status` | 2 分 |
-| 11 | deployer | 確認: HTTPS の URL、`/news`、`kubectl get nodes`、`kubectl logs`、CloudWatch のログ | 5 分 |
-| 12 | builder | `scripts/preflight-destroy.sh` → `terraform destroy -var aws_profile=builder`(48 資源) | 15 分 |
-| 13 | builder | `bootstrap/delete-state-bucket.sh` → `scripts/check-leftovers.sh` | 2 分 |
-| 14 | マネージャー | `bootstrap/detach-builder-policy.sh practice-builder-login`、空のロール 2 つを削除 | 1 分 |
+| 8 | builder | `AWS_PROFILE=builder scripts/set-deployers.sh <開発者役の ARN>` | 1 分 |
+| 9 | deployer | `aws sts get-caller-identity --profile deployer` で `eks-exp-deployer` へのスイッチ確認 | 1 分 |
+| 10 | deployer | ECR にログイン、`docker build`、`docker push` | 3 分 |
+| 11 | deployer | `update-kubeconfig`(`--alias` と `--user-alias`)、manifest を `apply -n app`、`rollout status` | 2 分 |
+| 12 | deployer | 確認: HTTPS の URL、`/news`、NLB に外から届かない、`kubectl get nodes`、`kubectl logs`、CloudWatch のログ | 5 分 |
+| 13 | builder | `scripts/preflight-destroy.sh` → `terraform destroy -var aws_profile=builder` | 20 分 |
+| 14 | builder | `bootstrap/delete-state-bucket.sh` | 1 分 |
+| 15 | マネージャー | `bootstrap/teardown-iam.sh practice-builder-login`、空のロール 2 つを削除、`scripts/check-leftovers.sh` | 2 分 |
 
-会社では 1 と 14 の空ロールの作成と削除が無く、3 のスイッチも不要です。
-6 の `deployer_trusted_principals` は、会社では `variables.tf` に書きます(private リポジトリのため)。
+会社では 1 と 15 の空ロールの作成と削除が無く、3 のスイッチも不要です。
+会社では `variables.tf` の `allowed_account_ids` にアカウント ID を書きます(この練習では空のまま)。
 
 ## 各手順の合格の目安
 
 | # | 期待する出力 |
 | --- | --- |
 | 1 | `aws iam list-attached-role-policies` がどちらのロールも空 |
-| 2 | `practice-builder-login` に 4 つ並ぶ |
-| 3 | `assumed-role/practice-builder-login/...` |
+| 2 | ロール `eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer` とポリシー 2 つができ、`practice-builder-login` に 4 つ並ぶ |
+| 3 | `assumed-role/practice-builder-login/...`。`create-role` は AccessDenied |
 | 4 | `created: tfstate-<ACCOUNT_ID>-eks-exp` |
 | 5 | `Terraform has been successfully initialized!` |
-| 6 | `Apply complete! Resources: 48 added, 0 changed, 0 destroyed.`。`not authorized` が無い |
+| 6 | `Apply complete!`。`not authorized` が無い |
 | 7 | 生成したページに `{{` が残っていない |
-| 8 | `assumed-role/eks-exp-deployer/...` |
-| 9 | `docker push` が完了し、`aws ecr describe-images` に `v1` |
-| 10 | `deployment "web" successfully rolled out` |
-| 11 | HTTPS で `hello from eks-exp`、`/news` に日本語の見出し、`get nodes` でノード 1 台が `Ready` |
-| 12 | `Destroy complete! Resources: 48 destroyed.` |
-| 13 | `RESULT: clean`(削除直後はタグ索引の遅れで数件残って見えることがある) |
-| 14 | `aws iam get-role` が両方とも `NoSuchEntity`、`tf-builder-policy` も無い |
+| 8 | 許可した principal に開発者役と builder 役の 2 つが並ぶ |
+| 9 | `assumed-role/eks-exp-deployer/...` |
+| 10 | `docker push` が完了し、`aws ecr describe-images` に `v1` |
+| 11 | `deployment "web" successfully rolled out` |
+| 12 | HTTPS で `hello from eks-exp`、`/news` に日本語の見出し、NLB の直叩きは失敗、`get nodes` でノード 1 台が `Ready` |
+| 13 | `Destroy complete!` |
+| 14 | `deleted bucket: ...` |
+| 15 | ロール 3 つとポリシー 2 つが `NoSuchEntity`、`RESULT: clean`(タグ索引の遅れで数件残って見えることがある) |

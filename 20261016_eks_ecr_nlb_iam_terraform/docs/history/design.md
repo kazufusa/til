@@ -349,3 +349,14 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 | NLB | 0.0243 |
 
 1 周あたり作成に約 20 分、destroy に約 15 分かかります。
+
+## 第 2 期の設計変更(2026-10-20)
+
+移植先の方針に合わせて、次の 4 点を変えました。詳細は `docs/history/plan.md` の第 2 期にあります。
+
+- IAM のロールとポリシーは terraform で作らず、マネージャーが `setup-iam.sh` で作る。builder は IAM を作れない
+- 開発者の追加は、builder が `set-deployers.sh` で deployer ロールの信頼先を書き換える
+- NLB は内部向けにし、CloudFront から VPC origin で届かせる
+- provider の `allowed_account_ids` で構築先のアカウントを固定する
+
+これに伴い、`deployer_trusted_principals` 変数、`tf-builder` ロール、attach と detach のスクリプトは廃止しました。

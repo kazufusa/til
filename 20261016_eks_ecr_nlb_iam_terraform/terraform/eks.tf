@@ -1,28 +1,16 @@
 # terraform/eks.tf
-data "aws_iam_policy_document" "eks_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["eks.amazonaws.com"]
-    }
-  }
+# IAM ロールは管理者が事前に作る。terraform は名前で参照するだけで、作成も変更もしない
+data "aws_iam_role" "cluster" {
+  name = "${var.cluster_name}-cluster"
 }
 
-resource "aws_iam_role" "cluster" {
-  name               = "${local.name_prefix}-cluster"
-  assume_role_policy = data.aws_iam_policy_document.eks_assume.json
-}
-
-resource "aws_iam_role_policy_attachment" "cluster" {
-  role       = aws_iam_role.cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+data "aws_iam_role" "node" {
+  name = "${var.cluster_name}-node"
 }
 
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
-  role_arn = aws_iam_role.cluster.arn
+  role_arn = data.aws_iam_role.cluster.arn
 
   access_config {
     authentication_mode                         = "API"
@@ -37,41 +25,12 @@ resource "aws_eks_cluster" "main" {
 
   # CloudWatch ロググループを残さないため、コントロールプレーンログは有効にしない
   enabled_cluster_log_types = []
-
-  depends_on = [aws_iam_role_policy_attachment.cluster]
-}
-
-data "aws_iam_policy_document" "ec2_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "node" {
-  name               = "${local.name_prefix}-node"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
-}
-
-resource "aws_iam_role_policy_attachment" "node" {
-  for_each = toset([
-    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-  ])
-
-  role       = aws_iam_role.node.name
-  policy_arn = each.value
 }
 
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${local.name_prefix}-ng"
-  node_role_arn   = aws_iam_role.node.arn
+  node_role_arn   = data.aws_iam_role.node.arn
   subnet_ids      = aws_subnet.private[*].id
   instance_types  = ["t3.medium"]
 
@@ -87,8 +46,5 @@ resource "aws_eks_node_group" "main" {
 
   # ノードはNAT経由の出口がないと起動に失敗するため、
   # privateルートテーブルの関連付けが済んでから作成する
-  depends_on = [
-    aws_iam_role_policy_attachment.node,
-    aws_route_table_association.private,
-  ]
+  depends_on = [aws_route_table_association.private]
 }

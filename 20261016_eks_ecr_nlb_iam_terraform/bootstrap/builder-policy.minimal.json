@@ -156,59 +156,24 @@
       "Resource": "*"
     },
     {
-      "Sid": "IamRolesScoped",
+      "Sid": "IamPassRolesToEks",
       "Effect": "Allow",
-      "Action": [
-        "iam:CreateRole",
-        "iam:DeleteRole",
-        "iam:UpdateRole",
-        "iam:UpdateRoleDescription",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:PassRole"
-      ],
+      "Action": "iam:PassRole",
       "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/eks-exp-deployer"
-      ]
-    },
-    {
-      "Sid": "IamAttachOnlyKnownPolicies",
-      "Effect": "Allow",
-      "Action": [
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy"
-      ],
-      "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/eks-exp-deployer"
+        "arn:aws:iam::*:role/eks-exp-cluster",
+        "arn:aws:iam::*:role/eks-exp-node"
       ],
       "Condition": {
-        "ArnEquals": {
-          "iam:PolicyARN": [
-            "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-            "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-            "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
-            "arn:aws:iam::*:policy/eks-exp-deployer-policy"
-          ]
+        "StringEquals": {
+          "iam:PassedToService": "eks.amazonaws.com"
         }
       }
     },
     {
-      "Sid": "IamPoliciesScoped",
+      "Sid": "IamDeployerTrust",
       "Effect": "Allow",
-      "Action": [
-        "iam:CreatePolicy",
-        "iam:DeletePolicy",
-        "iam:CreatePolicyVersion",
-        "iam:DeletePolicyVersion",
-        "iam:TagPolicy",
-        "iam:UntagPolicy"
-      ],
-      "Resource": "arn:aws:iam::*:policy/eks-exp-deployer-policy"
+      "Action": "iam:UpdateAssumeRolePolicy",
+      "Resource": "arn:aws:iam::*:role/eks-exp-deployer"
     },
     {
       "Sid": "ServiceLinkedRoles",
@@ -276,15 +241,6 @@
       "Sid": "LogsDescribe",
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
-      "Resource": "*"
-    },
-    {
-      "Sid": "PrefixList",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeManagedPrefixLists",
-        "ec2:GetManagedPrefixListEntries"
-      ],
       "Resource": "*"
     }
   ]

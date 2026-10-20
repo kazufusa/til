@@ -4,3 +4,4 @@
 kubeconfig*
 tfplan
 bootstrap/rendered/
+IMG_*.jpeg
