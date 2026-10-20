@@ -4,23 +4,37 @@ locals {
 }
 
 resource "aws_security_group" "nlb" {
-  name        = "${local.name_prefix}-nlb"
-  description = "NLB: allow HTTP from within the VPC"
+  name_prefix = "${local.name_prefix}-nlb-"
+  description = "NLB: allow HTTP from CloudFront VPC origin only"
   vpc_id      = aws_vpc.main.id
 
   tags = {
     Name = "${local.name_prefix}-nlb"
   }
+
+  # NLB に付いたまま差し替えられるように、新しい SG を作ってから古い SG を消す
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# NLB は internal なので、届くのは VPC 内の送信元(ノード、CloudFront の VPC origin の ENI)だけ
+# CloudFront は VPC origin を作ると、その VPC に CloudFront-VPCOrigins-Service-SG という SG を作り、
+# ENI にそれを付けて NLB へつなぐ。NLB の SG はこの SG からの 80 を SG 参照で許可する必要がある。
+# VPC の CIDR を許可しても VPC origin の通信は通らない(2026-10-20 の検証で確認)
+data "aws_security_group" "cloudfront_vpc_origins" {
+  vpc_id = aws_vpc.main.id
+  name   = "CloudFront-VPCOrigins-Service-SG"
+
+  depends_on = [aws_cloudfront_vpc_origin.main]
+}
+
 resource "aws_vpc_security_group_ingress_rule" "nlb_http" {
-  security_group_id = aws_security_group.nlb.id
-  description       = "HTTP from within the VPC"
-  cidr_ipv4         = aws_vpc.main.cidr_block
-  from_port         = 80
-  to_port           = 80
-  ip_protocol       = "tcp"
+  security_group_id            = aws_security_group.nlb.id
+  description                  = "HTTP from CloudFront VPC origin"
+  referenced_security_group_id = data.aws_security_group.cloudfront_vpc_origins.id
+  from_port                    = 80
+  to_port                      = 80
+  ip_protocol                  = "tcp"
 }
 
 resource "aws_vpc_security_group_egress_rule" "nlb_all" {
