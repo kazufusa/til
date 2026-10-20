@@ -512,3 +512,22 @@ kubernetes リソースの `_v1`、API エンドポイントの CIDR 変数、`s
 ### 費用
 
 3 周で約 1 USD です。
+
+## 第 3 期の設計での検証(2026-10-20)
+
+### 目的
+
+deployer ロールを廃止し、開発者の個人ロールに `eks-exp-deployer-policy` を直接付ける形(a82fca9)で、
+ゼロから撤去まで通ることを確かめます。
+
+### 確かめること
+
+- マネージャーの `setup-iam.sh` と `attach-deployer-policy.sh` で IAM がそろう
+- builder は IAM の書き込みが PassRole だけでも apply と destroy が通る
+- terraform が `deployer_role_arns` の ARN に EKS の Access Entry を作る
+- 開発者役がスイッチ無しで push、deploy、動作確認できる
+- `teardown-iam.sh` で開発者のロールからもポリシーが外れ、残骸が残らない
+
+### 結果
+
+(実施後に記入)
