@@ -2332,3 +2332,19 @@ CloudFront から NLB までの HTTP 通信をインターネットに出さな�
 マネージャー役が `setup-iam.sh practice-builder-login`、builder 役が apply、
 builder 役が `set-deployers.sh` で開発者役を足し、開発者役が deploy、
 builder 役が destroy、マネージャー役が `teardown-iam.sh` です。
+
+## 第 3 期: 開発者の権限を個人ロールに直接付ける(2026-10-20)
+
+deployer ロールへのスイッチをやめ、builder と同じく、開発者の個人ロールに `<名前>-deployer-policy` を直接付けます。
+
+| 項目 | これまで | これから |
+| --- | --- | --- |
+| マネージャー `setup-iam.sh` | ロール 3 つ + ポリシー 2 つ | EKS 用のロール 2 つ + ポリシー 2 つ。deployer ロールは作らない |
+| 開発者の IAM 権限 | deployer ロールにスイッチ | マネージャーが `attach-deployer-policy.sh <個人ロール名>` で付ける(1 人 1 回) |
+| 開発者の EKS 権限 | deployer ロールの Access Entry | builder が `variables.tf` の `deployer_role_arns` に ARN を書いて apply。開発者ごとに Access Entry |
+| builder の IAM 権限 | PassRole + deployer の信頼先書き換え | PassRole のみ |
+| 開発者の `~/.aws/config` | `deployer` プロファイルでスイッチ | 不要。ログインしたまま |
+
+builder に `iam:AttachRolePolicy` を持たせて terraform で付ける案は、PolicyARN で縛っても IAM の書き込みであり、
+「builder は IAM を作れない」方針に反するので採りませんでした。
+開発者の追加はマネージャー 1 回(IAM)と builder の apply 1 回(EKS)です。ARN は開発者本人が `sts get-caller-identity` で調べます。

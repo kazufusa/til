@@ -19,16 +19,15 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 1. EKS の全操作(`eks:*`)。書き込みは、名前が `<名前>` のクラスタとその配下の資源に限ります。Auto Scaling は負荷分散先の関連付けだけ
 2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
-3. IAM は、EKS へ渡すロール 2 つ(`<名前>-cluster`、`<名前>-node`)の PassRole と、
-   `<名前>-deployer` の信頼先の書き換え(UpdateAssumeRolePolicy)だけ。
-   ロールとポリシーの作成、削除、付け外しはできません
+3. IAM は、EKS へ渡すロール 2 つ(`<名前>-cluster`、`<名前>-node`)の PassRole だけ。
+   ロールとポリシーの作成、削除、付け外し、信頼先の変更はできません
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
 5. 各サービスの参照(Describe、List、Get)
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
 7. 実験で見つかった ec2 の 3 つ。`GetSecurityGroupsForVpc`(NLB 作成時)、`DisassociateAddress`(EIP 解放時)、
    `DescribeAddressesAttribute`(EIP 作成後の読み取り)
 
-### deployer(<名前>-deployer、マネージャーが作り builder が信頼先を書く側)
+### deployer(開発者の個人ロールに `<名前>-deployer-policy` を付けてもらう側)
 
 | 層 | できること | できないこと |
 | --- | --- | --- |
@@ -42,7 +41,7 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 
 > ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
 > EKS は、自分のクラスタ名の資源に限った全権です。
-> IAM のロールとポリシーは作れません。できるのは、EKS へのロールの受け渡しと、deployer ロールの信頼先の書き換えだけです。
+> IAM のロールとポリシーは作れません。できるのは、EKS へのロールの受け渡し(PassRole)だけです。
 > 自分の権限を広げる経路はありません。
 
 細かい最小権限の JSON は付録にあり、厳しく見たい場合に示します。
@@ -65,7 +64,7 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 カスタムポリシーの内容は、次の 7 項目です。
 
 - EKS: `eks:*`(書き込みはクラスタ名で限定)と、Auto Scaling の負荷分散先の関連付け
-- IAM: EKS へ渡すロール 2 つの PassRole と、deployer ロールの信頼先の書き換えだけ
+- IAM: EKS へ渡すロール 2 つの PassRole だけ
 - S3: state バケットの名前で限定
 - CloudFront: HTTPS の入口の作成と削除
 - 参照: 各サービスの Describe、Get、List
@@ -118,59 +117,18 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Resource": "*"
     },
     {
-      "Sid": "IamRolesScoped",
+      "Sid": "IamPassRolesToEks",
       "Effect": "Allow",
-      "Action": [
-        "iam:CreateRole",
-        "iam:DeleteRole",
-        "iam:UpdateRole",
-        "iam:UpdateRoleDescription",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:PassRole"
-      ],
+      "Action": "iam:PassRole",
       "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/eks-exp-deployer"
-      ]
-    },
-    {
-      "Sid": "IamAttachOnlyKnownPolicies",
-      "Effect": "Allow",
-      "Action": [
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy"
-      ],
-      "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/eks-exp-deployer"
+        "arn:aws:iam::*:role/eks-exp-cluster",
+        "arn:aws:iam::*:role/eks-exp-node"
       ],
       "Condition": {
-        "ArnEquals": {
-          "iam:PolicyARN": [
-            "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-            "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-            "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
-            "arn:aws:iam::*:policy/eks-exp-deployer-policy"
-          ]
+        "StringEquals": {
+          "iam:PassedToService": "eks.amazonaws.com"
         }
       }
-    },
-    {
-      "Sid": "IamPoliciesScoped",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreatePolicy",
-        "iam:DeletePolicy",
-        "iam:CreatePolicyVersion",
-        "iam:DeletePolicyVersion",
-        "iam:TagPolicy",
-        "iam:UntagPolicy"
-      ],
-      "Resource": "arn:aws:iam::*:policy/eks-exp-deployer-policy"
     },
     {
       "Sid": "ServiceLinkedRoles",
@@ -236,15 +194,6 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
       "Resource": "*"
-    },
-    {
-      "Sid": "PrefixList",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeManagedPrefixLists",
-        "ec2:GetManagedPrefixListEntries"
-      ],
-      "Resource": "*"
     }
   ]
 }
@@ -309,11 +258,10 @@ IAM のロールとポリシーは作れません。
 
 次の 4 点を、申請文でそのまま説明します。
 
-1. IAM の書き込みは 2 つだけです。EKS へ渡すロール 2 つの `iam:PassRole`(渡し先は eks.amazonaws.com に限定)と、
-   `<cluster_name>-deployer` の `iam:UpdateAssumeRolePolicy` です。
-   deployer ロールの権限(ポリシー)は変えられません。
-2. builder は deployer ロールの信頼先に任意の ARN を書けます。
-   チームの検証環境として受け入れ、信頼先の変更は `scripts/set-deployers.sh` の実行記録で追います。
+1. IAM の書き込みは 1 つだけです。EKS へ渡すロール 2 つの `iam:PassRole`(渡し先は eks.amazonaws.com に限定)です。
+   開発者への権限付与はマネージャーが行い、builder は関与しません。
+2. builder は EKS の Access Entry を作れるので、クラスタ内の権限なら任意のロールに付けられます。
+   クラスタはこの環境専用なので受け入れます。
 3. EC2、ELB、ECR、CloudFront は Resource が `*` です。
    builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
 4. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
@@ -495,59 +443,18 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
       "Resource": "*"
     },
     {
-      "Sid": "IamRolesScoped",
+      "Sid": "IamPassRolesToEks",
       "Effect": "Allow",
-      "Action": [
-        "iam:CreateRole",
-        "iam:DeleteRole",
-        "iam:UpdateRole",
-        "iam:UpdateRoleDescription",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:TagRole",
-        "iam:UntagRole",
-        "iam:PassRole"
-      ],
+      "Action": "iam:PassRole",
       "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/eks-exp-deployer"
-      ]
-    },
-    {
-      "Sid": "IamAttachOnlyKnownPolicies",
-      "Effect": "Allow",
-      "Action": [
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy"
-      ],
-      "Resource": [
-        "arn:aws:iam::*:role/eks-exp-*",
-        "arn:aws:iam::*:role/eks-exp-deployer"
+        "arn:aws:iam::*:role/eks-exp-cluster",
+        "arn:aws:iam::*:role/eks-exp-node"
       ],
       "Condition": {
-        "ArnEquals": {
-          "iam:PolicyARN": [
-            "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-            "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-            "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
-            "arn:aws:iam::*:policy/eks-exp-deployer-policy"
-          ]
+        "StringEquals": {
+          "iam:PassedToService": "eks.amazonaws.com"
         }
       }
-    },
-    {
-      "Sid": "IamPoliciesScoped",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreatePolicy",
-        "iam:DeletePolicy",
-        "iam:CreatePolicyVersion",
-        "iam:DeletePolicyVersion",
-        "iam:TagPolicy",
-        "iam:UntagPolicy"
-      ],
-      "Resource": "arn:aws:iam::*:policy/eks-exp-deployer-policy"
     },
     {
       "Sid": "ServiceLinkedRoles",
@@ -616,15 +523,6 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
       "Resource": "*"
-    },
-    {
-      "Sid": "PrefixList",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeManagedPrefixLists",
-        "ec2:GetManagedPrefixListEntries"
-      ],
-      "Resource": "*"
     }
   ]
 }
@@ -632,13 +530,13 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
 
 ## deployer の権限
 
-AWS 側はマネージャーが `setup-iam.sh` で作り、Kubernetes 側は terraform が管理します。
-ロールの名前は `<cluster_name>-deployer` で、ポリシーの名前は `<cluster_name>-deployer-policy` です。
-スイッチできる人は、builder が `scripts/set-deployers.sh` で信頼先に書きます。
+AWS 側はマネージャーが `attach-deployer-policy.sh` で開発者の個人ロールに付け、Kubernetes 側は terraform が管理します。
+ポリシーの名前は `<cluster_name>-deployer-policy` です。スイッチ先のロールはありません。
+開発者の ARN は builder が `deployer_role_arns` に書き、terraform が EKS の Access Entry を作ります。
 
 ### AWS 側
 
-実体は `bootstrap/deployer-policy.json` で、5 文からなります。
+実体は `bootstrap/deployer-policy.json` で、5 文からなります。名前の `eks-exp` は `cluster_name` に置き換わります。
 ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限定します(terraform が全資源に付けるタグです)。
 
 ```json
@@ -652,7 +550,7 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
       "Resource": "*"
     },
     {
-      "Sid": "EcrPushPullAppRepo",
+      "Sid": "EcrPushPullProjectRepos",
       "Effect": "Allow",
       "Action": [
         "ecr:BatchCheckLayerAvailability",
@@ -669,7 +567,7 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "aws:ResourceTag/Project": "<cluster_name>"
+          "aws:ResourceTag/Project": "eks-exp"
         }
       }
     },
@@ -677,7 +575,7 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
       "Sid": "EksKubeconfig",
       "Effect": "Allow",
       "Action": "eks:DescribeCluster",
-      "Resource": "arn:aws:eks:ap-northeast-1:<ACCOUNT_ID>:cluster/<cluster_name>"
+      "Resource": "arn:aws:eks:*:*:cluster/eks-exp"
     },
     {
       "Sid": "LogsRead",
@@ -697,8 +595,8 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
         "logs:StopQuery"
       ],
       "Resource": [
-        "arn:aws:logs:ap-northeast-1:<ACCOUNT_ID>:log-group:/aws/containerinsights/<cluster_name>/*",
-        "arn:aws:logs:ap-northeast-1:<ACCOUNT_ID>:log-group:/aws/containerinsights/<cluster_name>/*:*"
+        "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*",
+        "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*:*"
       ]
     }
   ]
@@ -751,8 +649,8 @@ AWS の推奨に合わせた点は次のとおりです。
 | 領域 | 守れている点 |
 | --- | --- |
 | ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。NLB は内部向けで、CloudFront から VPC origin で届く。NLB の SG は CloudFront が作る SG からの 80 だけを許可する。CloudFront から NLB までの HTTP はインターネットを通らない。外へ出るのは NAT の固定 IP だけ。CloudFront の URL は誰でも開けるため、アプリ側の認証(Slack 署名など)が前提 |
-| 人の認証 | 長期のアクセスキーがない。SSO ログインの後にスイッチロールで作業する |
-| builder | IAM のロールとポリシーを作れない。できるのは EKS へのロールの受け渡しと deployer ロールの信頼先の書き換えだけで、自分の権限を広げる経路がない |
+| 人の認証 | 長期のアクセスキーがない。builder も開発者も、ログインした個人ロールのまま作業する |
+| builder | IAM のロールとポリシーを作れない。できるのは EKS へのロールの受け渡しだけで、自分の権限を広げる経路がない |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
 | 壊せない設計 | ResourceQuota が LoadBalancer と PVC を拒否するので、terraform 外に資源が残らず、destroy で戻せる |
 | Pod の権限 | namespace に Pod Security の baseline を強制し、特権 Pod と hostPath を拒否する |

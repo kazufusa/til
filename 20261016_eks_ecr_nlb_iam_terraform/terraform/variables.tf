@@ -82,3 +82,17 @@ variable "endpoint_public_access_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "deployer_role_arns" {
+  description = "アプリ開発者の個人ロールの ARN。terraform がこのロールに EKS の Access Entry を作る(IAM のポリシーは管理者が attach-deployer-policy.sh で付ける)。移植先ではここに書いて commit する。SSO のロールはパス(aws-reserved/sso.amazonaws.com/<リージョン>/)を除いた ARN を書く"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.deployer_role_arns :
+      can(regex("^arn:aws:iam::[0-9]{12}:role/[^/]+$", arn))
+    ])
+    error_message = "各要素は arn:aws:iam::<account>:role/<ロール名> の形式にしてください(パスは付けない)。"
+  }
+}

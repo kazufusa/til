@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # IAM をすべて作る。マネージャーが管理者権限で 1 回だけ実行する。
-# 作業者は IAM を作れないので、ロールとポリシーはここで揃える。terraform はロールを名前で参照するだけ。
+# 作業者は IAM を作れないので、ロールとポリシーはここで揃える。terraform はロールとポリシーを名前で参照するだけ。
+# アプリ開発者の個人ロールには、別途 attach-deployer-policy.sh で <名前>-deployer-policy を付ける。
 # 使い方: [PROJECT=<名前>] bootstrap/setup-iam.sh <作業者の個人ロール名>
 #   例: bootstrap/setup-iam.sh cli-fl-taro.yamada
 # 消すときは bootstrap/teardown-iam.sh <作業者の個人ロール名>
@@ -15,9 +16,8 @@ POLICY_PREFIX="arn:aws:iam::${ACCOUNT_ID}:policy"
 TAG="Key=Project,Value=${PROJECT}"
 EKS_TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"eks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 EC2_TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-DEPLOYER_TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::'"${ACCOUNT_ID}"':role/'"${PERSONAL_ROLE}"'"},"Action":"sts:AssumeRole"}]}'
 
-# 1. 自作ポリシーを 2 つ作る(作業者用と、デプロイ担当用)
+# 1. 自作ポリシーを 2 つ作る(作業者用と、アプリ開発者用)
 aws iam create-policy --policy-name "${PROJECT}-builder-policy" --policy-document file://builder-policy.json --tags "$TAG" >/dev/null
 aws iam create-policy --policy-name "${PROJECT}-deployer-policy" --policy-document file://deployer-policy.json --tags "$TAG" >/dev/null
 
@@ -32,15 +32,11 @@ aws iam attach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:ia
 aws iam attach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly
 aws iam attach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
 
-# 4. デプロイ担当ロール。最初は作業者の個人ロールだけがスイッチできる(追加は scripts/set-deployers.sh)
-aws iam create-role --role-name "${PROJECT}-deployer" --assume-role-policy-document "$DEPLOYER_TRUST" --tags "$TAG" >/dev/null
-aws iam attach-role-policy --role-name "${PROJECT}-deployer" --policy-arn "${POLICY_PREFIX}/${PROJECT}-deployer-policy"
-
-# 5. 作業者の個人ロールにポリシーを 4 つ付ける。権限 = AWS 管理 3 つ + 自作 1 つの合計
+# 4. 作業者の個人ロールにポリシーを 4 つ付ける。権限 = AWS 管理 3 つ + 自作 1 つの合計
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/AmazonVPCFullAccess
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn "${POLICY_PREFIX}/${PROJECT}-builder-policy"
 
 set +x
-echo "arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-deployer"
+echo "${POLICY_PREFIX}/${PROJECT}-deployer-policy"

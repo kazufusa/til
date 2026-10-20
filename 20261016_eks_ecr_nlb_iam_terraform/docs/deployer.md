@@ -9,7 +9,7 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 
 | 項目 | 値 |
 | --- | --- |
-| ロール ARN | `arn:aws:iam::123456789012:role/eks-exp-deployer` |
+| 権限が付いているロール | `arn:aws:iam::123456789012:role/dev-hanako` |
 | クラスタ名 | `eks-exp` |
 | リージョン | `ap-northeast-1` |
 | ECR リポジトリ | `123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app` |
@@ -20,22 +20,13 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | アプリのログ(CloudWatch Logs) | `/aws/containerinsights/eks-exp/application` |
 | 外向き通信の送信元 IP | `203.0.113.10` |
 
-## プロファイルの設定
+## 権限の確認
 
-`~/.aws/config` に、次のプロファイルを足します。
-
-```ini
-[profile deployer]
-role_arn       = arn:aws:iam::123456789012:role/eks-exp-deployer
-source_profile = <自分のログインプロファイル>
-region         = ap-northeast-1
-```
-
-設定できたかは、次のコマンドで確かめます。
-出力の ARN に `eks-exp-deployer` が含まれていれば成功です。
+権限は、あなたがログインに使っているロールに付いています。スイッチは要りません。
+次のコマンドの出力のロール名が、上の表の「権限が付いているロール」にあれば準備できています。
 
 ```bash
-aws sts get-caller-identity --profile deployer
+aws sts get-caller-identity --query Arn --output text
 ```
 
 ## image の push
@@ -44,7 +35,7 @@ ECR にログインし、image を build して push します。
 
 ```bash
 ECR=123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app
-aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
+aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
 docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
 ```
@@ -54,7 +45,7 @@ docker push "${ECR}:v1"
 kubeconfig を作り、manifest の image 名を置き換えて apply します。
 
 ```bash
-aws eks update-kubeconfig --name eks-exp --region ap-northeast-1 --profile deployer --alias <alias> --user-alias <alias>
+aws eks update-kubeconfig --name eks-exp --region ap-northeast-1 --alias <alias> --user-alias <alias>
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
 kubectl -n app rollout status deploy/web
 curl https://d0123456789abc.cloudfront.net/
@@ -111,7 +102,7 @@ Pod が消えると、kubectl では見えなくなります。
 次のコマンドで読めます。
 
 ```bash
-aws logs tail /aws/containerinsights/eks-exp/application --follow --profile deployer --region ap-northeast-1
+aws logs tail /aws/containerinsights/eks-exp/application --follow --region ap-northeast-1
 ```
 
 読み取りの権限があるのは、このクラスタのロググループだけです。

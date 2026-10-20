@@ -13,7 +13,7 @@
 | deployer | aws cli v2、kubectl、docker |
 
 名前(`eks-exp`)を変える場合は、builder が先に `terraform/variables.tf` の `cluster_name` を変えます。
-次に `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 2 本と JSON 3 枚)を
+次に `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 4 本と JSON 3 枚)を
 `bootstrap/rendered/<名前>/` に作り、そのフォルダごと渡します。
 以後の builder のスクリプトは `PROJECT=<名前>` を付けて実行します。
 
@@ -26,8 +26,14 @@ builder から、builder の個人ロール名を受け取ります。
 bootstrap/setup-iam.sh <builder の個人ロール名>
 ```
 
-これで、ロール 3 つ(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer`)とポリシー 2 つができ、
+これで、ロール 2 つ(`eks-exp-cluster`、`eks-exp-node`)とポリシー 2 つができ、
 builder の個人ロールに AWS 管理ポリシー 3 つと `eks-exp-builder-policy` が付きます。
+
+アプリ開発者が決まったら、その人の個人ロール名を受け取って 1 回ずつ実行します。
+
+```bash
+bootstrap/attach-deployer-policy.sh <開発者の個人ロール名>
+```
 撤去は `bootstrap/teardown-iam.sh <builder の個人ロール名>` です。
 ポリシーの中身を更新するときは、撤去してからもう一度作ります。
 
@@ -84,19 +90,19 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を deployer に渡します。
-deployer の IAM ロールの ARN を、`eks-exp-deployer` の信頼先に足します。
+deployer の個人ロールの ARN を `terraform/variables.tf` の `deployer_role_arns` に書いて apply します。
+EKS の Access Entry ができ、kubectl が使えるようになります。
+IAM 側(ECR の push とログの参照)は、マネージャーが `attach-deployer-policy.sh` で付けます。
 
 ```bash
-AWS_PROFILE=builder scripts/set-deployers.sh <deployer の IAM ロールの ARN> ...
+cd terraform && terraform apply -var aws_profile=builder && cd ..
 ```
-
-渡した ARN と自分が、スイッチできる全員になります。増減するときも全員分を渡します。
 
 ### 5. 日々の運用
 
 | やること | コマンド |
 | --- | --- |
-| 開発者を足す、外す | `scripts/set-deployers.sh <ARN> ...` に全員分を渡す(terraform は不要) |
+| 開発者を足す、外す | マネージャーに `attach-deployer-policy.sh` / `detach-deployer-policy.sh` を頼み、`variables.tf` の `deployer_role_arns` を変えて apply |
 | namespace を足す | `variables.tf` の `deployer_namespaces` に追加して apply |
 | ECR を足す | `variables.tf` の `ecr_repository_names` に追加して apply |
 | ノードを増やす | `variables.tf` の `node_count` を変えて apply |
@@ -120,24 +126,20 @@ scripts/check-leftovers.sh
 
 値は builder から受け取った `docs/deployer.md` に書いてあります。
 
-### 1. deployer ロールにスイッチする設定
+### 1. 権限の確認
 
-```ini
-[profile deployer]
-role_arn       = <deployer.md のロール ARN>
-source_profile = <自分のログインプロファイル>
-region         = ap-northeast-1
-```
+権限は自分のログインのロールに付いているので、スイッチは不要です。
+出力のロール名が `docs/deployer.md` の「権限が付いているロール」にあれば準備できています。
 
 ```bash
-aws sts get-caller-identity --profile deployer
+aws sts get-caller-identity --query Arn --output text
 ```
 
 ### 2. image の push
 
 ```bash
 ECR=<deployer.md の ECR リポジトリ>
-aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
+aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
 docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
 ```
@@ -145,7 +147,7 @@ docker push "${ECR}:v1"
 ### 3. デプロイ
 
 ```bash
-aws eks update-kubeconfig --name eks-exp --profile deployer --alias eks-exp-deployer --user-alias eks-exp-deployer
+aws eks update-kubeconfig --name eks-exp --alias eks-exp-deployer --user-alias eks-exp-deployer
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl --context eks-exp-deployer apply -n app -f -
 kubectl --context eks-exp-deployer -n app rollout status deploy/web
 ```
@@ -156,7 +158,7 @@ kubectl --context eks-exp-deployer -n app rollout status deploy/web
 curl -s <deployer.md の公開 URL>
 curl -s <deployer.md の公開 URL>news
 kubectl --context eks-exp-deployer -n app logs deploy/web --tail=20
-aws logs tail /aws/containerinsights/eks-exp/application --since 10m --profile deployer
+aws logs tail /aws/containerinsights/eks-exp/application --since 10m
 ```
 
 ### 5. 更新するとき

@@ -13,8 +13,9 @@ cd <terraform を置いたディレクトリ>
 bootstrap/setup-iam.sh <私の個人ロール名>
 ```
 
-これで、ロール 3 つ(EKS 用 2 つ、アプリ開発者用 1 つ)とポリシー 2 つができ、私の個人ロールに権限が付きます。
-その後のマネージャーの作業は、撤去時の 1 回(`bootstrap/teardown-iam.sh <私の個人ロール名>`)だけです。
+これで、EKS 用のロール 2 つとポリシー 2 つができ、私の個人ロールに権限が付きます。
+その後のマネージャーの作業は、アプリ開発者を足すときの `bootstrap/attach-deployer-policy.sh <開発者の個人ロール名>`(1 人 1 回)と、
+撤去時の 1 回(`bootstrap/teardown-iam.sh <私の個人ロール名>`)です。
 
 ## 作られるもの
 
@@ -22,16 +23,15 @@ bootstrap/setup-iam.sh <私の個人ロール名>
 | --- | --- | --- |
 | `<名前>-cluster` | ロール | EKS のコントロールプレーン用。AmazonEKSClusterPolicy |
 | `<名前>-node` | ロール | ノード用。EKS のワーカー 3 つと CloudWatchAgentServerPolicy |
-| `<名前>-deployer` | ロール | アプリ開発者がスイッチする。信頼先の初期値は私のロール |
 | `<名前>-builder-policy` | ポリシー | 私の個人ロールに付ける。AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と組み合わせる |
-| `<名前>-deployer-policy` | ポリシー | `<名前>-deployer` に付ける。ECR の push、クラスタ情報の参照、ログの読み取り |
+| `<名前>-deployer-policy` | ポリシー | アプリ開発者の個人ロールに付ける。ECR の push、クラスタ情報の参照、ログの読み取り |
 
 ## 設計の要点
 
 - IAM のロールとポリシーは、私(builder)が terraform で作らず、すべてマネージャーが作ります。
   私はロールとポリシーを作れません。作れると、自分に任意の権限を与えられてしまうためです
-- アプリ開発者の追加は、私がスクリプトで `<名前>-deployer` の信頼先を書き換えます。
-  マネージャーの作業は要りません
+- アプリ開発者も私と同じく、個人ロールに `<名前>-deployer-policy` を付けてもらいます(スイッチ無し)。
+  Kubernetes 側の権限(Access Entry)は、私が terraform の変数に ARN を書いて apply します
 - NLB はインターネットに出さず、CloudFront から VPC origin で届きます
 - アカウント ID を terraform に直書きし、ほかのアカウントでは止まります
 - HTTPS の入口(CloudFront の既定ドメイン)、EKS の構成、アプリ開発者の権限の範囲は、個人アカウントでの検証時のままです
@@ -40,7 +40,7 @@ bootstrap/setup-iam.sh <私の個人ロール名>
 
 ネットワーク、ロードバランサ、ECR は AWS 管理ポリシーをそのまま使います。
 EKS は、自分のクラスタ名の資源に限った全権です。
-IAM は、参照と、EKS へ渡すロール 2 つの PassRole と、`<名前>-deployer` の信頼先の書き換えだけです。
+IAM は、参照と、EKS へ渡すロール 2 つの PassRole だけです。ロール、ポリシー、付け外しはできません。
 S3 は名前が `tfstate-*-<名前>` のバケットだけ、CloudWatch Logs は `/aws/containerinsights/<名前>/` 配下だけです。
 この権限で apply から destroy まで通ることは、個人アカウントで検証済みです。
 
@@ -55,7 +55,7 @@ S3 は名前が `tfstate-*-<名前>` のバケットだけ、CloudWatch Logs は
 
 作業後に、私が terraform destroy と state バケットの削除を行います。
 最後にマネージャーに `bootstrap/teardown-iam.sh <私の個人ロール名>` を頼みます。
-ロール 3 つとポリシー 2 つが消え、私のロールから権限が外れます。
+ロール 2 つとポリシー 2 つが消え、私と開発者のロールから権限が外れます。
 
 ## 自分のロール名の調べ方
 

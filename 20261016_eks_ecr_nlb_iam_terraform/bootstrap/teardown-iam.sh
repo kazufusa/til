@@ -17,9 +17,13 @@ aws iam detach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam
 aws iam detach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess || true
 aws iam detach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn "${POLICY_PREFIX}/${PROJECT}-builder-policy" || true
 
-# 2. デプロイ担当ロールを消す
-aws iam detach-role-policy --role-name "${PROJECT}-deployer" --policy-arn "${POLICY_PREFIX}/${PROJECT}-deployer-policy" || true
-aws iam delete-role --role-name "${PROJECT}-deployer" || true
+# 2. 自作ポリシー 2 つを、付いているロールすべてから外す(開発者のロールに残っている分も含む)
+for p in builder deployer; do
+  arn="${POLICY_PREFIX}/${PROJECT}-${p}-policy"
+  for r in $(aws iam list-entities-for-policy --policy-arn "$arn" --entity-filter Role --query 'PolicyRoles[].RoleName' --output text 2>/dev/null || true); do
+    aws iam detach-role-policy --role-name "$r" --policy-arn "$arn" || true
+  done
+done
 
 # 3. ノード用ロールを消す
 aws iam detach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy || true

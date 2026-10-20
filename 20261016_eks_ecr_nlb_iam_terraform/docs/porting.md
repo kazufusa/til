@@ -22,13 +22,14 @@
 | --- | --- | --- |
 | `terraform/variables.tf` の `cluster_name` | 環境の名前(例: `dev-web`) | 2〜20 文字、英小文字と数字とハイフン。全資源の接頭辞になる |
 | `terraform/variables.tf` の `region`、`terraform/backend.tf` の `region` | リージョン | 両方を同じ値にする |
+| `terraform/variables.tf` の `deployer_role_arns` | アプリ開発者の個人ロールの ARN | 開発者に `aws sts get-caller-identity` を打ってもらう。SSO のロールはパスを除く |
 | `terraform/variables.tf` の `allowed_account_ids` | 構築先のアカウント ID | `["123456789012"]` の形で直書きする。別のアカウントでは plan の段階で止まる |
 | `terraform/variables.tf` の `ecr_repository_names` | ECR の名前 | サービスごとに 1 つ |
 | `terraform/variables.tf` の `log_retention_days` | ログの保存日数 | dev は 30 日 |
 | `terraform/variables.tf` の `node_count` | ノード数 | dev は 1 |
 
 名前を変えたら、`scripts/render-policy.sh <名前>` を実行します。
-`bootstrap/rendered/<名前>/` に、名前を置き換えた JSON 3 枚とスクリプト 2 本がそろいます。
+`bootstrap/rendered/<名前>/` に、名前を置き換えた JSON 3 枚とスクリプト 4 本がそろいます。
 マネージャーに渡すのはこのフォルダです。
 
 ## 3. 自分の権限を頼む
@@ -42,7 +43,8 @@ aws sts get-caller-identity --query Arn --output text
 
 `docs/request.md` の文面で、マネージャーに `setup-iam.sh <ロール名>` の実行を頼みます。
 渡すのは `bootstrap/rendered/<名前>/` の中身です。
-実行すると、ロール 3 つとポリシー 2 つができ、自分の個人ロールに権限が付きます。
+実行すると、EKS 用のロール 2 つとポリシー 2 つができ、自分の個人ロールに権限が付きます。
+開発者ごとに `attach-deployer-policy.sh <開発者のロール名>` も頼みます。
 付くのは AWS 管理ポリシー 3 つと `<名前>-builder-policy` で、内容は `docs/permissions.md` にあります。
 
 ## 4. 作る
@@ -80,7 +82,8 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を渡します。会社のリポジトリ(private)なら、そのまま commit して構いません。
-開発者を足すときは、`scripts/set-deployers.sh <ARN> ...` に全員分の ARN を渡します。terraform は触りません。
+開発者を足すときは、マネージャーに `attach-deployer-policy.sh` を頼みます。
+あわせて `deployer_role_arns` に ARN を足して apply します。
 
 ## 7. 本番へ持っていくとき(dev の後)
 

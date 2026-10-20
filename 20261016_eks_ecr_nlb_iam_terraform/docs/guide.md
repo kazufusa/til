@@ -37,8 +37,8 @@ arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/<リージョン>/
 
 IAM のロールとポリシーは、terraform では作りません。
 builder がロールを作れると、自分に任意の権限を与えられてしまうからです。
-そこで、マネージャーが `setup-iam.sh` で、ロール 3 つとポリシー 2 つをまとめて作り、
-builder の個人ロールに権限を付けます。これが段 0 です。
+そこで、マネージャーが `setup-iam.sh` で、EKS 用のロール 2 つとポリシー 2 つをまとめて作り、
+builder の個人ロールに権限を付けます。開発者の個人ロールには `attach-deployer-policy.sh` で付けます。これが段 0 です。
 
 段 1 では、権限の付いた builder が、残りのすべてを terraform で作ります。
 ネットワーク、EKS、ECR、NLB、CloudFront です。IAM ロールは名前で参照するだけです。
@@ -141,20 +141,21 @@ deployer が manifest に書くのは、image の名前だけです。
 Pod を起こすときは、ノードが ECR から image を引いてきます。
 
 pull の権限は、ノードのロール(`<cluster_name>-node`)にあります。
-push の権限は、`<cluster_name>-deployer` のロールにあります。
-どちらもマネージャーが `setup-iam.sh` で付けています。builder は変更できません。
+push の権限は、開発者の個人ロールに付けた `<cluster_name>-deployer-policy` にあります。
+どちらもマネージャーがスクリプトで付けています。builder は変更できません。
 deployer 自身は、どちらの権限も変更できません。
 
 ## 10. マネージャーへの頼み方
 
-マネージャーに渡すのは、スクリプト 2 本とポリシーの JSON 3 枚です。
-作成用の `setup-iam.sh` と、撤去用の `teardown-iam.sh` です。
+マネージャーに渡すのは、スクリプト 4 本とポリシーの JSON 3 枚です。
+作成用の `setup-iam.sh` と撤去用の `teardown-iam.sh`、
+開発者用の `attach-deployer-policy.sh` と `detach-deployer-policy.sh` です。
 JSON は builder 用の `builder-policy.json`、deployer 用の `deployer-policy.json`、参考の最小権限版です。
 頼むのは、`setup-iam.sh <自分のロール名>` の実行 1 回だけです。
 
 ポリシーは、実験で apply から destroy まで通して検証したものです。
 builder は IAM のロールとポリシーを作れないので、自分の権限を広げることはできません。
-builder にできる IAM の書き込みは、`<cluster_name>-deployer` の信頼先の書き換えだけです。
+builder にできる IAM の書き込みは、EKS へロールを渡す PassRole だけです。
 詳細は `docs/permissions.md` と `docs/request.md` にあります。
 
 ## 付録 構成と手順の詳細
@@ -204,7 +205,7 @@ terraform 1.11 以上、aws cli v2、kubectl、docker、jq を使います。
 bootstrap/setup-iam.sh <builder の個人ロール名>
 ```
 
-ロール 3 つとポリシー 2 つができ、builder の個人ロールに権限が付きます。
+ロール 2 つとポリシー 2 つができ、builder の個人ロールに権限が付きます。
 実験では、自分が管理者としてこのスクリプトを実行します。
 
 #### 0-b. state バケット作成(builder)
@@ -230,7 +231,7 @@ bootstrap/create-state-bucket.sh
 移植先(dev 環境)では、構築先のアカウント ID を書いて commit します。
 書く場所は `terraform/variables.tf` の `allowed_account_ids` の `default` です。
 空のままだとどのアカウントでも動きます(実験用)。
-開発者の ARN は terraform には書かず、apply の後に `scripts/set-deployers.sh` で deployer ロールの信頼先に足します。
+開発者の個人ロールの ARN は `deployer_role_arns` に書きます。terraform はその ARN に EKS の Access Entry を作ります。
 tfvars と backend.hcl は使いません。
 
 ```bash
@@ -307,5 +308,5 @@ destroy 後に残ることを許容するものは 3 種類です。
 
 `scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
 EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
-IAM ロール 3 つ(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-deployer`)とポリシー 2 つも対象です。
+IAM ロール 2 つ(`eks-exp-cluster`、`eks-exp-node`)とポリシー 2 つも対象です。
 `/aws/eks/` 配下のロググループも確かめます。

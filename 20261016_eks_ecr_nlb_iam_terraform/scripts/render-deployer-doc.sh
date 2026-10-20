@@ -21,7 +21,7 @@ fi
 get() { jq -er "$1" <<<"$json"; }
 esc() { printf '%s' "$1" | sed -e 's/[\/&|]/\\&/g'; }
 
-role_arn="$(get .deployer_role_arn.value)"
+role_arns="$(get '.deployer_role_arns.value | join(", ")')"
 cluster="$(get .cluster_name.value)"
 region="$(get .region.value)"
 ecr="$(get .ecr_repository_url.value)"
@@ -33,7 +33,7 @@ https="$(get .https_url.value)"
 log_group="$(get '.log_group_application.value // "(ログ転送は無効です)"')"
 
 sed \
-  -e "s|{{DEPLOYER_ROLE_ARN}}|$(esc "$role_arn")|g" \
+  -e "s|{{DEPLOYER_ROLE_ARNS}}|$(esc "$role_arns")|g" \
   -e "s|{{CLUSTER_NAME}}|$(esc "$cluster")|g" \
   -e "s|{{REGION}}|$(esc "$region")|g" \
   -e "s|{{ECR_REPOSITORY_URL}}|$(esc "$ecr")|g" \

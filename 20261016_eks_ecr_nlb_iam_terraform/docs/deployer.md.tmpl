@@ -9,7 +9,7 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 
 | 項目 | 値 |
 | --- | --- |
-| ロール ARN | `{{DEPLOYER_ROLE_ARN}}` |
+| 権限が付いているロール | `{{DEPLOYER_ROLE_ARNS}}` |
 | クラスタ名 | `{{CLUSTER_NAME}}` |
 | リージョン | `{{REGION}}` |
 | ECR リポジトリ | `{{ECR_REPOSITORY_URL}}` |
@@ -20,22 +20,13 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | アプリのログ(CloudWatch Logs) | `{{LOG_GROUP_APPLICATION}}` |
 | 外向き通信の送信元 IP | `{{NAT_PUBLIC_IP}}` |
 
-## プロファイルの設定
+## 権限の確認
 
-`~/.aws/config` に、次のプロファイルを足します。
-
-```ini
-[profile deployer]
-role_arn       = {{DEPLOYER_ROLE_ARN}}
-source_profile = <自分のログインプロファイル>
-region         = {{REGION}}
-```
-
-設定できたかは、次のコマンドで確かめます。
-出力の ARN に `{{CLUSTER_NAME}}-deployer` が含まれていれば成功です。
+権限は、あなたがログインに使っているロールに付いています。スイッチは要りません。
+次のコマンドの出力のロール名が、上の表の「権限が付いているロール」にあれば準備できています。
 
 ```bash
-aws sts get-caller-identity --profile deployer
+aws sts get-caller-identity --query Arn --output text
 ```
 
 ## image の push
@@ -44,7 +35,7 @@ ECR にログインし、image を build して push します。
 
 ```bash
 ECR={{ECR_REPOSITORY_URL}}
-aws ecr get-login-password --profile deployer | docker login --username AWS --password-stdin "${ECR%/*}"
+aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR%/*}"
 docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
 ```
@@ -54,7 +45,7 @@ docker push "${ECR}:v1"
 kubeconfig を作り、manifest の image 名を置き換えて apply します。
 
 ```bash
-aws eks update-kubeconfig --name {{CLUSTER_NAME}} --region {{REGION}} --profile deployer --alias <alias> --user-alias <alias>
+aws eks update-kubeconfig --name {{CLUSTER_NAME}} --region {{REGION}} --alias <alias> --user-alias <alias>
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n {{NAMESPACE}} -f -
 kubectl -n {{NAMESPACE}} rollout status deploy/web
 curl {{HTTPS_URL}}
@@ -111,7 +102,7 @@ Pod が消えると、kubectl では見えなくなります。
 次のコマンドで読めます。
 
 ```bash
-aws logs tail {{LOG_GROUP_APPLICATION}} --follow --profile deployer --region {{REGION}}
+aws logs tail {{LOG_GROUP_APPLICATION}} --follow --region {{REGION}}
 ```
 
 読み取りの権限があるのは、このクラスタのロググループだけです。

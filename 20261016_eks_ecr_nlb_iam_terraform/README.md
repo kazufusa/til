@@ -13,16 +13,16 @@
 - kubectl で、サンプルの Slack アプリ(署名検証、メンション返信)をデプロイできる
 - 全 Pod のログが CloudWatch Logs に転送され、30 日間残る
 - image を置く ECR がある(リポジトリは複数指定できる)
-- deployer ロール(既定は `eks-exp-deployer`)で、image の push とデプロイができる
+- 開発者は自分のロールのまま、image の push とデプロイができる(スイッチ不要)
 - 構築先のアカウントを固定できる(`allowed_account_ids`)
 
 ## 役割と IAM
 
 | 役割 | 誰 | 使うロール | できること |
 | --- | --- | --- | --- |
-| マネージャー | 管理者 | 自分の管理者権限 | `setup-iam.sh` でロール 3 つとポリシー 2 つを作り、builder に権限を付ける(1 回)。撤去は `teardown-iam.sh` |
-| builder | 環境を作る人 | 自分の個人ロール(権限を付けてもらう) | terraform の apply と destroy、開発者の追加(`set-deployers.sh`) |
-| deployer | アプリ開発者 | `eks-exp-deployer`(スイッチ) | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
+| マネージャー | 管理者 | 自分の管理者権限 | `setup-iam.sh` でロール 2 つとポリシー 2 つを作り、builder に権限を付ける(1 回)。開発者ごとに `attach-deployer-policy.sh`。撤去は `teardown-iam.sh` |
+| builder | 環境を作る人 | 自分の個人ロール(権限を付けてもらう) | terraform の apply と destroy。開発者の ARN を `variables.tf` に書いて apply |
+| deployer | アプリ開発者 | 自分の個人ロール(権限を付けてもらう) | ECR への push、namespace `app` の admin、クラスタ全体の読み取り |
 
 IAM のロールとポリシーは terraform では作りません。
 builder がロールを作れると自分に任意の権限を与えられるため、マネージャーがまとめて作ります。
@@ -31,9 +31,8 @@ builder がロールを作れると自分に任意の権限を与えられるた
 | --- | --- | --- |
 | `eks-exp-cluster` | ロール | EKS のコントロールプレーン用 |
 | `eks-exp-node` | ロール | ノード(EC2)用。ECR の pull と CloudWatch Logs への書き込み |
-| `eks-exp-deployer` | ロール | 開発者がスイッチする。信頼先は builder が書き換える |
 | `eks-exp-builder-policy` | ポリシー | builder の個人ロールに付ける。AWS 管理ポリシー 3 つと組み合わせる |
-| `eks-exp-deployer-policy` | ポリシー | `eks-exp-deployer` に付ける |
+| `eks-exp-deployer-policy` | ポリシー | 開発者の個人ロールに付ける |
 
 ## 最短手順
 
@@ -43,7 +42,7 @@ builder がロールを作れると自分に任意の権限を与えられるた
 bootstrap/setup-iam.sh <builder の個人ロール名>   # 例: cli-fl-taro.yamada
 ```
 
-実行すると、隣の JSON 2 枚からポリシー 2 つが登録され、ロール 3 つが作られます。
+実行すると、隣の JSON 2 枚からポリシー 2 つが登録され、EKS 用のロール 2 つが作られます。
 続けて、builder の個人ロールに AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と
 `eks-exp-builder-policy` が付きます。builder はこれで terraform を回せます。
 
@@ -60,20 +59,21 @@ terraform output
 最初の行で、state を置く S3 バケットが作られます。
 `init` でそのバケットを terraform に教え、`apply` で VPC から EKS、ECR、NLB、CloudFront まで作ります。
 IAM ロールは名前で参照するだけです。
-`output` で、deployer に渡す値(ロール ARN、ECR の URL、公開 URL など)が表示されます。
+`output` で、deployer に渡す値(ECR の URL、公開 URL など)が表示されます。
 
-### 3. builder: 開発者を deployer ロールの信頼先に足す
+### 3. 開発者を足す(マネージャーと builder が 1 回ずつ)
 
 ```bash
-scripts/set-deployers.sh <開発者の IAM ロールの ARN> ...
+bootstrap/attach-deployer-policy.sh <開発者の個人ロール名>   # マネージャー
 ```
 
-渡した ARN の一覧(と自分)が、`eks-exp-deployer` にスイッチできる全員になります。
-開発者を増やすときも減らすときも同じコマンドで、terraform は触りません。
+マネージャーが開発者の個人ロールに `eks-exp-deployer-policy` を付けます(ECR の push とログの参照)。
+builder は `terraform/variables.tf` の `deployer_role_arns` に開発者のロール ARN を足して apply します。
+これで EKS 側の権限(Access Entry)が付き、kubectl が使えます。開発者を外すときは逆の手順です。
 
 ### 4. deployer: image を push してデプロイする
 
-`docs/deployer.md` の手順どおりに、ECR へ push し、kubectl で namespace `app` へ配置します。
+開発者は自分のログインのまま、`docs/deployer.md` の手順どおりに ECR へ push し、kubectl で namespace `app` へ配置します。
 役割ごとのコマンドを順に並べた一覧は `docs/runbook.md` にあります。
 
 ## deployer への引き渡し
@@ -84,7 +84,7 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 
 | 渡すもの | 出所 | 用途 |
 | --- | --- | --- |
-| deployer ロールの ARN | `terraform output deployer_role_arn` | `~/.aws/config` の role_arn |
+| 権限が付いているロール | `terraform output deployer_role_arns` | 自分のロールが入っているかの確認 |
 | クラスタ名とリージョン | `cluster_name`、`region` | update-kubeconfig |
 | ECR リポジトリの URL | `ecr_repository_url`(先頭の 1 つ。全部は `ecr_repository_urls`) | push と manifest の image |
 | namespace | `deployer_namespaces`(既定 `app`) | デプロイ先 |
@@ -99,7 +99,7 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 - 名前の元になる語は、今は `eks-exp` です。ロール、ポリシー、クラスタ、NLB、バケット、タグに接頭辞として入っています。
 - 変えるときは、次の 3 手順を踏みます。
   1. terraform の変数 `cluster_name` を変えます。
-  2. `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 2 本と JSON 3 枚)を作ります。
+  2. `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 4 本と JSON 3 枚)を作ります。
   3. 以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
 - NLB の名前は 32 文字までです。稼働後に変えると、terraform が作り直します。
 
@@ -108,7 +108,7 @@ builder が apply の後に `scripts/render-deployer-doc.sh` を実行します�
 ```
 terraform/   EKS、ネットワーク、NLB、CloudFront、ECR の terraform(IAM は名前で参照するだけ)
 bootstrap/   マネージャーが実行する IAM のスクリプトと、ポリシーの JSON
-scripts/     開発者の追加、deployer ページの生成、destroy 前の確認、残骸の検査
+scripts/     deployer ページの生成、destroy 前の確認、残骸の検査、名前の置換
 app/         サンプルアプリの Dockerfile と manifest
 docs/        解説、権限、申請文、実験ログ、設計、計画
 ```

@@ -22,9 +22,9 @@ output "ecr_repository_urls" {
   value       = { for name, r in aws_ecr_repository.app : name => r.repository_url }
 }
 
-output "deployer_role_arn" {
-  description = "deployer に渡すスイッチロール先"
-  value       = data.aws_iam_role.deployer.arn
+output "deployer_role_arns" {
+  description = "EKS の権限を付けた開発者の個人ロール"
+  value       = var.deployer_role_arns
 }
 
 output "node_port" {

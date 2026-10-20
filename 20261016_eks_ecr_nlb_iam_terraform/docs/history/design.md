@@ -360,3 +360,9 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 - provider の `allowed_account_ids` で構築先のアカウントを固定する
 
 これに伴い、`deployer_trusted_principals` 変数、`tf-builder` ロール、attach と detach のスクリプトは廃止しました。
+
+## 第 3 期の設計変更(2026-10-20)
+
+deployer ロールを廃止し、開発者の個人ロールに `<名前>-deployer-policy` を直接付けます(builder と同じ形)。
+IAM はマネージャーが `attach-deployer-policy.sh` で付け、EKS の Access Entry は terraform が `deployer_role_arns` から作ります。
+builder の IAM 権限は PassRole だけになり、`set-deployers.sh` は廃止しました。詳細は `docs/history/plan.md` の第 3 期にあります。

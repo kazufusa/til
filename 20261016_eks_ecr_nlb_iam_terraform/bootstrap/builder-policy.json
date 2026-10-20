@@ -53,12 +53,6 @@
       }
     },
     {
-      "Sid": "IamDeployerTrust",
-      "Effect": "Allow",
-      "Action": "iam:UpdateAssumeRolePolicy",
-      "Resource": "arn:aws:iam::*:role/eks-exp-deployer"
-    },
-    {
       "Sid": "ServiceLinkedRoles",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
