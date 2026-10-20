@@ -14,6 +14,9 @@ data "aws_caller_identity" "current" {}
 
 data "aws_availability_zones" "available" {
   state = "available"
+  # 東京の apne1-az3 は CloudFront の VPC origin に対応していない。
+  # AZ 名と ID の対応はアカウントごとに違うので、ID で除いてから先頭 2 つを選ぶ
+  exclude_zone_ids = ["apne1-az3"]
 
   filter {
     name   = "opt-in-status"

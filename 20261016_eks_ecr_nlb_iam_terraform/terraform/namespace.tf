@@ -1,7 +1,7 @@
 # terraform/namespace.tf
 # deployer の namespace は platform(builder)が作る。
 # ResourceQuota で、terraform 外にクラウド資源(ELB、EBS)ができる経路を塞ぐ。
-resource "kubernetes_namespace" "deployer" {
+resource "kubernetes_namespace_v1" "deployer" {
   for_each = toset(var.deployer_namespaces)
 
   metadata {
@@ -19,12 +19,12 @@ resource "kubernetes_namespace" "deployer" {
   depends_on = [aws_eks_node_group.main]
 }
 
-resource "kubernetes_resource_quota" "no_cloud_resources" {
+resource "kubernetes_resource_quota_v1" "no_cloud_resources" {
   for_each = toset(var.deployer_namespaces)
 
   metadata {
     name      = "no-cloud-resources"
-    namespace = kubernetes_namespace.deployer[each.key].metadata[0].name
+    namespace = kubernetes_namespace_v1.deployer[each.key].metadata[0].name
   }
 
   spec {
@@ -37,7 +37,7 @@ resource "kubernetes_resource_quota" "no_cloud_resources" {
 
 # deployer がノードの状態を見られるようにする。AmazonEKSViewPolicy は namespace 内の資源だけで、
 # クラスタ直下の nodes を含まないため、読み取り専用の ClusterRole を別に用意する。
-resource "kubernetes_cluster_role" "node_viewer" {
+resource "kubernetes_cluster_role_v1" "node_viewer" {
   metadata {
     name = "node-viewer"
   }
@@ -51,7 +51,7 @@ resource "kubernetes_cluster_role" "node_viewer" {
   depends_on = [aws_eks_node_group.main]
 }
 
-resource "kubernetes_cluster_role_binding" "deployer_node_viewer" {
+resource "kubernetes_cluster_role_binding_v1" "deployer_node_viewer" {
   metadata {
     name = "${var.cluster_name}-deployers-node-viewer"
   }
@@ -59,7 +59,7 @@ resource "kubernetes_cluster_role_binding" "deployer_node_viewer" {
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "ClusterRole"
-    name      = kubernetes_cluster_role.node_viewer.metadata[0].name
+    name      = kubernetes_cluster_role_v1.node_viewer.metadata[0].name
   }
 
   subject {

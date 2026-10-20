@@ -22,6 +22,18 @@ resource "aws_eks_addon" "cloudwatch" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
+  # 既定では Application Signals の Auto-monitor が Service を持つ Pod に計測エージェントを差し込む。
+  # アプリの挙動が変わり課金も増えるので、ログ転送だけにする
+  configuration_values = jsonencode({
+    manager = {
+      applicationSignals = {
+        autoMonitor = {
+          monitorAllServices = false
+        }
+      }
+    }
+  })
+
   depends_on = [
     aws_eks_node_group.main,
     aws_cloudwatch_log_group.insights,

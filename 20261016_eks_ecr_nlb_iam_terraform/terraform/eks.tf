@@ -21,6 +21,7 @@ resource "aws_eks_cluster" "main" {
     subnet_ids              = aws_subnet.private[*].id
     endpoint_public_access  = true
     endpoint_private_access = true
+    public_access_cidrs     = var.endpoint_public_access_cidrs
   }
 
   # CloudWatch ロググループを残さないため、コントロールプレーンログは有効にしない

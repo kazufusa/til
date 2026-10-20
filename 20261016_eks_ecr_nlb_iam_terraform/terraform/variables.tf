@@ -76,3 +76,9 @@ variable "allowed_account_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "endpoint_public_access_cidrs" {
+  description = "EKS の API サーバーに公開エンドポイント経由で接続できる CIDR。既定は全アドレス。移植先では社内の IP に絞る"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

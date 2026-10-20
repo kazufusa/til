@@ -89,7 +89,7 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 | NAT Gateway | 1 台 | AZ ごと |
 | ログ保存 | 30 日 | 90 日以上 |
 | HTTPS | CloudFront の既定ドメイン | ACM 証明書と独自ドメイン |
-| EKS の API エンドポイント | パブリック | 社内 IP に限定 |
+| EKS の API エンドポイント | 全アドレスから接続可 | `endpoint_public_access_cidrs` を社内の IP に絞る |
 | builder の権限 | 管理ポリシー 3 つ + 自作 1 つ(IAM は作れない) | 共有アカウントなら最小権限版(`docs/permissions.md` の付録) |
 
 詳細は `docs/permissions.md` の「本番で追加を検討する対策」にあります。

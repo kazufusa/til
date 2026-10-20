@@ -13,10 +13,10 @@ for arn in "$@"; do
   [[ "$arn" =~ ^arn:aws:iam::[0-9]{12}:(role|user)/ ]] || { echo "invalid arn: $arn" >&2; exit 1; }
 done
 
-# 実行者自身の ARN。assumed-role なら元の IAM ロールの ARN に直す
+# 実行者自身の ARN。assumed-role なら元の IAM ロールを get-role で引く(パス付きのロールでも正しい ARN になる)
 caller="$(aws sts get-caller-identity --query Arn --output text)"
-if [[ "$caller" =~ ^arn:aws:sts::([0-9]{12}):assumed-role/([^/]+)/ ]]; then
-  caller="arn:aws:iam::${BASH_REMATCH[1]}:role/${BASH_REMATCH[2]}"
+if [[ "$caller" =~ ^arn:aws:sts::[0-9]{12}:assumed-role/([^/]+)/ ]]; then
+  caller="$(aws iam get-role --role-name "${BASH_REMATCH[1]}" --query Role.Arn --output text)"
 fi
 
 principals="$(printf '%s\n' "$caller" "$@" | sort -u | jq -R . | jq -sc .)"

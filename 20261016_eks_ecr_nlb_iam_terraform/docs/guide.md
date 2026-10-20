@@ -188,7 +188,7 @@ Pod の外向き通信は、private subnet のルートテーブルで NAT Gatew
 
 ### 前提ツール
 
-terraform 1.10 以上、aws cli v2、kubectl、docker、jq を使います。
+terraform 1.11 以上、aws cli v2、kubectl、docker、jq を使います。
 リージョンは ap-northeast-1 です。
 
 ### 手順(builder)

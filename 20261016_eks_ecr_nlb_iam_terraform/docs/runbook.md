@@ -9,7 +9,7 @@
 | 役割 | 必要なもの |
 | --- | --- |
 | マネージャー | 管理者権限の AWS CLI。terraform は不要 |
-| builder | terraform 1.10 以上、aws cli v2、kubectl、jq、docker |
+| builder | terraform 1.11 以上、aws cli v2、kubectl、jq、docker |
 | deployer | aws cli v2、kubectl、docker |
 
 名前(`eks-exp`)を変える場合は、builder が先に `terraform/variables.tf` の `cluster_name` を変えます。
