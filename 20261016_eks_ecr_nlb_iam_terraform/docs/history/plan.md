@@ -2291,3 +2291,44 @@ git add 20261016_eks_ecr_nlb_iam_terraform/
 git commit -m "20261016_eks_ecr_nlb_iam_terraform: 片付け完了、確定版の申請ポリシーと申請文をREADMEに記載"
 git push origin main
 ```
+
+## 第 2 期: 移植先(DD)の設計変更への追従(2026-10-20)
+
+移植先で決まった 4 つの変更を、この検証リポジトリにも入れます。
+変更の理由は、builder がロールとポリシーを作れると自分に任意の権限を与えられること、
+CloudFront から NLB までの HTTP 通信をインターネットに出さないこと、
+別アカウントへの誤った構築を防ぐことです。
+
+### 変更点
+
+| 項目 | これまで | これから |
+| --- | --- | --- |
+| IAM のロールとポリシー | builder が terraform で作る | マネージャーが `bootstrap/setup-iam.sh <個人ロール名>` 1 回で作る。builder は作れない |
+| 開発者の追加 | terraform の変数に ARN を書いて apply | builder が `scripts/set-deployers.sh <ARN>...` で deployer ロールの信頼先を書き換える |
+| NLB | インターネットに公開し、CloudFront の IP だけ許可 | 内部向け。CloudFront から VPC origin で届く |
+| 対象アカウント | どのアカウントでも動く | provider の `allowed_account_ids` で固定。公開リポジトリでは既定を空にする |
+
+### 名前の取り決め
+
+マネージャーのスクリプトと terraform の両方が、次の名前で合わせます。`<名前>` は `cluster_name` です。
+
+| 種類 | 名前 | 作る人 | 中身 |
+| --- | --- | --- | --- |
+| ロール | `<名前>-cluster` | マネージャー | 信頼先 eks.amazonaws.com、AmazonEKSClusterPolicy |
+| ロール | `<名前>-node` | マネージャー | 信頼先 ec2.amazonaws.com、WorkerNode、CNI、ECR PullOnly、CloudWatchAgentServerPolicy |
+| ロール | `<名前>-deployer` | マネージャー | 信頼先は builder の個人ロール(初期値)。`<名前>-deployer-policy` |
+| ポリシー | `<名前>-builder-policy` | マネージャー | `bootstrap/builder-policy.json`。builder の個人ロールに AWS 管理 3 つと一緒に付ける |
+| ポリシー | `<名前>-deployer-policy` | マネージャー | `bootstrap/deployer-policy.json`。ECR はタグ Project=<名前> で限定 |
+
+### builder の権限の変わり方
+
+- 消す: ロールとポリシーの作成、削除、ポリシーの付け外し
+- 残す: 参照(`iam:Get*`、`iam:List*`)、サービスリンクロールの作成
+- 足す: `<名前>-cluster` と `<名前>-node` の `iam:PassRole`、`<名前>-deployer` の `iam:UpdateAssumeRolePolicy`
+
+### 検証
+
+個人アカウントで、空のロール 2 つ(builder 役、開発者役)を代役にして通します。
+マネージャー役が `setup-iam.sh practice-builder-login`、builder 役が apply、
+builder 役が `set-deployers.sh` で開発者役を足し、開発者役が deploy、
+builder 役が destroy、マネージャー役が `teardown-iam.sh` です。
