@@ -673,3 +673,28 @@ SSM 用の VPC エンドポイントは、月 30 USD 前後かかるため採り
 - 古いポリシーでは、開発者役が builder 役のセッションを切れてしまう(直す前の状態)
 - マネージャーがポリシーの新しい版を既定にすると、開発者役は自分のセッションだけを切れる
 - builder 役と開発者役は、どちらも踏み台でシェルを開けず、`ssm:SendCommand` も使えない
+
+### 結果
+
+すべての確認項目が通りました。前の周回の撤去の後に 1 段目だけを作り、builder 役と開発者役のトンネルで試しました。
+
+| 確認 | 結果 |
+| --- | --- |
+| 古いポリシーで、開発者役が builder 役のセッションを終了 | 終了できてしまった(Terminated)。指摘どおり |
+| マネージャーがポリシーの新しい版を既定に | `create-policy-version --set-as-default` で 2 つとも v2 |
+| 新しいポリシーで、開発者役が builder 役のセッションを終了 | AccessDenied。セッションは Connected のまま |
+| 新しいポリシーで、builder 役が開発者役のセッションを終了 | AccessDenied。セッションは Connected のまま |
+| 新しいポリシーで、自分のセッションを終了 | 開発者役、builder 役とも通った |
+| ドキュメント無しのシェル、`SSM-SessionManagerRunShell` を指定したシェル | builder 役、開発者役とも AccessDenied |
+| `ssm:SendCommand`(`AWS-RunShellScript`) | builder 役、開発者役とも AccessDenied |
+| 撤去 | 19 資源を destroy。バケットは builder の権限で削除。`teardown-iam.sh` と代役ロールの削除の後、タグの索引以外は残骸 0 |
+
+### 確かめられたこと
+
+- `${aws:userid}` とタグ `aws:ssmmessages:session-id` の条件で、AssumeRole のロールでも自分のセッションだけを終了できる
+- 踏み台でシェルを開ける人とコマンドを流せる人は、管理者だけになっている
+- ポリシーを直すときは、マネージャーが新しい版を既定にすれば済み、ロールの付け直しは要らない
+
+### 費用
+
+2 周目と合わせて約 0.4 USD です。
