@@ -4,6 +4,7 @@
 
 アプリ開発者が最初に読むページです。
 image を ECR に push し、kubectl でアプリをデプロイするまでを説明します。
+EKS の API サーバーは VPC の中だけに公開してあり、kubectl は SSM のトンネルを通してつなぎます。
 
 ## あなたの環境
 
@@ -12,6 +13,7 @@ image を ECR に push し、kubectl でアプリをデプロイするまでを�
 | 権限が付いているロール | `arn:aws:iam::123456789012:role/dev-hanako` |
 | クラスタ名 | `eks-exp` |
 | リージョン | `ap-northeast-1` |
+| 踏み台(SSM)のインスタンス ID | `i-0123456789abcdef0` |
 | ECR リポジトリ | `123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/app` |
 | namespace | `app` |
 | NodePort | `30080` |
@@ -40,12 +42,32 @@ docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
 ```
 
-## デプロイ
+## トンネルの準備
 
-kubeconfig を作り、manifest の image 名を置き換えて apply します。
+API サーバーには、外から直接は届きません。
+手元から SSM のポート転送で踏み台を経由し、API サーバーまでトンネルを張ります。
+
+手元に `session-manager-plugin` を入れてから、端末 1 で次のスクリプトを動かします。
+スクリプトが kubeconfig を作り、接続先を `https://127.0.0.1:8443` に書き換えて、トンネルを前面で動かします。
+kubectl を使っている間は、端末 1 を閉じません。終えるときは Ctrl-C で止めます。
 
 ```bash
-aws eks update-kubeconfig --name eks-exp --region ap-northeast-1 --alias <alias> --user-alias <alias>
+scripts/eks-tunnel.sh eks-exp i-0123456789abcdef0
+```
+
+手元のポート 8443 が使われているときは、末尾に別のポート番号を足します。
+kubectl は、端末 2 で打ちます。ECR への push にトンネルは要りません。
+
+```bash
+kubectl -n app get pods
+```
+
+## デプロイ
+
+端末 2 で、manifest の image 名を置き換えて apply します。
+kubeconfig は、トンネルのスクリプトが作っています。
+
+```bash
 sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
 kubectl -n app rollout status deploy/web
 curl https://d0123456789abc.cloudfront.net/
@@ -129,6 +151,10 @@ LoadBalancer と PVC を拒否するのは、terraform の外にクラウド資�
 
 ## うまくいかないとき
 
+- `connection refused` が出るときは、端末 1 でトンネルが動いているか確かめます。止まっていたら、もう一度スクリプトを動かします。
+- `address already in use` が出るときは、手元のポートが使われています。スクリプトの末尾に別のポート番号を足します。
+- `session-manager-plugin is not installed` が出るときは、手元に `session-manager-plugin` を入れます。
+- `TargetNotConnected` や `AccessDeniedException` がトンネルで出るときは、踏み台の起動直後か、ポリシーが古い可能性があります。builder かマネージャーに伝えます。
 - `Forbidden` が出るときは、`-n app` を付けているか確かめます。他の namespace には書き込めません。
 - `exceeded quota` が出るときは、Service type=LoadBalancer や PVC を使っていないか確かめます。
 - Pod が Pending のときは、`kubectl get nodes` と `kubectl -n app describe pod` を見ます。

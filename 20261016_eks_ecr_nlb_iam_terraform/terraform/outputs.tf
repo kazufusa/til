@@ -7,6 +7,11 @@ output "cluster_name" {
   value = aws_eks_cluster.main.name
 }
 
+output "bastion_instance_id" {
+  description = "SSM のポート転送で API サーバーへ入るための踏み台"
+  value       = aws_instance.bastion.id
+}
+
 output "nlb_dns_name" {
   description = "CloudFront のオリジン。外から直接は届きません"
   value       = aws_lb.main.dns_name

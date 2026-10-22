@@ -77,10 +77,10 @@ variable "allowed_account_ids" {
   default     = []
 }
 
-variable "endpoint_public_access_cidrs" {
-  description = "EKS の API サーバーに公開エンドポイント経由で接続できる CIDR。既定は全アドレス。移植先では社内の IP に絞る"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
+variable "api_tunnel_port" {
+  description = "builder が SSM のポート転送で API サーバーへ張るトンネルの、手元のポート。kubernetes provider はここへ接続する"
+  type        = number
+  default     = 8443
 }
 
 variable "deployer_role_arns" {

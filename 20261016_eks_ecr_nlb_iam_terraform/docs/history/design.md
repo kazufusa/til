@@ -366,3 +366,39 @@ state バケットは周回中は残すため、`check-leftovers.sh` の対象�
 deployer ロールを廃止し、開発者の個人ロールに `<名前>-deployer-policy` を直接付けます(builder と同じ形)。
 IAM はマネージャーが `attach-deployer-policy.sh` で付け、EKS の Access Entry は terraform が `deployer_role_arns` から作ります。
 builder の IAM 権限は PassRole だけになり、`set-deployers.sh` は廃止しました。詳細は `docs/history/plan.md` の第 3 期にあります。
+
+## 第 4 期の設計変更(2026-10-22)
+
+EKS の API サーバーを、プライベートエンドポイントだけにしました。
+公開エンドポイントを CIDR で絞る方式(`endpoint_public_access_cidrs`)は廃止しました。
+入口は、private subnet に置いた踏み台(t4g.nano、AL2023 の arm64)です。公開 IP も SG の inbound も持たず、接続は SSM Session Manager だけです。
+この構成で、ゼロから撤去まで通ることを確かめました(2026-10-22、実験ログの第 4 期)。
+
+### SSH ではなく SSM を使う理由
+
+SSH は、22 番ポートの公開と鍵の配布が要ります。鍵の失効と棚卸しも運用に加わります。
+SSM なら、接続の許可は IAM ポリシー(`ssm:StartSession`)で決まります。
+開発者はログインした個人ロールのまま入れ、長期の鍵を持ちません。
+踏み台の SG は inbound を 1 つも開けずに済みます。
+
+### 踏み台の上ではなく手元で kubectl を動かす理由
+
+踏み台に入って kubectl を打つ方式も考えました。
+その場合、踏み台に kubectl と各人の認証情報を置くか、共有のロールを使うことになります。
+個人ロールの監査が曖昧になり、terraform も踏み台の上へ持ち込む必要があります。
+
+そこで、SSM のポート転送(`AWS-StartPortForwardingSessionToRemoteHost`)で、手元のポートを API サーバーの 443 へつなぎます。
+kubectl と terraform は手元のまま、個人ロールの認証で動きます。
+kubeconfig の接続先は `https://127.0.0.1:<port>` に書き換え、証明書はエンドポイントのホスト名(`tls-server-name`)で検証します。
+この処理は `scripts/eks-tunnel.sh` にまとめました。
+
+### 影響
+
+terraform の kubernetes provider も、トンネルの `https://127.0.0.1:${api_tunnel_port}` へつなぎます。
+そのため、新規構築は 2 段になります。先に `-target` で VPC、クラスタ、踏み台を作り、トンネルを張ってから残りを apply します。
+2 回目以降の plan、apply、destroy にもトンネルが要ります。
+kubernetes の資源は踏み台に依存させたので、destroy ではトンネルが生きている間にそれらが先に消えます。
+
+IAM は、マネージャーが踏み台用のロールと instance profile(`<名前>-bastion`)を作ります。
+builder のポリシーには、そのロールの PassRole、EC2 インスタンスの操作、SSM の接続を足しました。
+deployer のポリシーには、SSM の接続だけを足しました。ECR への push にトンネルは要りません。

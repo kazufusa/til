@@ -37,11 +37,11 @@ arn:aws:iam::<ACCOUNT_ID>:role/aws-reserved/sso.amazonaws.com/<リージョン>/
 
 IAM のロールとポリシーは、terraform では作りません。
 builder がロールを作れると、自分に任意の権限を与えられてしまうからです。
-そこで、マネージャーが `setup-iam.sh` で、EKS 用のロール 2 つとポリシー 2 つをまとめて作り、
+そこで、マネージャーが `setup-iam.sh` で、EKS と踏み台用のロール 3 つとポリシー 2 つをまとめて作り、
 builder の個人ロールに権限を付けます。開発者の個人ロールには `attach-deployer-policy.sh` で付けます。これが段 0 です。
 
 段 1 では、権限の付いた builder が、残りのすべてを terraform で作ります。
-ネットワーク、EKS、ECR、NLB、CloudFront です。IAM ロールは名前で参照するだけです。
+ネットワーク、EKS、踏み台、ECR、NLB、CloudFront です。IAM ロールは名前で参照するだけです。
 マネージャーに頼むのは段 0 の 1 回だけで済みます。
 
 ## 3. builder と deployer の分担
@@ -71,7 +71,20 @@ IAM ポリシーは AWS の API の許可であり、Kubernetes の中の操作�
 `aws eks update-kubeconfig` には `--user-alias` も付けます。
 kubeconfig の user エントリは、名前が同じだと別のプロファイルのものと共有され、上書きされるためです。
 
-## 5. ノードと Pod
+## 5. API サーバーへの経路
+
+この環境の API サーバーは、VPC の外へ公開していません。
+手元の kubectl は直接つながらないので、SSM Session Manager のポート転送でトンネルを張ります。
+行き先は、private subnet にある踏み台(t4g.nano の小さな EC2)です。踏み台は公開 IP も inbound の口も持ちません。
+
+SSH ではなく SSM を使うのは、鍵の配布と 22 番ポートの公開が要らないからです。
+接続の許可は IAM ポリシーで決まり、ログインした個人ロールのまま使えます。
+`scripts/eks-tunnel.sh` が、kubeconfig の接続先を `https://127.0.0.1:8443` に書き換え、トンネルを前面で動かします。
+トンネルを動かす端末とは別の端末で、kubectl と terraform を使います。
+
+ECR への push は API サーバーを通らないので、トンネルは要りません。
+
+## 6. ノードと Pod
 
 ノードは、Kubernetes が使う EC2 のサーバーです。
 Pod は、そのノードの上で動くコンテナの入れ物です。
@@ -81,7 +94,7 @@ Pod は、そのノードの上で動くコンテナの入れ物です。
 Pod は deployer が kubectl で作ります。
 ノードの台数を決めるのは builder で、何を動かすかを決めるのは deployer です。
 
-## 6. URL から Pod までの道のり
+## 7. URL から Pod までの道のり
 
 外から届いたリクエストは、NLB、ノードの 30080 番ポート、Service、Pod の順に進みます。
 NLB は builder が terraform で作り、Service と Pod は deployer が作ります。
@@ -100,7 +113,7 @@ NLB は内部向けで、インターネットからは届きません。CloudFr
 Pod から外へ出る通信は、NAT Gateway を通ります。
 送信元の IP は NAT Gateway の固定 EIP になるので、通信先の許可リストに入れられます。
 
-## 7. HTTPS の入口
+## 8. HTTPS の入口
 
 ELB の既定ドメインには、証明書を発行できません。
 そのため、CloudFront の既定ドメイン(`*.cloudfront.net`)で HTTPS にしています。
@@ -119,7 +132,7 @@ AWS 公式のアドオンが全 Pod の標準出力を CloudWatch Logs に送り
 変数 `log_retention_days` で変えます。
 読み取りの権限は deployer に付けてあります。
 
-## 8. namespace の権限と ResourceQuota
+## 9. namespace の権限と ResourceQuota
 
 namespace は、クラスタを区切る名前の箱です。
 deployer は、namespace `app` の中では admin です。
@@ -134,7 +147,7 @@ Service の LoadBalancer と PVC(ディスクの要求)を 0 個に制限する�
 quota で塞いでおけば、destroy で必ず元に戻せます。
 quota の変更は deployer にはできません。
 
-## 9. ECR と Pod の紐付け
+## 10. ECR と Pod の紐付け
 
 ECR は、コンテナの image を置く AWS の倉庫です。
 deployer が manifest に書くのは、image の名前だけです。
@@ -145,7 +158,7 @@ push の権限は、開発者の個人ロールに付けた `<cluster_name>-depl
 どちらもマネージャーがスクリプトで付けています。builder は変更できません。
 deployer 自身は、どちらの権限も変更できません。
 
-## 10. マネージャーへの頼み方
+## 11. マネージャーへの頼み方
 
 マネージャーに渡すのは、スクリプト 4 本とポリシーの JSON 3 枚です。
 作成用の `setup-iam.sh` と撤去用の `teardown-iam.sh`、
@@ -155,7 +168,7 @@ JSON は builder 用の `builder-policy.json`、deployer 用の `deployer-policy
 
 ポリシーは、実験で apply から destroy まで通して検証したものです。
 builder は IAM のロールとポリシーを作れないので、自分の権限を広げることはできません。
-builder にできる IAM の書き込みは、EKS へロールを渡す PassRole だけです。
+builder にできる IAM の書き込みは、EKS と踏み台へロールを渡す PassRole だけです。
 詳細は `docs/permissions.md` と `docs/request.md` にあります。
 
 ## 付録 構成と手順の詳細
@@ -191,7 +204,7 @@ Pod の外向き通信は、private subnet のルートテーブルで NAT Gatew
 
 ### 前提ツール
 
-terraform 1.11 以上、aws cli v2、kubectl、docker、jq を使います。
+terraform 1.11 以上、aws cli v2、session-manager-plugin、kubectl、docker、jq を使います。
 リージョンは ap-northeast-1 です。
 
 ### 手順(builder)
@@ -205,7 +218,7 @@ terraform 1.11 以上、aws cli v2、kubectl、docker、jq を使います。
 bootstrap/setup-iam.sh <builder の個人ロール名>
 ```
 
-ロール 2 つとポリシー 2 つができ、builder の個人ロールに権限が付きます。
+ロール 3 つ(クラスタ用、ノード用、踏み台用)とポリシー 2 つができ、builder の個人ロールに権限が付きます。
 実験では、自分が管理者としてこのスクリプトを実行します。
 
 #### 0-b. state バケット作成(builder)
@@ -241,12 +254,27 @@ terraform init -backend-config="bucket=tfstate-$(aws sts get-caller-identity --q
 
 #### 2. apply
 
+API サーバーはプライベートだけなので、新規構築は 2 段で進めます。
+1 段目で VPC、クラスタ、踏み台だけを作ります。
+
+```bash
+terraform apply -target=aws_instance.bastion -target=aws_vpc_security_group_ingress_rule.cluster_from_bastion
+```
+
+別の端末で、トンネルを張ったままにします。
+
+```bash
+scripts/eks-tunnel.sh eks-exp "$(terraform -chdir=terraform output -raw bastion_instance_id)"
+```
+
+元の端末に戻り、2 段目で残りを作ります。
+
 ```bash
 terraform apply
 terraform output
 ```
 
-作成に約 20 分かかります。
+作成に約 20 分かかります。2 回目以降の plan、apply、destroy も、先にトンネルを張ります。
 
 #### 3. deployer への引き渡し
 
@@ -262,8 +290,8 @@ deployer の手順は、値が埋まった `docs/deployer.md` にまとめてい
 destroy は実験の操作で、移植先(dev 環境)では行いません。
 
 ```bash
-# builder
-aws eks update-kubeconfig --name eks-exp --alias <alias> --user-alias <alias>
+# builder(別の端末でトンネルを張ったまま)
+scripts/eks-tunnel.sh eks-exp "$(terraform -chdir=terraform output -raw bastion_instance_id)"
 scripts/preflight-destroy.sh
 (cd terraform && terraform destroy)
 bootstrap/delete-state-bucket.sh   # 最後の周回だけ
@@ -308,5 +336,5 @@ destroy 後に残ることを許容するものは 3 種類です。
 
 `scripts/check-leftovers.sh` は、タグ `Project=eks-exp` の資源がゼロかを確かめます。
 EKS、ECR、ELB、ASG、NAT Gateway、EIP、default 以外の VPC もゼロであることを確かめます。
-IAM ロール 2 つ(`eks-exp-cluster`、`eks-exp-node`)とポリシー 2 つも対象です。
+IAM ロール 3 つ(`eks-exp-cluster`、`eks-exp-node`、`eks-exp-bastion`)と instance profile、ポリシー 2 つも対象です。
 `/aws/eks/` 配下のロググループも確かめます。

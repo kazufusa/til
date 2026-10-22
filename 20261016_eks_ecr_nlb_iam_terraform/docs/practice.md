@@ -45,13 +45,13 @@ region         = ap-northeast-1
 | 3 | builder | `aws sts get-caller-identity --profile builder` でスイッチ確認。`aws iam create-role` が拒否されることも確認 | 1 分 |
 | 4 | builder | `AWS_PROFILE=builder bootstrap/create-state-bucket.sh` | 1 分 |
 | 5 | builder | `terraform init`(`profile=builder` とバケット名を引数で渡す) | 1 分 |
-| 6 | builder | `terraform apply -var aws_profile=builder -var 'deployer_role_arns=["<開発者役の ARN>"]'` | 20 分 |
+| 6 | builder | 1 段目: `terraform apply -var aws_profile=builder -target=aws_instance.bastion -target=aws_vpc_security_group_ingress_rule.cluster_from_bastion`。別の端末で `AWS_PROFILE=builder scripts/eks-tunnel.sh eks-exp <踏み台の ID>` を張ったままにし、2 段目: `terraform apply -var aws_profile=builder -var 'deployer_role_arns=["<開発者役の ARN>"]'` | 20 分 |
 | 7 | builder | `terraform output` を見る。`scripts/render-deployer-doc.sh` で developer ページを生成して読む | 2 分 |
 | 8 | deployer | `aws sts get-caller-identity --profile dev-login` で開発者役になっていることを確認(スイッチ先のロールは無い) | 1 分 |
 | 9 | deployer | ECR にログイン、`docker build`、`docker push`(`--profile dev-login`) | 3 分 |
-| 10 | deployer | `update-kubeconfig`(`--alias` と `--user-alias`)、manifest を `apply -n app`、`rollout status` | 2 分 |
+| 10 | deployer | 端末 1 で `scripts/eks-tunnel.sh`(`--profile dev-login` 相当の `AWS_PROFILE=dev-login`)を張ったままにし、端末 2 で manifest を `apply -n app`、`rollout status` | 3 分 |
 | 11 | deployer | 確認: HTTPS の URL、`/news`、NLB に外から届かない、`kubectl get nodes`、`kubectl logs`、CloudWatch のログ | 5 分 |
-| 12 | builder | `scripts/preflight-destroy.sh` → `terraform destroy -var aws_profile=builder -var 'deployer_role_arns=[...]'` | 20 分 |
+| 12 | builder | トンネルを張ったまま `scripts/preflight-destroy.sh` → `terraform destroy -var aws_profile=builder -var 'deployer_role_arns=[...]'` | 20 分 |
 | 13 | builder | `bootstrap/delete-state-bucket.sh` | 1 分 |
 | 14 | マネージャー | `bootstrap/teardown-iam.sh practice-builder-login`、空のロール 2 つを削除、`scripts/check-leftovers.sh` | 2 分 |
 
@@ -66,16 +66,16 @@ region         = ap-northeast-1
 | # | 期待する出力 |
 | --- | --- |
 | 1 | `aws iam list-attached-role-policies` がどちらのロールも空 |
-| 2 | ロール `eks-exp-cluster`、`eks-exp-node` とポリシー 2 つができ、`practice-builder-login` に 4 つ、`practice-developer-login` に 1 つ並ぶ |
+| 2 | ロール `eks-exp-cluster`、`eks-exp-node`、`eks-exp-bastion`(instance profile つき)とポリシー 2 つができ、`practice-builder-login` に 4 つ、`practice-developer-login` に 1 つ並ぶ |
 | 3 | `assumed-role/practice-builder-login/...`。`create-role` は AccessDenied |
 | 4 | `created: tfstate-<ACCOUNT_ID>-eks-exp` |
 | 5 | `Terraform has been successfully initialized!` |
-| 6 | `Apply complete!`。`not authorized` が無い。Access Entry が開発者役の ARN で 1 つできている |
+| 6 | 1 段目、2 段目とも `Apply complete!`。`not authorized` が無い。Access Entry が開発者役の ARN で 1 つできている。踏み台が SSM に登録されている(`describe-instance-information` で Online) |
 | 7 | 生成したページに `{{` が残っていない |
 | 8 | `assumed-role/practice-developer-login/...` |
 | 9 | `docker push` が完了し、`aws ecr describe-images` に `v1` |
-| 10 | `deployment "web" successfully rolled out` |
+| 10 | トンネルが張れ、`deployment "web" successfully rolled out` |
 | 11 | HTTPS で `hello from eks-exp`、`/news` に日本語の見出し、NLB の直叩きは失敗、`get nodes` でノード 1 台が `Ready` |
 | 12 | `Destroy complete!` |
 | 13 | `deleted bucket: ...` |
-| 14 | ロール 2 つとポリシー 2 つが `NoSuchEntity`、`RESULT: clean`(タグ索引の遅れで数件残って見えることがある) |
+| 14 | ロール 3 つとポリシー 2 つが `NoSuchEntity`、`RESULT: clean`(タグ索引の遅れで数件残って見えることがある) |

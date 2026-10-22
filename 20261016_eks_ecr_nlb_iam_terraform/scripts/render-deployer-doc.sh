@@ -27,6 +27,7 @@ region="$(get .region.value)"
 ecr="$(get .ecr_repository_url.value)"
 ns="$(get '.deployer_namespaces.value[0]')"
 port="$(get .node_port.value)"
+bastion="$(get .bastion_instance_id.value)"
 nlb="$(get .nlb_dns_name.value)"
 nat="$(get .nat_public_ip.value)"
 https="$(get .https_url.value)"
@@ -39,6 +40,7 @@ sed \
   -e "s|{{ECR_REPOSITORY_URL}}|$(esc "$ecr")|g" \
   -e "s|{{NAMESPACE}}|$(esc "$ns")|g" \
   -e "s|{{NODE_PORT}}|$(esc "$port")|g" \
+  -e "s|{{BASTION_INSTANCE_ID}}|$(esc "$bastion")|g" \
   -e "s|{{NLB_DNS_NAME}}|$(esc "$nlb")|g" \
   -e "s|{{NAT_PUBLIC_IP}}|$(esc "$nat")|g" \
   -e "s|{{HTTPS_URL}}|$(esc "$https")|g" \

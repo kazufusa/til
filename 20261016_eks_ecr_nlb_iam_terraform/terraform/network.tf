@@ -58,7 +58,9 @@ resource "aws_nat_gateway" "main" {
     Name = "${local.name_prefix}-nat"
   }
 
-  depends_on = [aws_internet_gateway.main]
+  # NAT が外に出るには、public subnet が IGW へのルートを持っている必要がある。
+  # 依存を明示しないと、-target で踏み台だけを作ったときに public のルートが作られない
+  depends_on = [aws_internet_gateway.main, aws_route_table_association.public]
 }
 
 resource "aws_route_table" "public" {

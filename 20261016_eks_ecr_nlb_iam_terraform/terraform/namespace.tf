@@ -15,8 +15,9 @@ resource "kubernetes_namespace_v1" "deployer" {
     }
   }
 
-  # node group より先に消そうとすると API が応答しない場合があるため、node group に依存させる
-  depends_on = [aws_eks_node_group.main]
+  # node group より先に消そうとすると API が応答しない場合があるため、node group に依存させる。
+  # 踏み台とその SG ルールより先に消さないと、destroy の途中でトンネルが切れる
+  depends_on = [aws_eks_node_group.main, aws_instance.bastion, aws_vpc_security_group_ingress_rule.cluster_from_bastion]
 }
 
 resource "kubernetes_resource_quota_v1" "no_cloud_resources" {
@@ -48,7 +49,7 @@ resource "kubernetes_cluster_role_v1" "node_viewer" {
     verbs      = ["get", "list", "watch"]
   }
 
-  depends_on = [aws_eks_node_group.main]
+  depends_on = [aws_eks_node_group.main, aws_instance.bastion, aws_vpc_security_group_ingress_rule.cluster_from_bastion]
 }
 
 resource "kubernetes_cluster_role_binding_v1" "deployer_node_viewer" {

@@ -36,6 +36,32 @@
       "Resource": "arn:aws:eks:*:*:cluster/eks-exp"
     },
     {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
+    },
+    {
       "Sid": "LogsRead",
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",

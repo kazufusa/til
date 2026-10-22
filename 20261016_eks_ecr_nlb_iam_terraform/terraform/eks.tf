@@ -18,10 +18,10 @@ resource "aws_eks_cluster" "main" {
   }
 
   vpc_config {
-    subnet_ids              = aws_subnet.private[*].id
-    endpoint_public_access  = true
+    subnet_ids = aws_subnet.private[*].id
+    # API サーバーは VPC の中からだけ届く。外からは SSM の踏み台(bastion.tf)を経由する
+    endpoint_public_access  = false
     endpoint_private_access = true
-    public_access_cidrs     = var.endpoint_public_access_cidrs
   }
 
   # CloudWatch ロググループを残さないため、コントロールプレーンログは有効にしない

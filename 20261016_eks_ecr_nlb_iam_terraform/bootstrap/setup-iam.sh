@@ -32,7 +32,13 @@ aws iam attach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:ia
 aws iam attach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly
 aws iam attach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
 
-# 4. 作業者の個人ロールにポリシーを 4 つ付ける。権限 = AWS 管理 3 つ + 自作 1 つの合計
+# 4. 踏み台用ロール(EC2 が引き受ける)。SSM に登録するだけの権限。terraform は instance profile を名前で参照する
+aws iam create-role --role-name "${PROJECT}-bastion" --assume-role-policy-document "$EC2_TRUST" --tags "$TAG" >/dev/null
+aws iam attach-role-policy --role-name "${PROJECT}-bastion" --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-instance-profile --instance-profile-name "${PROJECT}-bastion" --tags "$TAG" >/dev/null
+aws iam add-role-to-instance-profile --instance-profile-name "${PROJECT}-bastion" --role-name "${PROJECT}-bastion"
+
+# 5. 作業者の個人ロールにポリシーを 4 つ付ける。権限 = AWS 管理 3 つ + 自作 1 つの合計
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/AmazonVPCFullAccess
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess
 aws iam attach-role-policy --role-name "$PERSONAL_ROLE" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess

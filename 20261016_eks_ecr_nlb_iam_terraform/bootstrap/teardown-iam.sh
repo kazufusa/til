@@ -32,11 +32,17 @@ aws iam detach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:ia
 aws iam detach-role-policy --role-name "${PROJECT}-node" --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy || true
 aws iam delete-role --role-name "${PROJECT}-node" || true
 
-# 4. クラスタ用ロールを消す
+# 4. 踏み台用ロールと instance profile を消す
+aws iam remove-role-from-instance-profile --instance-profile-name "${PROJECT}-bastion" --role-name "${PROJECT}-bastion" || true
+aws iam delete-instance-profile --instance-profile-name "${PROJECT}-bastion" || true
+aws iam detach-role-policy --role-name "${PROJECT}-bastion" --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore || true
+aws iam delete-role --role-name "${PROJECT}-bastion" || true
+
+# 5. クラスタ用ロールを消す
 aws iam detach-role-policy --role-name "${PROJECT}-cluster" --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy || true
 aws iam delete-role --role-name "${PROJECT}-cluster" || true
 
-# 5. 自作ポリシーを消す。既定でない版が残っていると消せないので、先に版を消す
+# 6. 自作ポリシーを消す。既定でない版が残っていると消せないので、先に版を消す
 for p in builder deployer; do
   arn="${POLICY_PREFIX}/${PROJECT}-${p}-policy"
   for v in $(aws iam list-policy-versions --policy-arn "$arn" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text 2>/dev/null || true); do

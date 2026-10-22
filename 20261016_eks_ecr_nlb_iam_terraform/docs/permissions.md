@@ -13,25 +13,28 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | AmazonVPCFullAccess | AWS 管理ポリシー | ネットワークを作る |
 | ElasticLoadBalancingFullAccess | AWS 管理ポリシー | 公開用の入口(NLB)を作る |
 | AmazonEC2ContainerRegistryFullAccess | AWS 管理ポリシー | image 置き場(ECR)を作る |
-| カスタム `<名前>-builder-policy` | 下の 7 項目 | EKS と、IAM の最小限の書き込みと state だけ自前で縛る |
+| カスタム `<名前>-builder-policy` | 下の 8 項目 | EKS、踏み台、IAM の最小限の書き込み、state を自前で縛る |
 
-カスタムポリシーの 7 項目は次のとおりです。
+カスタムポリシーの 8 項目は次のとおりです。
 
 1. EKS の全操作(`eks:*`)。書き込みは、名前が `<名前>` のクラスタとその配下の資源に限ります。Auto Scaling は負荷分散先の関連付けだけ
 2. CloudFront の作成、更新、削除、タグ(HTTPS の入口用)
-3. IAM は、EKS へ渡すロール 2 つ(`<名前>-cluster`、`<名前>-node`)の PassRole だけ。
+3. IAM は、EKS へ渡すロール 2 つ(`<名前>-cluster`、`<名前>-node`)と、
+   踏み台のロール(`<名前>-bastion`、渡し先は ec2.amazonaws.com に限定)の PassRole だけ。
    ロールとポリシーの作成、削除、付け外し、信頼先の変更はできません
 4. S3 は名前が `tfstate-*-<名前>` のバケットだけ作成、設定、削除、読み書き
 5. 各サービスの参照(Describe、List、Get)
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
 7. 実験で見つかった ec2 の 3 つ。`GetSecurityGroupsForVpc`(NLB 作成時)、`DisassociateAddress`(EIP 解放時)、
    `DescribeAddressesAttribute`(EIP 作成後の読み取り)
+8. 踏み台。EC2 インスタンスの起動、停止、削除と参照。SSM の接続(`ssm:StartSession`)は、
+   タグ `Project=<名前>` の付いたインスタンスとポート転送用のドキュメントに限る
 
 ### deployer(開発者の個人ロールに `<名前>-deployer-policy` を付けてもらう側)
 
 | 層 | できること | できないこと |
 | --- | --- | --- |
-| AWS | ECR の指定リポジトリへの push と pull、クラスタ情報の参照(`eks:DescribeCluster`)、CloudWatch Logs の読み取り(自分のクラスタのロググループ) | それ以外すべて(EC2、IAM、他の ECR、他のロググループ、ELB の参照も不可) |
+| AWS | ECR の指定リポジトリへの push と pull、クラスタ情報の参照(`eks:DescribeCluster`)、CloudWatch Logs の読み取り(自分のクラスタのロググループ)、踏み台への SSM ポート転送(タグ `Project=<名前>` のインスタンスだけ) | それ以外すべて(EC2、IAM、他の ECR、他のロググループ、ELB の参照も不可) |
 | Kubernetes、namespace `app` の中 | 何でも(Deployment、Service、Secret の参照と編集、Role の付与) | ResourceQuota の変更、namespace 自体の削除 |
 | Kubernetes、Pod の設定 | Pod Security の baseline に収まる Pod | 特権 Pod、hostPath、hostNetwork(baseline に拒否される) |
 | Kubernetes、クラスタ全体 | 読み取り(ノード、namespace 一覧、他 namespace の Pod) | 他 namespace への書き込み、他 namespace の Secret 参照、namespace 作成 |
@@ -59,17 +62,18 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 | `AmazonVPCFullAccess` | AWS 管理 | VPC、サブネット、NAT、EIP、SG などのネットワーク一式 |
 | `ElasticLoadBalancingFullAccess` | AWS 管理 | NLB、target group、listener |
 | `AmazonEC2ContainerRegistryFullAccess` | AWS 管理 | ECR リポジトリの作成と削除 |
-| `<名前>-builder-policy` | カスタム | 下記の 7 項目 |
+| `<名前>-builder-policy` | カスタム | 下記の 8 項目 |
 
-カスタムポリシーの内容は、次の 7 項目です。
+カスタムポリシーの内容は、次の 8 項目です。
 
 - EKS: `eks:*`(書き込みはクラスタ名で限定)と、Auto Scaling の負荷分散先の関連付け
-- IAM: EKS へ渡すロール 2 つの PassRole だけ
+- IAM: EKS へ渡すロール 2 つと踏み台のロールの PassRole だけ
 - S3: state バケットの名前で限定
 - CloudFront: HTTPS の入口の作成と削除
 - 参照: 各サービスの Describe、Get、List
 - CloudWatch Logs: `/aws/containerinsights/<名前>/` 配下のロググループの作成と削除
 - 実験で見つかった ec2 の 3 Action
+- 踏み台: EC2 インスタンスの操作と、SSM のポート転送
 
 管理ポリシーは AWS が更新するので、申請の手間が減ります。
 その代わり、権限は検証済みの最小構成より広くなります。
@@ -194,6 +198,63 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
       "Resource": "*"
+    },
+    {
+      "Sid": "IamPassRoleToBastion",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/eks-exp-bastion",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "BastionInstance",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyInstanceMetadataOptions",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeImages",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
     }
   ]
 }
@@ -213,6 +274,7 @@ AWS 管理ポリシー 3 つで足りるのはネットワーク、ELB、ECR だ
 | CloudWatch Logs のロググループ(名前限定) | 同上 |
 | Auto Scaling への target group 紐づけ | 無い |
 | 実験で見つかった ec2 の 3 つ | `AmazonVPCFullAccess` に含まれていなかった |
+| 踏み台のインスタンス操作と SSM の接続 | `AmazonEC2FullAccess` と `AmazonSSMFullAccess` は全インスタンスが対象で広すぎる |
 
 ### 権限一覧
 
@@ -224,6 +286,8 @@ AWS 管理ポリシー 3 つで足りるのはネットワーク、ELB、ECR だ
 | ELB | LB、target group、listener の作成と削除 | NLB の構築 |
 | Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
 | IAM(ロール) | `<cluster_name>-*` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
+| EC2(インスタンス) | RunInstances、TerminateInstances、Describe など | 踏み台の作成と削除。起動時に `<cluster_name>-bastion` の PassRole が要る |
+| SSM | `ssm:StartSession`(タグ `Project` のインスタンスとポート転送のドキュメント)、TerminateSession、ResumeSession | 手元から API サーバーへのトンネル(builder と deployer の両方) |
 | IAM(ポリシー) | 既知の 6 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
 | IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
 | S3 | `tfstate-*-<cluster_name>` の管理と読み書き | terraform の state |
@@ -258,7 +322,8 @@ IAM のロールとポリシーは作れません。
 
 次の 4 点を、申請文でそのまま説明します。
 
-1. IAM の書き込みは 1 つだけです。EKS へ渡すロール 2 つの `iam:PassRole`(渡し先は eks.amazonaws.com に限定)です。
+1. IAM の書き込みは `iam:PassRole` だけです。EKS へ渡すロール 2 つ(渡し先は eks.amazonaws.com に限定)と、
+   踏み台のロール 1 つ(渡し先は ec2.amazonaws.com に限定)です。
    開発者への権限付与はマネージャーが行い、builder は関与しません。
 2. builder は EKS の Access Entry を作れるので、クラスタ内の権限なら任意のロールに付けられます。
    クラスタはこの環境専用なので受け入れます。
@@ -268,6 +333,9 @@ IAM のロールとポリシーは作れません。
 
 EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10-19)。
 簡易版の builder で apply から destroy まで通り、AccessDenied は出ませんでした。
+踏み台とトンネルの権限(EC2 の 13 Action、PassRole、SSM の 3 文)も、2026-10-22 に apply から destroy まで通しました。
+開発者役は、踏み台でシェルを開けず、タグの無いインスタンスへも転送できませんでした。
+ただし、踏み台を経由してインターネットへは転送できます。送信元は NAT の固定 IP です。
 
 ### 名前を変える手順
 
@@ -523,6 +591,63 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
       "Resource": "*"
+    },
+    {
+      "Sid": "IamPassRoleToBastion",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/eks-exp-bastion",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "BastionInstance",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyInstanceMetadataOptions",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeImages",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
     }
   ]
 }
@@ -536,7 +661,7 @@ AWS 側はマネージャーが `attach-deployer-policy.sh` で開発者の個�
 
 ### AWS 側
 
-実体は `bootstrap/deployer-policy.json` で、5 文からなります。名前の `eks-exp` は `cluster_name` に置き換わります。
+実体は `bootstrap/deployer-policy.json` で、8 文からなります。名前の `eks-exp` は `cluster_name` に置き換わります。
 ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限定します(terraform が全資源に付けるタグです)。
 
 ```json
@@ -598,6 +723,32 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
         "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*",
         "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*:*"
       ]
+    },
+    {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
     }
   ]
 }
@@ -648,7 +799,7 @@ AWS の推奨に合わせた点は次のとおりです。
 
 | 領域 | 守れている点 |
 | --- | --- |
-| ネットワーク | ノードは private subnet にあり、パブリック IP を持たない。NLB は内部向けで、CloudFront から VPC origin で届く。NLB の SG は CloudFront が作る SG からの 80 だけを許可する。CloudFront から NLB までの HTTP はインターネットを通らない。外へ出るのは NAT の固定 IP だけ。CloudFront の URL は誰でも開けるため、アプリ側の認証(Slack 署名など)が前提 |
+| ネットワーク | EKS の API サーバーはプライベートだけで、外から直接は届かない。入口は SSM の踏み台で、private subnet にあり、公開 IP も SG の inbound もない。クラスタの SG は踏み台の SG からの 443 だけを許す。ノードは private subnet にあり、パブリック IP を持たない。NLB は内部向けで、CloudFront から VPC origin で届く。NLB の SG は CloudFront が作る SG からの 80 だけを許可する。CloudFront から NLB までの HTTP はインターネットを通らない。外へ出るのは NAT の固定 IP だけ。CloudFront の URL は誰でも開けるため、アプリ側の認証(Slack 署名など)が前提 |
 | 人の認証 | 長期のアクセスキーがない。builder も開発者も、ログインした個人ロールのまま作業する |
 | builder | IAM のロールとポリシーを作れない。できるのは EKS へのロールの受け渡しだけで、自分の権限を広げる経路がない |
 | deployer | 書き込みは namespace `app` の中だけ。他の namespace の Secret の参照、namespace の作成、quota の変更はできない |
@@ -662,7 +813,7 @@ AWS の推奨に合わせた点は次のとおりです。
 | 対策 | 内容 |
 | --- | --- |
 | 独自ドメインと証明書 | ACM と独自ドメインを使う。または CloudFront の既定ドメインのまま使う |
-| EKS endpoint の制限 | API サーバーに接続できる CIDR を限定する |
+| 踏み台の強化 | AMI を固定し、SSM セッションのログを S3 や CloudWatch Logs に残す |
 | 申請する権限の絞り込み | 共有アカウントでは、管理ポリシーを使わず最小構成を申請する |
 | 監査ログ | CloudTrail と EKS の audit ログを有効にする |
 | image の脆弱性検査 | ECR の scan_on_push を有効にする |

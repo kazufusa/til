@@ -9,8 +9,8 @@
 | 役割 | 必要なもの |
 | --- | --- |
 | マネージャー | 管理者権限の AWS CLI。terraform は不要 |
-| builder | terraform 1.11 以上、aws cli v2、kubectl、jq、docker |
-| deployer | aws cli v2、kubectl、docker |
+| builder | terraform 1.11 以上、aws cli v2、session-manager-plugin、kubectl、jq、docker |
+| deployer | aws cli v2、session-manager-plugin、kubectl、docker |
 
 名前(`eks-exp`)を変える場合は、builder が先に `terraform/variables.tf` の `cluster_name` を変えます。
 次に `scripts/render-policy.sh <名前>` で、マネージャーに渡す一式(スクリプト 4 本と JSON 3 枚)を
@@ -26,7 +26,7 @@ builder から、builder の個人ロール名を受け取ります。
 bootstrap/setup-iam.sh <builder の個人ロール名>
 ```
 
-これで、ロール 2 つ(`eks-exp-cluster`、`eks-exp-node`)とポリシー 2 つができ、
+これで、ロール 3 つ(`eks-exp-cluster`、`eks-exp-node`、踏み台用の `eks-exp-bastion`)とポリシー 2 つができ、
 builder の個人ロールに AWS 管理ポリシー 3 つと `eks-exp-builder-policy` が付きます。
 
 アプリ開発者が決まったら、その人の個人ロール名を受け取って 1 回ずつ実行します。
@@ -72,16 +72,34 @@ AWS_PROFILE=builder bootstrap/create-state-bucket.sh
 
 ### 3. 初期化と作成
 
+API サーバーはプライベートだけなので、新規構築は 2 段で進めます。
+
+端末 1 で、初期化と 1 段目の apply を流します。VPC、クラスタ、踏み台ができます。
+
 ```bash
 cd terraform
 terraform init -backend-config="profile=builder" \
   -backend-config="bucket=tfstate-$(aws sts get-caller-identity --query Account --output text)-eks-exp"
+terraform apply -var aws_profile=builder \
+  -target=aws_instance.bastion -target=aws_vpc_security_group_ingress_rule.cluster_from_bastion
+```
+
+端末 2 で、トンネルを張ったままにします(このディレクトリで実行します)。
+
+```bash
+AWS_PROFILE=builder scripts/eks-tunnel.sh eks-exp "$(terraform -chdir=terraform output -raw bastion_instance_id)"
+```
+
+端末 1 に戻り、2 段目の apply で残りを作ります。
+
+```bash
 terraform apply -var aws_profile=builder
 terraform output
 cd ..
 ```
 
-apply は 15〜20 分かかります。
+apply は全体で 15〜20 分かかります。
+2 回目以降の plan、apply、destroy も、先にトンネルを張ります。
 
 ### 4. deployer への引き渡し
 
@@ -90,9 +108,9 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 ```
 
 値が埋まった `docs/deployer.md` を deployer に渡します。
-deployer の個人ロールの ARN を `terraform/variables.tf` の `deployer_role_arns` に書いて apply します。
-EKS の Access Entry ができ、kubectl が使えるようになります。
-IAM 側(ECR の push とログの参照)は、マネージャーが `attach-deployer-policy.sh` で付けます。
+deployer の個人ロールの ARN を `terraform/variables.tf` の `deployer_role_arns` に書いて apply します(トンネルを張ったまま)。
+EKS の Access Entry ができ、トンネルを通して kubectl が使えるようになります。
+IAM 側(ECR の push、ログの参照、トンネルの接続)は、マネージャーが `attach-deployer-policy.sh` で付けます。
 
 ```bash
 cd terraform && terraform apply -var aws_profile=builder && cd ..
@@ -107,13 +125,18 @@ cd terraform && terraform apply -var aws_profile=builder && cd ..
 | ECR を足す | `variables.tf` の `ecr_repository_names` に追加して apply |
 | ノードを増やす | `variables.tf` の `node_count` を変えて apply |
 | ログ保存期間を変える | `variables.tf` の `log_retention_days` を変えて apply |
-| 変更前の確認 | `terraform -chdir=terraform plan -var aws_profile=builder` |
+| 変更前の確認 | トンネルを張ってから `terraform -chdir=terraform plan -var aws_profile=builder` |
+| 踏み台の ID を知る | `terraform -chdir=terraform output -raw bastion_instance_id` |
 
 ### 6. 片付け(環境を消すとき)
 
+別の端末でトンネルを張ってから、destroy を流します。スクリプトが kubeconfig も作るので、`update-kubeconfig` は要りません。
+kubernetes の資源は踏み台に依存するので、destroy では踏み台より先に消えます。トンネルは最後まで張ったままにします。
+
 ```bash
-aws eks update-kubeconfig --name eks-exp --profile builder --alias eks-exp-builder --user-alias eks-exp-builder
-kubectl config use-context eks-exp-builder
+# 別の端末
+AWS_PROFILE=builder scripts/eks-tunnel.sh eks-exp "$(terraform -chdir=terraform output -raw bastion_instance_id)"
+# 元の端末
 scripts/preflight-destroy.sh
 terraform -chdir=terraform destroy -var aws_profile=builder
 yes y | AWS_PROFILE=builder bootstrap/delete-state-bucket.sh
@@ -144,20 +167,28 @@ docker build -t "${ECR}:v1" app/
 docker push "${ECR}:v1"
 ```
 
-### 3. デプロイ
+### 3. トンネルとデプロイ
+
+端末 1 でトンネルを張ったままにします。スクリプトが kubeconfig を作り、接続先を手元のポートへ向けます。
+値は `docs/deployer.md` の踏み台のインスタンス ID です。
 
 ```bash
-aws eks update-kubeconfig --name eks-exp --alias eks-exp-deployer --user-alias eks-exp-deployer
-sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl --context eks-exp-deployer apply -n app -f -
-kubectl --context eks-exp-deployer -n app rollout status deploy/web
+scripts/eks-tunnel.sh eks-exp <deployer.md の踏み台のインスタンス ID>
 ```
 
-### 4. 確認
+端末 2 で、デプロイします。
+
+```bash
+sed "s|IMAGE_PLACEHOLDER|${ECR}:v1|" app/k8s.yaml | kubectl apply -n app -f -
+kubectl -n app rollout status deploy/web
+```
+
+### 4. 確認(端末 2)
 
 ```bash
 curl -s <deployer.md の公開 URL>
 curl -s <deployer.md の公開 URL>news
-kubectl --context eks-exp-deployer -n app logs deploy/web --tail=20
+kubectl -n app logs deploy/web --tail=20
 aws logs tail /aws/containerinsights/eks-exp/application --since 10m
 ```
 
@@ -165,8 +196,8 @@ aws logs tail /aws/containerinsights/eks-exp/application --since 10m
 
 ```bash
 docker build -t "${ECR}:v2" app/ && docker push "${ECR}:v2"
-kubectl --context eks-exp-deployer -n app set image deploy/web web="${ECR}:v2"
-kubectl --context eks-exp-deployer -n app rollout status deploy/web
+kubectl -n app set image deploy/web web="${ECR}:v2"
+kubectl -n app rollout status deploy/web
 ```
 
 Service の `nodePort` は 30080 のままにします。

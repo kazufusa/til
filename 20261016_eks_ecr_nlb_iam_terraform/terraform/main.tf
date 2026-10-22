@@ -29,9 +29,12 @@ locals {
   azs         = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
-# builder はクラスタ作成者として cluster-admin を持つので、そのまま namespace を作れる
+# builder はクラスタ作成者として cluster-admin を持つので、そのまま namespace を作れる。
+# API サーバーはプライベートエンドポイントだけなので、手元のトンネル(scripts/eks-tunnel.sh)を通して接続する。
+# 証明書はエンドポイントのホスト名で検証する
 provider "kubernetes" {
-  host                   = aws_eks_cluster.main.endpoint
+  host                   = "https://127.0.0.1:${var.api_tunnel_port}"
+  tls_server_name        = trimprefix(aws_eks_cluster.main.endpoint, "https://")
   cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)
 
   exec {
