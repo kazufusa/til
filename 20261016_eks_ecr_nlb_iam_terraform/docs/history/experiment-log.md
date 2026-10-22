@@ -643,3 +643,33 @@ SSM 用の VPC エンドポイントは、月 30 USD 前後かかるため採り
 ### 見張り
 
 前回と同じく、開始から 3 時間の期限 destroy と、15 分ごとの cron を置きます。
+
+### 結果
+
+すべての確認項目が通りました。
+
+| 段階 | 結果 |
+| --- | --- |
+| 1 段目の apply | 19 資源、9 分、AccessDenied 0。ドキュメント `eks-exp-api-tunnel` も作られ、踏み台は 10 秒で Online |
+| builder のトンネル | このドキュメントで張れ、kubectl が builder 役として通った |
+| 開発者役が汎用ドキュメントで example.com へ | AccessDenied |
+| 開発者役が自前ドキュメントの `host` を上書き | `Parameter "host" is not defined in the document.` で拒否 |
+| 開発者役がドキュメント無しでシェル | AccessDenied |
+| 開発者役が手元のポートだけ指定 | API サーバーに届いた(認証なしの curl で 401) |
+| 2 段目の apply | 24 資源、16 分、AccessDenied 0 |
+| 開発者役 | push、トンネル、deploy が通り、HTTPS 5 回連続 200、`/news` も返った |
+| destroy | 43 資源、12 分、AccessDenied 0。ドキュメントの削除も通った |
+
+## セッションの終了とシェルの検証(2026-10-22)
+
+### 目的
+
+レビューで、SSM のセッションの終了を `aws:userid` で自分のものに絞ること、踏み台でシェルを実行できないことの 2 点を指摘されました。
+`TerminateSession` と `ResumeSession` の対象を `session/*` から、
+タグ `aws:ssmmessages:session-id` が `${aws:userid}` と一致するセッションだけに変えます。
+
+### 確かめること
+
+- 古いポリシーでは、開発者役が builder 役のセッションを切れてしまう(直す前の状態)
+- マネージャーがポリシーの新しい版を既定にすると、開発者役は自分のセッションだけを切れる
+- builder 役と開発者役は、どちらも踏み台でシェルを開けず、`ssm:SendCommand` も使えない
