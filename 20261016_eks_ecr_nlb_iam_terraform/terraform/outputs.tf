@@ -12,6 +12,11 @@ output "bastion_instance_id" {
   value       = aws_instance.bastion.id
 }
 
+output "tunnel_document_name" {
+  description = "API サーバーへのポート転送に使う SSM のドキュメント"
+  value       = aws_ssm_document.api_tunnel.name
+}
+
 output "nlb_dns_name" {
   description = "CloudFront のオリジン。外から直接は届きません"
   value       = aws_lb.main.dns_name

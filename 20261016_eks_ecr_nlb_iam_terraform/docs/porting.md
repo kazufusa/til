@@ -110,7 +110,7 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 | NAT Gateway | 1 台 | AZ ごと |
 | ログ保存 | 30 日 | 90 日以上 |
 | HTTPS | CloudFront の既定ドメイン | ACM 証明書と独自ドメイン |
-| EKS の API エンドポイント | プライベートだけ。SSM の踏み台とポート転送で接続 | 踏み台の AMI の固定、SSM セッションのログ保存 |
+| EKS の API エンドポイント | プライベートだけ。SSM の踏み台とポート転送で接続。転送先は自前の SSM ドキュメントで API サーバーの 443 に固定(未検証) | 踏み台の AMI の固定、SSM セッションのログ保存。広い `ssm:StartSession` を許さない運用 |
 | builder の権限 | 管理ポリシー 3 つ + 自作 1 つ(IAM は作れない) | 共有アカウントなら最小権限版(`docs/permissions.md` の付録) |
 
 詳細は `docs/permissions.md` の「本番で追加を検討する対策」にあります。

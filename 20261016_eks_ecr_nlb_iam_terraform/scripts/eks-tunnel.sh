@@ -2,6 +2,7 @@
 # SSM の踏み台を経由して、EKS の API サーバー(プライベートエンドポイント)へのトンネルを張る。
 # kubeconfig を作り、server を手元のポートへ向けてから、ポート転送を前面で動かす。Ctrl-C で閉じる。
 # トンネルを張っている間、別の端末で kubectl と terraform が使える。
+# 転送先は、terraform が作るドキュメント <cluster-name>-api-tunnel で API サーバーの 443 に固定されている。
 # 手元に session-manager-plugin が必要。
 # 使い方: scripts/eks-tunnel.sh <cluster-name> <bastion-instance-id> [local-port]
 #   例: scripts/eks-tunnel.sh eks-exp i-0123456789abcdef0
@@ -25,5 +26,5 @@ kubectl config set-cluster "$cluster_arn" --server="https://127.0.0.1:${PORT}" -
 
 echo "tunnel: 127.0.0.1:${PORT} -> ${host}:443 via ${INSTANCE}" >&2
 exec aws ssm start-session --region "$REGION" --target "$INSTANCE" \
-  --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters "host=${host},portNumber=443,localPortNumber=${PORT}"
+  --document-name "${CLUSTER}-api-tunnel" \
+  --parameters "localPortNumber=${PORT}"

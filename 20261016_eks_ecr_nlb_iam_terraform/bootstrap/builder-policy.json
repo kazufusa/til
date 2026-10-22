@@ -91,6 +91,9 @@
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/Project": "eks-exp"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
         }
       }
     },
@@ -98,7 +101,7 @@
       "Sid": "BastionTunnelDocument",
       "Effect": "Allow",
       "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-api-tunnel"
     },
     {
       "Sid": "BastionTunnelEnd",
@@ -108,6 +111,24 @@
         "ssm:ResumeSession"
       ],
       "Resource": "arn:aws:ssm:*:*:session/*"
+    },
+    {
+      "Sid": "TunnelDocumentAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:CreateDocument",
+        "ssm:DeleteDocument",
+        "ssm:UpdateDocument",
+        "ssm:UpdateDocumentDefaultVersion",
+        "ssm:DescribeDocument",
+        "ssm:GetDocument",
+        "ssm:DescribeDocumentPermission",
+        "ssm:ListDocumentVersions",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-*"
     },
     {
       "Sid": "ServiceLinkedRoles",

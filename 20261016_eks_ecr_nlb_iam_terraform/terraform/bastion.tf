@@ -2,6 +2,7 @@
 # EKS の API サーバーはプライベートエンドポイントだけにし、踏み台を経由しないと届かないようにする。
 # 踏み台は private subnet に置き、公開 IP も inbound の口も持たない。入口は SSM Session Manager だけ。
 # 開発者と builder は、手元から SSM のポート転送で API サーバーへトンネルを張り、手元の kubectl と terraform を使う。
+# 転送先は自前のセッションドキュメントで API サーバーの 443 に固定し、踏み台を経由して他へは出られないようにする。
 # IAM ロールと instance profile(<cluster_name>-bastion)は管理者が setup-iam.sh で作る
 data "aws_iam_instance_profile" "bastion" {
   name = "${var.cluster_name}-bastion"
@@ -46,7 +47,7 @@ resource "aws_vpc_security_group_ingress_rule" "cluster_from_bastion" {
 }
 
 resource "aws_instance" "bastion" {
-  ami                    = data.aws_ami.al2023.id
+  ami = data.aws_ami.al2023.id
   # ポート転送の中継だけなので、一番小さい型にする(Arm なので AMI も arm64)
   instance_type          = "t4g.nano"
   subnet_id              = aws_subnet.private[0].id
@@ -70,6 +71,35 @@ resource "aws_instance" "bastion" {
     ignore_changes = [ami]
   }
 
-  # SSM エージェントは NAT 経由で SSM に登録する
-  depends_on = [aws_route_table_association.private]
+  # SSM エージェントは NAT 経由で SSM に登録する。
+  # トンネル用のドキュメントも、1 段目の -target で踏み台と一緒に作られるようにする
+  depends_on = [aws_route_table_association.private, aws_ssm_document.api_tunnel]
+}
+
+# AWS の汎用ドキュメント(AWS-StartPortForwardingSessionToRemoteHost)は転送先を利用者が選べる。
+# 自前のドキュメントで転送先を固定し、ポリシーではこのドキュメントだけを許す
+resource "aws_ssm_document" "api_tunnel" {
+  name            = "${var.cluster_name}-api-tunnel"
+  document_type   = "Session"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "1.0"
+    description   = "Port forwarding to the ${var.cluster_name} EKS API server only"
+    sessionType   = "Port"
+    parameters = {
+      localPortNumber = {
+        type           = "String"
+        description    = "Local port"
+        allowedPattern = "^[0-9]{1,5}$"
+        default        = "8443"
+      }
+    }
+    properties = {
+      type            = "LocalPortForwarding"
+      host            = trimprefix(aws_eks_cluster.main.endpoint, "https://")
+      portNumber      = "443"
+      localPortNumber = "{{ localPortNumber }}"
+    }
+  })
 }

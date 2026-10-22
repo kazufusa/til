@@ -28,7 +28,8 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 7. 実験で見つかった ec2 の 3 つ。`GetSecurityGroupsForVpc`(NLB 作成時)、`DisassociateAddress`(EIP 解放時)、
    `DescribeAddressesAttribute`(EIP 作成後の読み取り)
 8. 踏み台。EC2 インスタンスの起動、停止、削除と参照。SSM の接続(`ssm:StartSession`)は、
-   タグ `Project=<名前>` の付いたインスタンスとポート転送用のドキュメントに限る
+   タグ `Project=<名前>` の付いたインスタンスと、転送先を API サーバーの 443 に固定した自前のドキュメント(`<名前>-api-tunnel`)に限る。
+   AWS の汎用ドキュメントは許さない。builder は、このドキュメントの作成と更新もできる(`document/<名前>-*`)
 
 ### deployer(開発者の個人ロールに `<名前>-deployer-policy` を付けてもらう側)
 
@@ -135,6 +136,84 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       }
     },
     {
+      "Sid": "IamPassRoleToBastion",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/eks-exp-bastion",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "BastionInstance",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyInstanceMetadataOptions",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeImages",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-api-tunnel"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
+    },
+    {
+      "Sid": "TunnelDocumentAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:CreateDocument",
+        "ssm:DeleteDocument",
+        "ssm:UpdateDocument",
+        "ssm:UpdateDocumentDefaultVersion",
+        "ssm:DescribeDocument",
+        "ssm:GetDocument",
+        "ssm:DescribeDocumentPermission",
+        "ssm:ListDocumentVersions",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-*"
+    },
+    {
       "Sid": "ServiceLinkedRoles",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
@@ -198,63 +277,6 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
       "Resource": "*"
-    },
-    {
-      "Sid": "IamPassRoleToBastion",
-      "Effect": "Allow",
-      "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::*:role/eks-exp-bastion",
-      "Condition": {
-        "StringEquals": {
-          "iam:PassedToService": "ec2.amazonaws.com"
-        }
-      }
-    },
-    {
-      "Sid": "BastionInstance",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:RunInstances",
-        "ec2:TerminateInstances",
-        "ec2:StartInstances",
-        "ec2:StopInstances",
-        "ec2:ModifyInstanceAttribute",
-        "ec2:ModifyInstanceMetadataOptions",
-        "ec2:DescribeInstances",
-        "ec2:DescribeInstanceAttribute",
-        "ec2:DescribeInstanceTypes",
-        "ec2:DescribeInstanceCreditSpecifications",
-        "ec2:DescribeImages",
-        "ec2:DescribeVolumes",
-        "ec2:DescribeTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "BastionTunnel",
-      "Effect": "Allow",
-      "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ec2:*:*:instance/*",
-      "Condition": {
-        "StringEquals": {
-          "ssm:resourceTag/Project": "eks-exp"
-        }
-      }
-    },
-    {
-      "Sid": "BastionTunnelDocument",
-      "Effect": "Allow",
-      "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
-    },
-    {
-      "Sid": "BastionTunnelEnd",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:TerminateSession",
-        "ssm:ResumeSession"
-      ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
     }
   ]
 }
@@ -287,7 +309,7 @@ AWS 管理ポリシー 3 つで足りるのはネットワーク、ELB、ECR だ
 | Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
 | IAM(ロール) | `<cluster_name>-*` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
 | EC2(インスタンス) | RunInstances、TerminateInstances、Describe など | 踏み台の作成と削除。起動時に `<cluster_name>-bastion` の PassRole が要る |
-| SSM | `ssm:StartSession`(タグ `Project` のインスタンスとポート転送のドキュメント)、TerminateSession、ResumeSession | 手元から API サーバーへのトンネル(builder と deployer の両方) |
+| SSM | `ssm:StartSession`(タグ `Project` のインスタンスと `<cluster_name>-api-tunnel` のドキュメント)、TerminateSession、ResumeSession。builder はこのドキュメントの作成と更新も(`document/<cluster_name>-*`) | 手元から API サーバーの 443 へのトンネル(builder と deployer の両方)。転送先は固定で、他のホストへは出られない(未検証) |
 | IAM(ポリシー) | 既知の 6 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
 | IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
 | S3 | `tfstate-*-<cluster_name>` の管理と読み書き | terraform の state |
@@ -335,7 +357,10 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 簡易版の builder で apply から destroy まで通り、AccessDenied は出ませんでした。
 踏み台とトンネルの権限(EC2 の 13 Action、PassRole、SSM の 3 文)も、2026-10-22 に apply から destroy まで通しました。
 開発者役は、踏み台でシェルを開けず、タグの無いインスタンスへも転送できませんでした。
-ただし、踏み台を経由してインターネットへは転送できます。送信元は NAT の固定 IP です。
+当時の検証では、AWS の汎用ドキュメントを許していたため、踏み台を経由してインターネットへ転送できました(example.com:443 が 200)。送信元は NAT の固定 IP です。
+その後、転送先を API サーバーの 443 に固定した自前のドキュメントへ変え、StartSession をそのドキュメントだけに限りました(未検証)。
+防御は IAM に依存します。広い `ssm:StartSession` や汎用ドキュメントを誰かが許すと、穴は再び開きます。
+踏み台自体も、SSM エージェントのために NAT 経由でインターネットへ出られます。
 
 ### 名前を変える手順
 
@@ -525,6 +550,84 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
       }
     },
     {
+      "Sid": "IamPassRoleToBastion",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/eks-exp-bastion",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "BastionInstance",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyInstanceMetadataOptions",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeImages",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-api-tunnel"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
+    },
+    {
+      "Sid": "TunnelDocumentAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:CreateDocument",
+        "ssm:DeleteDocument",
+        "ssm:UpdateDocument",
+        "ssm:UpdateDocumentDefaultVersion",
+        "ssm:DescribeDocument",
+        "ssm:GetDocument",
+        "ssm:DescribeDocumentPermission",
+        "ssm:ListDocumentVersions",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-*"
+    },
+    {
       "Sid": "ServiceLinkedRoles",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
@@ -591,63 +694,6 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
       "Resource": "*"
-    },
-    {
-      "Sid": "IamPassRoleToBastion",
-      "Effect": "Allow",
-      "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::*:role/eks-exp-bastion",
-      "Condition": {
-        "StringEquals": {
-          "iam:PassedToService": "ec2.amazonaws.com"
-        }
-      }
-    },
-    {
-      "Sid": "BastionInstance",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:RunInstances",
-        "ec2:TerminateInstances",
-        "ec2:StartInstances",
-        "ec2:StopInstances",
-        "ec2:ModifyInstanceAttribute",
-        "ec2:ModifyInstanceMetadataOptions",
-        "ec2:DescribeInstances",
-        "ec2:DescribeInstanceAttribute",
-        "ec2:DescribeInstanceTypes",
-        "ec2:DescribeInstanceCreditSpecifications",
-        "ec2:DescribeImages",
-        "ec2:DescribeVolumes",
-        "ec2:DescribeTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "BastionTunnel",
-      "Effect": "Allow",
-      "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ec2:*:*:instance/*",
-      "Condition": {
-        "StringEquals": {
-          "ssm:resourceTag/Project": "eks-exp"
-        }
-      }
-    },
-    {
-      "Sid": "BastionTunnelDocument",
-      "Effect": "Allow",
-      "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
-    },
-    {
-      "Sid": "BastionTunnelEnd",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:TerminateSession",
-        "ssm:ResumeSession"
-      ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
     }
   ]
 }
@@ -703,6 +749,35 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
       "Resource": "arn:aws:eks:*:*:cluster/eks-exp"
     },
     {
+      "Sid": "BastionTunnel",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eks-exp"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Sid": "BastionTunnelDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-api-tunnel"
+    },
+    {
+      "Sid": "BastionTunnelEnd",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/*"
+    },
+    {
       "Sid": "LogsRead",
       "Effect": "Allow",
       "Action": "logs:DescribeLogGroups",
@@ -723,32 +798,6 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
         "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*",
         "arn:aws:logs:*:*:log-group:/aws/containerinsights/eks-exp/*:*"
       ]
-    },
-    {
-      "Sid": "BastionTunnel",
-      "Effect": "Allow",
-      "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ec2:*:*:instance/*",
-      "Condition": {
-        "StringEquals": {
-          "ssm:resourceTag/Project": "eks-exp"
-        }
-      }
-    },
-    {
-      "Sid": "BastionTunnelDocument",
-      "Effect": "Allow",
-      "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
-    },
-    {
-      "Sid": "BastionTunnelEnd",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:TerminateSession",
-        "ssm:ResumeSession"
-      ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
     }
   ]
 }

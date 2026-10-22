@@ -43,6 +43,9 @@
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/Project": "eks-exp"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
         }
       }
     },
@@ -50,7 +53,7 @@
       "Sid": "BastionTunnelDocument",
       "Effect": "Allow",
       "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"
+      "Resource": "arn:aws:ssm:*:*:document/eks-exp-api-tunnel"
     },
     {
       "Sid": "BastionTunnelEnd",

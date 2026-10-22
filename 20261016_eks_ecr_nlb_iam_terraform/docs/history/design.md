@@ -402,3 +402,21 @@ kubernetes の資源は踏み台に依存させたので、destroy ではトン�
 IAM は、マネージャーが踏み台用のロールと instance profile(`<名前>-bastion`)を作ります。
 builder のポリシーには、そのロールの PassRole、EC2 インスタンスの操作、SSM の接続を足しました。
 deployer のポリシーには、SSM の接続だけを足しました。ECR への push にトンネルは要りません。
+
+### 転送先を固定する自前のドキュメント
+
+AWS の汎用ドキュメント(`AWS-StartPortForwardingSessionToRemoteHost`)では、転送先のホストとポートを利用者が選べます。
+前回の検証では、開発者役が踏み台を経由して example.com:443 に届き、200 が返りました。NAT の固定 IP を使って、任意のインターネットのホストへ出られる状態でした。
+
+そこで、terraform で SSM の Session ドキュメント(`<名前>-api-tunnel`)を作ります。
+ホストは EKS の API エンドポイント、ポートは 443 に固定し、利用者が渡せるのは `localPortNumber` だけです。
+builder と deployer のポリシーは、StartSession をこのドキュメントだけに限ります。
+インスタンス側の文にも `BoolIfExists ssm:SessionDocumentAccessCheck = true` を足し、ドキュメントを指定しない接続を断ちます。
+builder には、このドキュメントの作成と更新の権限(`TunnelDocumentAdmin`、対象は `document/<名前>-*`)を足しました。
+踏み台はドキュメントに依存させたので、1 段目の `-target` でも一緒に作られます(未検証)。
+
+VPC エンドポイントで SSM を閉じる案もありましたが、月 30 USD 程度かかるため採用していません。
+
+残るリスクは 2 つです。
+1 つは、防御が IAM に依存することです。広い `ssm:StartSession` や汎用ドキュメントを誰かが許すと、穴は再び開きます。
+もう 1 つは、踏み台が SSM エージェントのために NAT 経由でインターネットへ出られることです。

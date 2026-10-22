@@ -10,7 +10,7 @@ EKS 環境を作る terraform と、その前後でマネージャーが使う I
 - HTTPS の URL(CloudFront)で、アプリにアクセスできる。NLB は内部向けで、CloudFront から VPC origin で届く
 - Pod から、NAT Gateway と固定 EIP を通ってアウトバウンド通信できる
 - kubectl で、サンプルの Slack アプリ(署名検証、メンション返信)をデプロイできる
-- EKS の API サーバーは VPC の中だけに公開し、SSM の踏み台とポート転送で手元からつなぐ
+- EKS の API サーバーは VPC の中だけに公開し、SSM の踏み台とポート転送で手元からつなぐ(転送先は自前の SSM ドキュメントで API サーバーの 443 に固定)
 - 全 Pod のログが CloudWatch Logs に転送され、30 日間残る
 - image を置く ECR がある(リポジトリは複数指定できる)
 - 開発者は自分のロールのまま、image の push とデプロイができる(スイッチ不要)
