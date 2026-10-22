@@ -413,9 +413,15 @@ AWS の汎用ドキュメント(`AWS-StartPortForwardingSessionToRemoteHost`)で
 builder と deployer のポリシーは、StartSession をこのドキュメントだけに限ります。
 インスタンス側の文にも `BoolIfExists ssm:SessionDocumentAccessCheck = true` を足し、ドキュメントを指定しない接続を断ちます。
 builder には、このドキュメントの作成と更新の権限(`TunnelDocumentAdmin`、対象は `document/<名前>-*`)を足しました。
-踏み台はドキュメントに依存させたので、1 段目の `-target` でも一緒に作られます(未検証)。
+踏み台はドキュメントに依存させたので、1 段目の `-target` でも一緒に作られます。
 
 VPC エンドポイントで SSM を閉じる案もありましたが、月 30 USD 程度かかるため採用していません。
+
+レビューで、セッションの終了と再開の対象が `session/*` で広いと指摘されました。
+他人のトンネルも切れるためです。
+条件 `ssm:resourceTag/aws:ssmmessages:session-id` が `${aws:userid}` と一致するものだけに絞りました。
+ARN に `${aws:userid}` を埋める書き方は、ロールの userid がコロンを含むため、セッション ID と一致しません。
+この形と、builder と開発者がシェルと SendCommand を使えないことは、2026-10-22 に確かめました。
 
 残るリスクは 2 つです。
 1 つは、防御が IAM に依存することです。広い `ssm:StartSession` や汎用ドキュメントを誰かが許すと、穴は再び開きます。

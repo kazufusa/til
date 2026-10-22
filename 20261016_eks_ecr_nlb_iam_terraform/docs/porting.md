@@ -46,6 +46,8 @@ aws sts get-caller-identity --query Arn --output text
 渡すのは `bootstrap/rendered/<名前>/` の中身です。
 実行すると、EKS と踏み台用のロール 3 つとポリシー 2 つができ、自分の個人ロールに権限が付きます。
 開発者ごとに `attach-deployer-policy.sh <開発者のロール名>` も頼みます。
+あわせて、開発者の個人ロールに PowerUserAccess のような広い権限が付いていないか、確かめてもらいます。
+広い `ssm:StartSession` が付いていると、踏み台の転送先の固定が効きません。
 付くのは AWS 管理ポリシー 3 つと `<名前>-builder-policy` で、内容は `docs/permissions.md` にあります。
 
 ## 4. 作る
@@ -110,7 +112,7 @@ scripts/render-deployer-doc.sh terraform docs/deployer.md
 | NAT Gateway | 1 台 | AZ ごと |
 | ログ保存 | 30 日 | 90 日以上 |
 | HTTPS | CloudFront の既定ドメイン | ACM 証明書と独自ドメイン |
-| EKS の API エンドポイント | プライベートだけ。SSM の踏み台とポート転送で接続。転送先は自前の SSM ドキュメントで API サーバーの 443 に固定(未検証) | 踏み台の AMI の固定、SSM セッションのログ保存。広い `ssm:StartSession` を許さない運用 |
+| EKS の API エンドポイント | プライベートだけ。SSM の踏み台とポート転送で接続。転送先は自前の SSM ドキュメントで API サーバーの 443 に固定 | 踏み台の AMI の固定、SSM セッションのログ保存。広い `ssm:StartSession` を許さない運用 |
 | builder の権限 | 管理ポリシー 3 つ + 自作 1 つ(IAM は作れない) | 共有アカウントなら最小権限版(`docs/permissions.md` の付録) |
 
 詳細は `docs/permissions.md` の「本番で追加を検討する対策」にあります。

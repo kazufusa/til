@@ -314,7 +314,7 @@ AWS 管理ポリシー 3 つで足りるのはネットワーク、ELB、ECR だ
 | Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
 | IAM(ロール) | `<cluster_name>-*` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
 | EC2(インスタンス) | RunInstances、TerminateInstances、Describe など | 踏み台の作成と削除。起動時に `<cluster_name>-bastion` の PassRole が要る |
-| SSM | `ssm:StartSession`(タグ `Project` のインスタンスと `<cluster_name>-api-tunnel` のドキュメント)、TerminateSession、ResumeSession。builder はこのドキュメントの作成と更新も(`document/<cluster_name>-*`) | 手元から API サーバーの 443 へのトンネル(builder と deployer の両方)。転送先は固定で、他のホストへは出られない(未検証) |
+| SSM | `ssm:StartSession`(タグ `Project` のインスタンスと `<cluster_name>-api-tunnel` のドキュメント)、自分が始めたセッションの TerminateSession と ResumeSession(`aws:userid` で判定)。builder はこのドキュメントの作成と更新も(`document/<cluster_name>-*`) | 手元から API サーバーの 443 へのトンネル(builder と deployer の両方)。転送先は固定で、他のホストへは出られない。シェルと SendCommand は使えない |
 | IAM(ポリシー) | 既知の 6 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
 | IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
 | S3 | `tfstate-*-<cluster_name>` の管理と読み書き | terraform の state |
@@ -363,7 +363,10 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 踏み台とトンネルの権限(EC2 の 13 Action、PassRole、SSM の 3 文)も、2026-10-22 に apply から destroy まで通しました。
 開発者役は、踏み台でシェルを開けず、タグの無いインスタンスへも転送できませんでした。
 当時の検証では、AWS の汎用ドキュメントを許していたため、踏み台を経由してインターネットへ転送できました(example.com:443 が 200)。送信元は NAT の固定 IP です。
-その後、転送先を API サーバーの 443 に固定した自前のドキュメントへ変え、StartSession をそのドキュメントだけに限りました(未検証)。
+その後、転送先を API サーバーの 443 に固定した自前のドキュメントへ変え、StartSession をそのドキュメントだけに限りました。
+開発者役は、汎用ドキュメントも、`host` の上書きも拒否されました。
+セッションの終了と再開は、`aws:userid` で自分が始めたものだけに絞りました。
+他人のセッションの終了は AccessDenied になり、builder 役と開発者役のシェルと SendCommand も AccessDenied でした。
 防御は IAM に依存します。広い `ssm:StartSession` や汎用ドキュメントを誰かが許すと、穴は再び開きます。
 踏み台自体も、SSM エージェントのために NAT 経由でインターネットへ出られます。
 

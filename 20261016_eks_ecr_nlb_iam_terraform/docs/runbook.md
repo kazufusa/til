@@ -35,7 +35,15 @@ builder の個人ロールに AWS 管理ポリシー 3 つと `eks-exp-builder-p
 bootstrap/attach-deployer-policy.sh <開発者の個人ロール名>
 ```
 撤去は `bootstrap/teardown-iam.sh <builder の個人ロール名>` です。
-ポリシーの中身を更新するときは、撤去してからもう一度作ります。
+ポリシーの中身を更新するときは、新しい版を作って既定にします。ロールへの付け直しは要りません。
+
+```bash
+aws iam create-policy-version --set-as-default \
+  --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/eks-exp-deployer-policy \
+  --policy-document file://bootstrap/deployer-policy.json
+```
+
+版は 5 つまでしか持てないので、古い版は `aws iam delete-policy-version` で消します。
 
 ## builder
 
