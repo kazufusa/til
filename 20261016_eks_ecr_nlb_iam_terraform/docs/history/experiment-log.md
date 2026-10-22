@@ -551,3 +551,74 @@ deployer ロールを廃止し、開発者の個人ロールに `eks-exp-deploye
 - builder の IAM の書き込みは PassRole だけで、apply から destroy まで通る
 - 開発者は個人ロールに `eks-exp-deployer-policy` と Access Entry があれば、スイッチ無しで作業できる
 - 開発者の追加はマネージャー 1 回(IAM)と builder の apply 1 回(EKS)で済む
+
+## 第 4 期の設計(SSM の踏み台)での検証(2026-10-22)
+
+### 目的
+
+EKS の API サーバーをプライベートだけにし、SSM の踏み台を経由する形で、ゼロから撤去まで通ることを確かめます。
+
+### 確かめること
+
+- `setup-iam.sh` で踏み台用のロールと instance profile ができ、`teardown-iam.sh` で消える
+- builder の権限で、2 段の apply と destroy が AccessDenied 無しで通る
+- builder と開発者役が `eks-tunnel.sh` でトンネルを張り、kubectl を使える
+- API サーバーに外から直接は届かない(`endpointPublicAccess` が false)
+- 開発者役の `ssm:StartSession` は、踏み台以外のインスタンスに対しては拒否される
+- t4g.nano の踏み台で、トンネルが実用に足りる
+
+### 準備と本番行動
+
+準備は個人アカウントだけの都合で、代役の空ロール 2 つの作成と削除です。
+本番行動は `docs/practice.md` の手順 2 から 13 で、移植先でも同じ順に打ちます。
+
+### 見張り
+
+- 開始から 3 時間で、builder の権限でトンネルを張って destroy する期限スクリプトを nohup で置く
+- 15 分ごとに cron で進み具合を確かめる
+
+### 結果
+
+すべての確認項目が通りました。途中で不具合を 1 つ見つけ、直したうえで 1 段目をゼロから回し直しました。
+
+| 段階 | 結果 |
+| --- | --- |
+| 準備 | 残骸ゼロを確認し、代役の空ロール 2 つを作成 |
+| マネージャー | `setup-iam.sh` で `eks-exp-bastion` のロールと instance profile ができた。builder 役に 4 つ、開発者役に 1 つ |
+| builder の境界 | `create-role` は AccessDenied |
+| 1 段目の apply | 14 資源、9 分、AccessDenied 0。公開エンドポイントは無効で、名前は VPC 内の IP に解決され、手元からは届かない |
+| 踏み台の SSM 登録 | 1 回目は Online にならなかった(下の不具合)。修正後のゼロからの 1 段目では、起動の 10 秒後に Online |
+| builder のトンネル | `eks-tunnel.sh` で kubectl が builder 役として通り、証明書はホスト名で検証できた |
+| 2 段目の apply | 24 資源、16 分、AccessDenied 0 |
+| developer ページ | 置換し忘れ 0、踏み台の ID が入った |
+| 開発者役 | スイッチ無しで push。別の kubeconfig でトンネルを張り、`app` へ deploy |
+| 動作確認 | HTTPS 5 回連続 200、`/news` が NHK の見出し、NLB は外から不達、ノード Ready、CloudWatch にログ到達 |
+| 開発者役の SSM の境界 | 踏み台でのシェルは AccessDenied。ノード(`Project` タグ無し)への転送も AccessDenied。EC2 の参照は拒否 |
+| 踏み台経由の転送先 | 内部 NLB の 80 とノードの NodePort には届かない(SG)。インターネットの 443 には届く |
+| セッションの終了 | 自分のセッションの `terminate-session` は通る。セッション ID の先頭はロールのセッション名 |
+| destroy | 42 資源、12 分、AccessDenied 0。k8s の資源が踏み台より先に消えた |
+| 撤去 | `teardown-iam.sh` でロール 3 つと instance profile とポリシー 2 つが消えた。代役ロールも削除 |
+| 残骸 | タグの索引以外はすべて 0。索引に残った資源は、直接引くと terminated、deleted、NotFound |
+
+### 見つかった不具合と修正
+
+1 段目の `-target` では、public subnet のルートテーブルとその関連付けが作られませんでした。
+踏み台からたどる依存が、NAT Gateway と IGW までで止まっていたためです。
+NAT が外に出られず、SSM エージェントは `ssm.ap-northeast-1.amazonaws.com` への接続がタイムアウトしました。
+`aws_nat_gateway` の `depends_on` に `aws_route_table_association.public` を足して直しました。
+失敗が続いたエージェントは再試行の間隔を延ばすので、その場は builder の権限で踏み台を止めて起動し直しました。
+
+### 見つかったリスク
+
+開発者は、踏み台を経由してインターネットの任意の宛先へ転送できます。
+送信元は NAT の固定 IP になるので、この IP を許可している相手には手元から届いてしまいます。
+VPC の中は、NLB とクラスタの SG で止まります。
+
+### 手順上の反省
+
+- builder のトンネルを閉じるときに `pgrep -f` のパターンで kill し、ユーザーが別に張っていた無関係の SSM 転送まで止めた。以後は `setsid` で起動して PGID で止める
+- `delete-state-bucket.sh` は確認の入力を待つので、入力無しで打つと何もせずに終わる。builder 役のロールを消した後に気づき、バケットは管理者の権限で消した
+
+### 費用
+
+約 0.3 USD です。
