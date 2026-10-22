@@ -423,6 +423,15 @@ VPC エンドポイントで SSM を閉じる案もありましたが、月 30 U
 ARN に `${aws:userid}` を埋める書き方は、ロールの userid がコロンを含むため、セッション ID と一致しません。
 この形と、builder と開発者がシェルと SendCommand を使えないことは、2026-10-22 に確かめました。
 
+### EC2 インスタンスの権限の絞り込み
+
+builder の `RunInstances` と `TerminateInstances` は、Resource が `*` でした。踏み台を作るためだけに、アカウントの全インスタンスを消せる状態でした。
+起動は、タグ `Project=<名前>` を付けた t4g.nano だけに絞りました(`aws:RequestTag/Project` と `ec2:InstanceType`)。
+止める、消す、属性を変える操作は、タグ `Project=<名前>` のインスタンスだけです(`aws:ResourceTag/Project`)。
+`AmazonVPCFullAccess` には `ec2:CreateTags` が `*` で入っています。他のインスタンスにタグを付ければ、消せてしまいます。
+そこで、起動時以外のインスタンスへの `ec2:CreateTags` を Deny しました(`ec2:CreateAction` が `RunInstances` でないとき)。
+タグは provider の `default_tags` で起動時に付くので、terraform の動きは変わりません。
+
 残るリスクは 2 つです。
 1 つは、防御が IAM に依存することです。広い `ssm:StartSession` や汎用ドキュメントを誰かが許すと、穴は再び開きます。
 もう 1 つは、踏み台が SSM エージェントのために NAT 経由でインターネットへ出られることです。

@@ -32,7 +32,7 @@ builder がロールを作れると自分に任意の権限を与えられるた
 | `eks-exp-cluster` | ロール | EKS のコントロールプレーン用 |
 | `eks-exp-node` | ロール | ノード(EC2)用。ECR の pull と CloudWatch Logs への書き込み |
 | `eks-exp-bastion` | ロールと instance profile | 踏み台(EC2)用。SSM に登録するだけ |
-| `eks-exp-builder-policy` | ポリシー | builder の個人ロールに付ける。AWS 管理ポリシー 3 つと組み合わせる |
+| `eks-exp-builder-policy` | ポリシー | builder の個人ロールに付ける。AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と組み合わせる |
 | `eks-exp-deployer-policy` | ポリシー | 開発者の個人ロールに付ける |
 
 ## 最短手順
@@ -43,9 +43,7 @@ builder がロールを作れると自分に任意の権限を与えられるた
 bootstrap/setup-iam.sh <builder の個人ロール名>   # 例: cli-fl-taro.yamada
 ```
 
-JSON 2 枚からポリシー 2 つが登録され、EKS と踏み台用のロール 3 つが作られます。
-続けて、builder の個人ロールに AWS 管理ポリシー 3 つ(VPC、ELB、ECR の FullAccess)と
-`eks-exp-builder-policy` が付き、builder は terraform を回せます。
+ポリシー 2 つとロール 3 つができ、builder の個人ロールに上の 4 つのポリシーが付きます。
 
 ### 2. builder: state バケットを作り、terraform を 2 段で回す
 
@@ -68,48 +66,25 @@ terraform output
 scripts/eks-tunnel.sh eks-exp "$(terraform -chdir=terraform output -raw bastion_instance_id)"
 ```
 
-`output` で、deployer に渡す値(ECR の URL、公開 URL など)が表示されます。
-
 ### 3. 開発者を足す(マネージャーと builder が 1 回ずつ)
 
 ```bash
 bootstrap/attach-deployer-policy.sh <開発者の個人ロール名>   # マネージャー
 ```
 
-マネージャーが個人ロールに `eks-exp-deployer-policy` を付けます(ECR の push、ログの参照、トンネルの接続)。
-builder は `deployer_role_arns` に開発者のロール ARN を足して apply します。
-これで EKS 側の権限(Access Entry)が付きます。外すときは逆の手順です。
+続けて builder が `deployer_role_arns` に開発者のロール ARN を足して apply すると、EKS 側の権限が付きます。
 
 ### 4. deployer: image を push してデプロイする
 
 開発者は自分のログインのまま、`docs/deployer.md` の手順で ECR へ push します(トンネル不要)。
 kubectl は、トンネルを張った別の端末で打ちます。役割ごとのコマンド一覧は `docs/runbook.md` です。
 
-## deployer への引き渡し
+## deployer への引き渡しと名前の変更
 
-builder が apply の後に `scripts/render-deployer-doc.sh` を実行し、値が埋まった `docs/deployer.md` を開発者に渡します。
-下の表は、各値の出所です。
+builder は apply の後に `scripts/render-deployer-doc.sh` を実行し、値が埋まった `docs/deployer.md` を開発者に渡します。
+クラスタ名、踏み台の ID、ECR の URL、公開 URL などが、`terraform output` から埋まります。
 
-| 渡すもの | 出所 | 用途 |
-| --- | --- | --- |
-| 権限が付いているロール | `terraform output deployer_role_arns` | 自分のロールが入っているかの確認 |
-| クラスタ名とリージョン | `cluster_name`、`region` | トンネルのスクリプトの引数 |
-| 踏み台のインスタンス ID | `bastion_instance_id` | トンネルのスクリプトの引数 |
-| ECR リポジトリの URL | `ecr_repository_url`(先頭の 1 つ。全部は `ecr_repository_urls`) | push と manifest の image |
-| namespace | `deployer_namespaces`(既定 `app`) | デプロイ先 |
-| NodePort | `node_port`(30080) | Service に必ずこの番号を書く |
-| 公開 URL(HTTPS) | `https_url` | 動作確認 |
-| ログのロググループ | `log_group_application` | CloudWatch Logs でのログ参照 |
-| できること・できないこと | `docs/permissions.md` | 権限の範囲の確認 |
-| 最初に読むページ | `docs/deployer.md` | 開発者向けの手順 |
-
-## 名前を変えるときの注意
-
-名前の元になる語は、今は `eks-exp` です。ロール、ポリシー、クラスタ、NLB、バケット、タグの接頭辞に入っています。
-変えるときは、terraform の変数 `cluster_name` を変え、
-`scripts/render-policy.sh <名前>` でマネージャーに渡す一式(スクリプト 4 本と JSON 3 枚)を作ります。
-以後のスクリプトは `PROJECT=<名前>` を付けて実行します。
-NLB の名前は 32 文字までで、稼働後に変えると terraform が作り直します。
+名前の元になる語は、今は `eks-exp` です。変える手順は `docs/porting.md` にあります。
 
 ## ディレクトリ構成
 

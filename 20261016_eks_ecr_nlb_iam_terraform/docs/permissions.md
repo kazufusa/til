@@ -27,7 +27,8 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
 6. CloudWatch Logs のロググループの作成と削除(名前が `/aws/containerinsights/<名前>/` で始まるものに限る)
 7. 実験で見つかった ec2 の 3 つ。`GetSecurityGroupsForVpc`(NLB 作成時)、`DisassociateAddress`(EIP 解放時)、
    `DescribeAddressesAttribute`(EIP 作成後の読み取り)
-8. 踏み台。EC2 インスタンスの起動、停止、削除と参照。SSM の接続(`ssm:StartSession`)は、
+8. 踏み台。EC2 インスタンスの起動はタグ `Project=<名前>` 付きの t4g.nano だけ、停止と削除はそのタグのものだけ。
+   起動時以外のインスタンスへのタグ付けは Deny し、他のインスタンスに `Project` タグを付けて消す抜け道を塞ぐ。SSM の接続(`ssm:StartSession`)は、
    タグ `Project=<名前>` の付いたインスタンスと、転送先を API サーバーの 443 に固定した自前のドキュメント(`<名前>-api-tunnel`)に限る。
    AWS の汎用ドキュメントは許さない。builder は、このドキュメントの作成と更新もできる(`document/<名前>-*`)
 
@@ -147,15 +148,9 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
       }
     },
     {
-      "Sid": "BastionInstance",
+      "Sid": "BastionDescribe",
       "Effect": "Allow",
       "Action": [
-        "ec2:RunInstances",
-        "ec2:TerminateInstances",
-        "ec2:StartInstances",
-        "ec2:StopInstances",
-        "ec2:ModifyInstanceAttribute",
-        "ec2:ModifyInstanceMetadataOptions",
         "ec2:DescribeInstances",
         "ec2:DescribeInstanceAttribute",
         "ec2:DescribeInstanceTypes",
@@ -165,6 +160,72 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
         "ec2:DescribeTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "BastionLaunch",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "eks-exp",
+          "ec2:InstanceType": "t4g.nano"
+        }
+      }
+    },
+    {
+      "Sid": "BastionLaunchResources",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:*:*:subnet/*",
+        "arn:aws:ec2:*:*:network-interface/*",
+        "arn:aws:ec2:*:*:security-group/*",
+        "arn:aws:ec2:*:*:volume/*",
+        "arn:aws:ec2:*::image/*"
+      ]
+    },
+    {
+      "Sid": "BastionTagOnLaunch",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:ec2:*:*:volume/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": "RunInstances"
+        }
+      }
+    },
+    {
+      "Sid": "BastionManage",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:TerminateInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyInstanceMetadataOptions"
+      ],
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "eks-exp"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRetagInstances",
+      "Effect": "Deny",
+      "Action": "ec2:CreateTags",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringNotEquals": {
+          "ec2:CreateAction": "RunInstances"
+        }
+      }
     },
     {
       "Sid": "BastionTunnel",
@@ -313,7 +374,7 @@ AWS 管理ポリシー 3 つで足りるのはネットワーク、ELB、ECR だ
 | ELB | LB、target group、listener の作成と削除 | NLB の構築 |
 | Auto Scaling | target group の関連付け | ノードグループと NLB の接続 |
 | IAM(ロール) | `<cluster_name>-*` の作成、削除、PassRole | クラスタ、ノード、deployer のロール |
-| EC2(インスタンス) | RunInstances、TerminateInstances、Describe など | 踏み台の作成と削除。起動時に `<cluster_name>-bastion` の PassRole が要る |
+| EC2(インスタンス) | RunInstances(タグ `Project` 付きの t4g.nano だけ)、TerminateInstances など(タグ `Project` のものだけ)、Describe。起動時以外のインスタンスへの CreateTags は Deny | 踏み台の作成と削除。起動時に `<cluster_name>-bastion` の PassRole が要る |
 | SSM | `ssm:StartSession`(タグ `Project` のインスタンスと `<cluster_name>-api-tunnel` のドキュメント)、自分が始めたセッションの TerminateSession と ResumeSession(`aws:userid` で判定)。builder はこのドキュメントの作成と更新も(`document/<cluster_name>-*`) | 手元から API サーバーの 443 へのトンネル(builder と deployer の両方)。転送先は固定で、他のホストへは出られない。シェルと SendCommand は使えない |
 | IAM(ポリシー) | 既知の 6 ポリシーの Attach と Detach、deployer のポリシーの作成 | ロールへの権限付与 |
 | IAM(サービスリンクロール) | `CreateServiceLinkedRole` | EKS、ELB、Auto Scaling が最初に使うロール |
@@ -354,13 +415,16 @@ IAM のロールとポリシーは作れません。
    開発者への権限付与はマネージャーが行い、builder は関与しません。
 2. builder は EKS の Access Entry を作れるので、クラスタ内の権限なら任意のロールに付けられます。
    クラスタはこの環境専用なので受け入れます。
-3. EC2、ELB、ECR、CloudFront は Resource が `*` です。
+3. ネットワーク系の EC2、ELB、ECR、CloudFront は Resource が `*` です。
    builder は自分が作っていない VPC、LB、リポジトリ、ディストリビューションも削除できます。
+   EC2 インスタンスだけは、タグ `Project=<名前>` のものに限っています。
 4. EKS の書き込みは、クラスタ名で資源を限っています。他のクラスタには Access Entry を作れません。
 
 EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10-19)。
 簡易版の builder で apply から destroy まで通り、AccessDenied は出ませんでした。
 踏み台とトンネルの権限(EC2 の 13 Action、PassRole、SSM の 3 文)も、2026-10-22 に apply から destroy まで通しました。
+その後、EC2 インスタンスの権限をタグ `Project` と t4g.nano に絞り、1 段目の apply と destroy で確かめました。
+builder は、他の型やタグ無しのインスタンスを起動できず、タグの無いインスタンスを止めることも消すことも、タグを付けることもできませんでした。
 開発者役は、踏み台でシェルを開けず、タグの無いインスタンスへも転送できませんでした。
 当時の検証では、AWS の汎用ドキュメントを許していたため、踏み台を経由してインターネットへ転送できました(example.com:443 が 200)。送信元は NAT の固定 IP です。
 その後、転送先を API サーバーの 443 に固定した自前のドキュメントへ変え、StartSession をそのドキュメントだけに限りました。
@@ -384,6 +448,8 @@ EKS の資源限定と Pod Security のラベルは、検証済みです(2026-10
 使う場合は、`builder-policy.json` をこの JSON で差し替え、
 `setup-iam.sh` の AWS 管理ポリシーを付ける 3 行を消します。
 IAM を作らない形への追従は机上で行い、apply での再検証はしていません。
+空白を除いて約 7,100 文字あり、管理ポリシー 1 つの上限 6,144 文字を超えます。
+使うときは、Statement を 2 つのポリシーに分けて付けます。
 
 ```json
 {
@@ -569,24 +635,70 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
       }
     },
     {
-      "Sid": "BastionInstance",
+      "Sid": "BastionLaunch",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "eks-exp",
+          "ec2:InstanceType": "t4g.nano"
+        }
+      }
+    },
+    {
+      "Sid": "BastionLaunchResources",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:*:*:subnet/*",
+        "arn:aws:ec2:*:*:network-interface/*",
+        "arn:aws:ec2:*:*:security-group/*",
+        "arn:aws:ec2:*:*:volume/*",
+        "arn:aws:ec2:*::image/*"
+      ]
+    },
+    {
+      "Sid": "BastionTagOnLaunch",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:ec2:*:*:volume/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": "RunInstances"
+        }
+      }
+    },
+    {
+      "Sid": "BastionManage",
       "Effect": "Allow",
       "Action": [
-        "ec2:RunInstances",
         "ec2:TerminateInstances",
         "ec2:StartInstances",
         "ec2:StopInstances",
         "ec2:ModifyInstanceAttribute",
-        "ec2:ModifyInstanceMetadataOptions",
-        "ec2:DescribeInstances",
-        "ec2:DescribeInstanceAttribute",
-        "ec2:DescribeInstanceTypes",
-        "ec2:DescribeInstanceCreditSpecifications",
-        "ec2:DescribeImages",
-        "ec2:DescribeVolumes",
-        "ec2:DescribeTags"
+        "ec2:ModifyInstanceMetadataOptions"
       ],
-      "Resource": "*"
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "eks-exp"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRetagInstances",
+      "Effect": "Deny",
+      "Action": "ec2:CreateTags",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringNotEquals": {
+          "ec2:CreateAction": "RunInstances"
+        }
+      }
     },
     {
       "Sid": "BastionTunnel",

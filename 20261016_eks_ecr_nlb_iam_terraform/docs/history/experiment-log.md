@@ -698,3 +698,48 @@ SSM 用の VPC エンドポイントは、月 30 USD 前後かかるため採り
 ### 費用
 
 2 周目と合わせて約 0.4 USD です。
+
+## 踏み台の EC2 権限の絞り込みの検証(2026-10-22)
+
+### 目的
+
+builder の EC2 インスタンスの権限は、`RunInstances` と `TerminateInstances` がアカウント全体に効いていました。
+これを、タグ `Project=eks-exp` 付きの t4g.nano だけ起動でき、そのタグのものだけ止めたり消したりできる形に絞ります。
+`AmazonVPCFullAccess` の `ec2:CreateTags` で他のインスタンスにタグを付け替えられないよう、起動時以外のタグ付けを Deny します。
+
+### 確かめること
+
+- builder の権限で、1 段目の apply と destroy が AccessDenied 無しで通る
+- 1 段目の後の plan で、踏み台に差分が出ない
+- builder は、t4g.nano 以外の型や、タグ無しのインスタンスを起動できない(`--dry-run` で確かめる)
+- builder は、タグの無い他人のインスタンスを止められず、消せず、タグも付けられない
+
+### 見張り
+
+開始から 90 分の期限 destroy と、15 分ごとの cron を置きます。
+
+### 結果
+
+すべての確認項目が通りました。
+
+| 確認 | 結果 |
+| --- | --- |
+| 1 段目の apply | 19 資源、AccessDenied 0。踏み台は t4g.nano でタグ `Project=eks-exp` が付き、SSM に Online |
+| 1 段目の後の plan | 踏み台とクラスタの SG ルールに差分なし |
+| t4g.nano にタグ `Project=eks-exp` を付けて起動(`--dry-run`) | 許可 |
+| t4g.micro で起動、タグ無しで起動、`Project=other` で起動 | どれも UnauthorizedOperation |
+| 踏み台の停止と削除(`--dry-run`) | 許可 |
+| 踏み台へのタグの追加 | UnauthorizedOperation(起動時以外のタグ付けの Deny) |
+| 管理者が立てたタグ無しのインスタンスの削除、停止、属性の変更 | どれも UnauthorizedOperation |
+| 同じインスタンスに `Project=eks-exp` を付ける | UnauthorizedOperation |
+| destroy | AccessDenied 0。途中で Claude Code のセッションが切れて terraform が止まり、回し直して残り 3 資源を消した |
+| 撤去 | `teardown-iam.sh` と代役ロールの削除の後、タグの索引以外は残骸 0 |
+
+### 手順上の反省
+
+destroy を Claude Code の背景タスクで流していたため、セッションの再起動で terraform も止まりました。
+長い apply と destroy は、`setsid` で別のプロセスグループにして流します。
+
+### 費用
+
+約 0.15 USD です。
