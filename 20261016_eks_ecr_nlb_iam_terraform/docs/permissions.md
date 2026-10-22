@@ -193,7 +193,12 @@ AWS 側の JSON は、そのまま申請や確認に使えます。
         "ssm:TerminateSession",
         "ssm:ResumeSession"
       ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
+      "Resource": "arn:aws:ssm:*:*:session/*",
+      "Condition": {
+        "StringLike": {
+          "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}"
+        }
+      }
     },
     {
       "Sid": "TunnelDocumentAdmin",
@@ -607,7 +612,12 @@ IAM を作らない形への追従は机上で行い、apply での再検証は�
         "ssm:TerminateSession",
         "ssm:ResumeSession"
       ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
+      "Resource": "arn:aws:ssm:*:*:session/*",
+      "Condition": {
+        "StringLike": {
+          "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}"
+        }
+      }
     },
     {
       "Sid": "TunnelDocumentAdmin",
@@ -775,7 +785,12 @@ ECR はリポジトリ名ではなく、タグ `Project=<cluster_name>` で限�
         "ssm:TerminateSession",
         "ssm:ResumeSession"
       ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
+      "Resource": "arn:aws:ssm:*:*:session/*",
+      "Condition": {
+        "StringLike": {
+          "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}"
+        }
+      }
     },
     {
       "Sid": "LogsRead",

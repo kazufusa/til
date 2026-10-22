@@ -110,7 +110,12 @@
         "ssm:TerminateSession",
         "ssm:ResumeSession"
       ],
-      "Resource": "arn:aws:ssm:*:*:session/*"
+      "Resource": "arn:aws:ssm:*:*:session/*",
+      "Condition": {
+        "StringLike": {
+          "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}"
+        }
+      }
     },
     {
       "Sid": "TunnelDocumentAdmin",
