@@ -1,0 +1,45 @@
+x-env: &env
+  DATABASE_URL: postgresql+psycopg://shop:shop@db:5432/shop
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop
+      POSTGRES_DB: shop
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop"]
+      interval: 2s
+      retries: 15
+
+  # マイグレーションは基盤(shop_core)の持ち物。app より先に 1 回だけ走る
+  migrate:
+    build:
+      context: .
+      dockerfile: packages/shop_core/Dockerfile
+    environment: *env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app1:
+    build:
+      context: .
+      dockerfile: app1/Dockerfile
+    environment: *env
+    ports: ["8001:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  app2:
+    build:
+      context: .
+      dockerfile: app2/Dockerfile
+    environment: *env
+    ports: ["8002:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully

@@ -1,0 +1,22 @@
+[project]
+name = "app2"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "shop-core",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+
+[tool.uv.sources]
+shop-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app2"]
+
+# ルート直下の app2/ ディレクトリが namespace package として src/app2 を隠すので、.pth 方式の editable にする
+dev-mode-dirs = ["src"]

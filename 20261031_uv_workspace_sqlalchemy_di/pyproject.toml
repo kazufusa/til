@@ -1,0 +1,21 @@
+[project]
+name = "shop-workspace"
+version = "0.0.0"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv]
+exclude-newer = "2026-10-24T00:00:00Z"
+
+[tool.uv.workspace]
+members = ["packages/*", "app1", "app2"]
+
+[tool.uv.sources]
+shop-core = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+# importlib モードだとルート直下の app1/ が package 名として拾われて src/app1 を隠す。prepend(既定)でテスト名を一意にする
+testpaths = ["packages", "app1", "app2"]
