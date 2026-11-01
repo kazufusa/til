@@ -1,8 +1,9 @@
 """接続設定の解決。環境変数は初めて DB を使うときに読む"""
 
 import pytest
+from dependency_injector import providers
 
-from shop_core import Container, Settings, SettingsError
+from shop_core import Container, Execution, Settings, SettingsError, new_id
 from shop_core.testing import InMemoryState, fake_backend
 
 
@@ -69,3 +70,66 @@ def test_invalid_pool_size_names_variable(monkeypatch):
     monkeypatch.setenv("DB_POOL_SIZE", "abc")
     with pytest.raises(SettingsError, match="DB_POOL_SIZE"):
         Settings.from_env()
+
+
+_S3_ENV = ("ENV", "ARTIFACT_BUCKET", "S3_ENDPOINT_URL", "S3_PUBLIC_ENDPOINT_URL", "AWS_REGION")
+
+
+def test_s3_defaults(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    for name in _S3_ENV:
+        monkeypatch.delenv(name, raising=False)
+    s = Settings.from_env()
+    assert (s.env, s.artifact_bucket, s.s3_endpoint_url, s.s3_region) == (
+        "local", "shop-local-artifacts", None, "ap-northeast-1"
+    )
+
+
+def test_bucket_derives_from_env(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.delenv("ARTIFACT_BUCKET", raising=False)
+    monkeypatch.setenv("ENV", "prod")
+    assert Settings.from_env().artifact_bucket == "shop-prod-artifacts"
+
+
+def test_s3_env_overrides(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.setenv("ARTIFACT_BUCKET", "custom")
+    monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    s = Settings.from_env()
+    assert (s.env, s.artifact_bucket, s.s3_endpoint_url, s.s3_region) == (
+        "dev", "custom", "http://minio:9000", "us-east-1"
+    )
+
+
+def test_image_store_is_overridden_by_fake_without_env(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    container = Container()
+    with fake_backend(container, InMemoryState()):
+        assert container.image_store() is not None
+
+
+def test_s3_public_endpoint_defaults_to_none_and_reads_env(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    for name in _S3_ENV:
+        monkeypatch.delenv(name, raising=False)
+    assert Settings.from_env().s3_public_endpoint_url is None
+    monkeypatch.setenv("S3_PUBLIC_ENDPOINT_URL", "http://localhost:9000")
+    assert Settings.from_env().s3_public_endpoint_url == "http://localhost:9000"
+    monkeypatch.setenv("S3_PUBLIC_ENDPOINT_URL", "  ")
+    assert Settings.from_env().s3_public_endpoint_url is None
+
+
+def test_container_passes_public_endpoint_to_image_store(monkeypatch):
+    settings = Settings(
+        database_url="sqlite://",
+        s3_endpoint_url="http://s3:9090",
+        s3_public_endpoint_url="http://localhost:9000",
+    )
+    container = Container(settings=providers.Object(settings))
+    url = container.image_store().presigned_get_url(
+        Execution(id=new_id(), order_id=1), new_id()
+    )
+    assert url.startswith("http://localhost:9000/")

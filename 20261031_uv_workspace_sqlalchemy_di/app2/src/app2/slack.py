@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from shop_core import UserService
 from shop_core.tables import SlackLink
 
@@ -40,5 +42,10 @@ def resolve_user_id(tx: Any, users: UserService, slack_user_id: str, user_name: 
         return link.user_id
     # スラッシュコマンドにメールアドレスは載らないので、仮のアドレスで登録する
     user = users.register(email=f"{slack_user_id}@slack.local", name=user_name)
-    tx.session.add(SlackLink(slack_user_id=slack_user_id, user_id=user.id))
-    return user.id
+    # 同じ Slack ユーザーの同時コマンドで主キーが衝突しても失敗させない。負けた側は勝った側の行を読む
+    tx.session.execute(
+        pg_insert(SlackLink)
+        .values(slack_user_id=slack_user_id, user_id=user.id)
+        .on_conflict_do_nothing(index_elements=[SlackLink.slack_user_id])
+    )
+    return tx.session.get(SlackLink, slack_user_id, populate_existing=True).user_id

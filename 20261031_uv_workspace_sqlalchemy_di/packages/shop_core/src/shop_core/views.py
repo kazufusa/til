@@ -11,9 +11,11 @@ alembic の Base とは別の ReadBase に載せているので、マイグレ�
 from sqlalchemy import Delete, Insert, MetaData, Update, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+from shop_core.infra.schema import SCHEMA
+
 
 class ReadBase(DeclarativeBase):
-    metadata = MetaData(schema="shop")
+    metadata = MetaData(schema=SCHEMA)
 
 
 def _forbid_write(mapper, connection, target):

@@ -1,6 +1,9 @@
 """アプリ1: ユーザー、商品、注文の API。shop_core のサービスを呼ぶだけ"""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
+from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends, FastAPI
@@ -9,19 +12,40 @@ from pydantic import BaseModel
 
 from shop_core import (
     Container,
+    BusinessRuleError,
+    DependencyError,
     DomainError,
-    EmptyOrderError,
-    InvalidProductError,
-    InvalidQuantityError,
+    InputError,
+    ExecutionService,
     NotFoundError,
     OrderService,
     ProductService,
     UserService,
+    build_container,
+    check_database,
+    check_image_store,
 )
 
-container = Container()
 
-app = FastAPI(title="app1: shop api")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """起動時に Container を作って検査し、wire する。終了時に片付ける。
+
+    Container はここでだけ作り、app.state に置く。モジュールのグローバルには持たない
+    """
+    container = build_container()
+    check_database(container)
+    check_image_store(container)
+    container.wire(modules=[__name__])
+    app.state.container = container
+    try:
+        yield
+    finally:
+        container.unwire()
+        container.engine().dispose()
+
+
+app = FastAPI(title="app1: shop api", lifespan=lifespan)
 
 
 class RegisterIn(BaseModel):
@@ -111,15 +135,79 @@ def list_orders(user_id: int, svc: OrderService = Depends(Provide[Container.orde
     return svc.list_by_user(user_id)
 
 
+class ImageOut(BaseModel):
+    id: UUID
+    url: str  # 署名付き GET URL(15 分有効)
+
+
+class ExecutionOut(BaseModel):
+    id: UUID
+    order_id: int
+    status: str
+    failure_reason: str | None
+    created_at: datetime
+    images: list[ImageOut]
+
+
+class CompleteIn(BaseModel):
+    image_ids: list[UUID]
+
+
+def _execution_out(execution, store) -> ExecutionOut:
+    return ExecutionOut(
+        id=execution.id,
+        order_id=execution.order_id,
+        status=execution.status,
+        failure_reason=execution.failure_reason,
+        created_at=execution.created_at,
+        images=[
+            ImageOut(id=i.id, url=store.presigned_get_url(execution, i.id))
+            for i in execution.images
+        ],
+    )
+
+
+@app.post("/orders/{order_id}/executions", response_model=ExecutionOut, status_code=201)
+@inject
+def start_execution(
+    order_id: int,
+    svc: ExecutionService = Depends(Provide[Container.execution_service]),
+    store=Depends(Provide[Container.image_store]),
+):
+    return _execution_out(svc.start(order_id), store)
+
+
+@app.post("/executions/{execution_id}/complete", response_model=ExecutionOut)
+@inject
+def complete_execution(
+    execution_id: UUID,
+    body: CompleteIn,
+    svc: ExecutionService = Depends(Provide[Container.execution_service]),
+    store=Depends(Provide[Container.image_store]),
+):
+    return _execution_out(svc.complete(execution_id, body.image_ids), store)
+
+
+@app.get("/executions/{execution_id}", response_model=ExecutionOut)
+@inject
+def get_execution(
+    execution_id: UUID,
+    svc: ExecutionService = Depends(Provide[Container.execution_service]),
+    store=Depends(Provide[Container.image_store]),
+):
+    return _execution_out(svc.get(execution_id), store)
+
+
 @app.exception_handler(DomainError)
 def domain_error(_, exc: DomainError):
     if isinstance(exc, NotFoundError):
         status = 404
-    elif isinstance(exc, (InvalidQuantityError, EmptyOrderError, InvalidProductError)):
+    elif isinstance(exc, InputError):
         status = 400
-    else:
+    elif isinstance(exc, BusinessRuleError):
         status = 409
-    return JSONResponse({"detail": str(exc)}, status_code=status)
-
-
-container.wire(modules=[__name__])
+    elif isinstance(exc, DependencyError):
+        status = 503
+    else:
+        status = 500
+    return JSONResponse({"code": exc.code, "detail": str(exc)}, status_code=status)

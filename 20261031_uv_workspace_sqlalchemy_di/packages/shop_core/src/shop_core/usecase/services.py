@@ -2,17 +2,32 @@
 
 1 メソッド = 1 トランザクション。中で UoW を開いて閉じるので、
 呼ぶ側は commit も rollback も書かない。
+
+状態が変わったときは、commit の直前に uow.events.add(...) でドメインイベントを足す。
+イベントは最も外側のトランザクションの commit が成功したあとに EventPublisher へ渡る。
 """
 
 from collections.abc import Callable
+from uuid import UUID
 
 from shop_core.domain.errors import (
+    ExecutionNotFoundError,
+    OrderNotFoundError,
     EmptyOrderError,
     InvalidProductError,
     ProductNotFoundError,
     UserNotFoundError,
 )
+from shop_core.domain.events import (
+    ExecutionCompleted,
+    ExecutionFailed,
+    ExecutionStarted,
+    OrderPlaced,
+    UserRegistered,
+)
+from shop_core.domain.execution import Execution, Image
 from shop_core.domain.models import Order, OrderLine, Product, User
+from shop_core.ids import new_id
 from shop_core.usecase.uow import UnitOfWork
 
 UowFactory = Callable[[], UnitOfWork]
@@ -24,10 +39,12 @@ class UserService:
 
     def register(self, email: str, name: str) -> User:
         with self._uow() as uow:
-            existing = uow.users.resolve_by_email(email)
-            if existing is not None:
-                return existing
-            user = uow.users.store(User(id=None, email=email, name=name))
+            # 同じメールの同時登録でも、1 行だけ作られ、全員が同じ利用者を受け取る
+            candidate = User(id=None, email=email, name=name)
+            user = uow.users.store_if_absent(candidate)
+            # 新しく作ったときだけ(既存の利用者が返ったときは足さない)
+            if user is candidate:
+                uow.events.add(UserRegistered(user_id=user.id, email=user.email))
             uow.commit()
             return user
 
@@ -91,9 +108,75 @@ class OrderService:
             for product in reserved.values():
                 uow.products.store(product)
             order = uow.orders.store(Order(id=None, user_id=user_id, lines=lines))
+            uow.events.add(OrderPlaced(order_id=order.id, user_id=user_id, total=order.total))
             uow.commit()
             return order
 
     def list_by_user(self, user_id: int) -> list[Order]:
         with self._uow() as uow:
             return uow.orders.resolve_by_user_id(user_id)
+
+
+class ExecutionService:
+    """Execution の状態管理。S3 には触らない。
+
+    エージェントは container.image_store().put(execution, image_id, ...) で
+    画像を保存してから complete を呼ぶ。
+    """
+
+    def __init__(self, uow: UowFactory) -> None:
+        self._uow = uow
+
+    def start(self, order_id: int) -> Execution:
+        with self._uow() as uow:
+            if uow.orders.resolve_by_id(order_id) is None:
+                raise OrderNotFoundError(order_id)
+            execution = uow.executions.store(Execution(id=new_id(), order_id=order_id))
+            uow.events.add(ExecutionStarted(execution_id=execution.id, order_id=order_id))
+            uow.commit()
+            return execution
+
+    def complete(self, execution_id: UUID, image_ids: list[UUID]) -> Execution:
+        """同じ image_ids での再呼び出しは何も変えずに現在の状態を返す"""
+        with self._uow() as uow:
+            execution = self._load(uow, execution_id)
+            before = (execution.status, [i.id for i in execution.images])
+            execution.complete([Image(id=i) for i in image_ids])
+            uow.executions.store(execution)
+            # 冪等な再呼び出し(状態が変わらなかったとき)はイベントを足さない
+            if before != (execution.status, [i.id for i in execution.images]):
+                uow.events.add(
+                    ExecutionCompleted(
+                        execution_id=execution.id,
+                        order_id=execution.order_id,
+                        image_ids=tuple(i.id for i in execution.images),
+                    )
+                )
+            uow.commit()
+            return execution
+
+    def fail(self, execution_id: UUID, reason: str) -> Execution:
+        with self._uow() as uow:
+            execution = self._load(uow, execution_id)
+            before = execution.status
+            execution.fail(reason)
+            uow.executions.store(execution)
+            if before != execution.status:
+                uow.events.add(
+                    ExecutionFailed(
+                        execution_id=execution.id, order_id=execution.order_id, reason=reason
+                    )
+                )
+            uow.commit()
+            return execution
+
+    def get(self, execution_id: UUID) -> Execution:
+        with self._uow() as uow:
+            return self._load(uow, execution_id)
+
+    @staticmethod
+    def _load(uow: UnitOfWork, execution_id: UUID) -> Execution:
+        execution = uow.executions.resolve_by_id(execution_id)
+        if execution is None:
+            raise ExecutionNotFoundError(execution_id)
+        return execution

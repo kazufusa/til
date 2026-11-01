@@ -8,4 +8,5 @@ ADR(Architecture Decision Record)は、設計上の決定を理由つきで残�
 
 | 番号 | タイトル | ステータス |
 |---|---|---|
-| [0001](0001-shop-core-owned-shared-library.md) | 共有パーツを基盤が所有するライブラリ shop_core として配る | 採用 |
+| [0001](0001-shop-core-owned-shared-library.md) | 共有パーツを基盤が所有するライブラリ shop_core として配る | 置換(0002) |
+| [0002](0002-shared-library-contract.md) | 基盤ライブラリの契約 | 採用 |

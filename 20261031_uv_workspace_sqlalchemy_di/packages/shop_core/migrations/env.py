@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool, text
 
 from shop_core import tables  # noqa: F401
 from shop_core.infra.orm import Base
+from shop_core.infra.schema import SCHEMA
 
 config = context.config
 if config.config_file_name is not None:
@@ -20,7 +21,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
-        version_table_schema="shop",
+        version_table_schema=SCHEMA,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -38,13 +39,13 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         # DB ユーザー名が shop だと、既定の search_path の "$user" で shop が既定スキーマになり、
         # alembic の比較が schema 付きのテーブルとずれる。public を既定にして shop を明示で扱う
-        connection.execute(text("create schema if not exists shop"))
+        connection.execute(text(f"create schema if not exists {SCHEMA}"))
         connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
-            version_table_schema="shop",
+            version_table_schema=SCHEMA,
         )
         with context.begin_transaction():
             context.run_migrations()

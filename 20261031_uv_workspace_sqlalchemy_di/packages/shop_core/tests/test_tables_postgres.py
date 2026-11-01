@@ -7,7 +7,8 @@ from dependency_injector import providers
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
-from shop_core import Container, Settings, tables
+from shop_core import BusinessRuleError, Container, Settings, tables
+from shop_core.infra.guards import service_context
 
 from conftest import migrate_to_head
 
@@ -81,8 +82,10 @@ def test_direct_update_persists(container):
 
 def test_negative_stock_violates_check_constraint(container):
     pen = container.product_service().add("pen", 100, 5)
-    with pytest.raises(IntegrityError, match="ck_products_stock_nonnegative"):
-        with container.transaction() as tx:
+    # 登録済みの制約なので、IntegrityError ではなくドメインのエラーになる
+    with pytest.raises(BusinessRuleError, match="stock must not be negative"):
+        # DB の CHECK を確かめるため、ガード列の検査は通す
+        with service_context(), container.transaction() as tx:
             tx.session.get(tables.Product, pen.id).stock = -1
     assert container.product_service().list()[0].stock == 5
 

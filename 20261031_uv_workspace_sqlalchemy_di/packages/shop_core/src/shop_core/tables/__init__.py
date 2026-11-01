@@ -6,12 +6,22 @@
 shop_core.User などのドメインモデルとは別物で、DDL は基盤の alembic が持ちます。
 """
 
-from shop_core.infra.orm import OrderLineRow, OrderRow, ProductRow, SlackLinkRow, UserRow
+from shop_core.infra.orm import (
+    ExecutionImageRow,
+    ExecutionRow,
+    OrderLineRow,
+    OrderRow,
+    ProductRow,
+    SlackLinkRow,
+    UserRow,
+)
 
 User = UserRow
 Product = ProductRow
 Order = OrderRow
 OrderLine = OrderLineRow
 SlackLink = SlackLinkRow
+Execution = ExecutionRow
+ExecutionImage = ExecutionImageRow
 
-__all__ = ["Order", "OrderLine", "Product", "SlackLink", "User"]
+__all__ = ["Execution", "ExecutionImage", "Order", "OrderLine", "Product", "SlackLink", "User"]
