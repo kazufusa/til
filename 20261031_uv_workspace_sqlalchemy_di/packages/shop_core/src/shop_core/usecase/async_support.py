@@ -29,10 +29,10 @@ from typing import Any, TypeVar
 import anyio
 import anyio.to_thread
 from sqlalchemy import Result
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, SessionTransaction, sessionmaker
 from sqlalchemy.sql import Executable
 
+from shop_core.domain.events import publish_events
 from shop_core.domain.ports import EventPublisher
 from shop_core.infra.constraints import translate_db_error, translated_errors
 from shop_core.usecase.transaction import _ambient, begin_staging, end_staging
@@ -46,9 +46,28 @@ def _commit_translated(target: Session | SessionTransaction) -> None:
         target.commit()
 
 
+def _begin_nested_translated(session: Session) -> SessionTransaction:
+    with translated_errors():
+        return session.begin_nested()
+
+
 def _flush_translated(session: Session) -> None:
     with translated_errors():
         session.flush()
+
+
+def configure_thread_limit(container: Any) -> None:
+    """anyio のワーカースレッドの上限を、接続プールの最大数(pool_size + max_overflow)にそろえる。
+
+    run_sync と tx.run はワーカースレッドで DB を使う。anyio の既定の上限(40)がプールより大きいと、
+    余ったスレッドは接続を待つだけになり、pool_timeout で DependencyError(db_pool_exhausted)が増える。
+    上限を接続の数に合わせると、待ちはスレッドの待ち行列に移り、接続のタイムアウトにならない。
+
+    実行中のイベントループの中で、起動時に 1 度呼ぶ(FastAPI なら lifespan)。上限はイベントループごとの設定。
+    DB に触らないスレッド(通知の投稿など)も同じ上限を使うので、その分の余裕は別に見込むこと。
+    """
+    s = container.settings()
+    anyio.to_thread.current_default_thread_limiter().total_tokens = s.pool_size + s.max_overflow
 
 
 async def run_sync(fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
@@ -84,7 +103,7 @@ class AsyncTransactionScope:
     commit / rollback / close と SAVEPOINT はスレッドで行い、ContextVar の reset はタスク側で行う。
     入れ子は同期のスコープと同じく SAVEPOINT で囲む。
     イベントも同期のスコープと同じ規則で、最も外側の commit が成功したあとに
-    publisher.publish をスレッドで呼ぶ(publisher の例外は呼び出し元に伝わる)。
+    publisher.publish をスレッドで呼ぶ(publisher の例外は EventPublishError に包まれて呼び出し元に伝わる)。
     """
 
     def __init__(self, session_factory: sessionmaker[Session], publisher: EventPublisher) -> None:
@@ -99,7 +118,7 @@ class AsyncTransactionScope:
         outer = _ambient.get()
         if outer is not None:
             self._outer_session = outer
-            self._nested = await run_sync(outer.begin_nested)
+            self._nested = await run_sync(_begin_nested_translated, outer)
             begin_staging(outer)
             return AsyncTransaction(outer)
         self._session = self._session_factory()
@@ -131,7 +150,7 @@ class AsyncTransactionScope:
                 if exc_type is None:
                     await run_sync(_commit_translated, session)
                     # commit が成功したあと、トランザクションの外で送る
-                    await run_sync(self._publisher.publish, end_staging(session, keep=True))
+                    await run_sync(publish_events, self._publisher, end_staging(session, keep=True))
                 else:
                     await run_sync(session.rollback)
                     self._raise_translated(exc)
@@ -145,7 +164,7 @@ class AsyncTransactionScope:
     @staticmethod
     def _raise_translated(exc: BaseException | None) -> None:
         """本体(tx.run の中の flush など)で出た DB 例外を、翻訳できればドメインのエラーに置き換える"""
-        if isinstance(exc, DBAPIError):
+        if exc is not None:
             err = translate_db_error(exc)
             if err is not None:
                 raise err from exc

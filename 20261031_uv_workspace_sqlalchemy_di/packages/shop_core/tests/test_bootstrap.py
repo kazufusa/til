@@ -14,6 +14,7 @@ from sqlalchemy.exc import ProgrammingError
 
 from shop_core import (
     ArtifactStoreError,
+    DependencyError,
     Settings,
     SettingsError,
     build_container,
@@ -21,7 +22,8 @@ from shop_core import (
     check_image_store,
     validate_environment,
 )
-from shop_core.infra.schema import SCHEMA
+from shop_core.infra.schema import HEAD_REVISION, SCHEMA
+from shop_core.testing import InMemoryEventPublisher
 
 from conftest import migrate_to_head
 
@@ -90,9 +92,42 @@ def test_build_container_with_settings_never_reads_database_url(monkeypatch):
 def test_build_container_reads_env_when_settings_omitted(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", URL)
     monkeypatch.setenv("ENV", "stg")
-    container = build_container()
+    container = build_container(publisher=InMemoryEventPublisher())
     assert container.settings().env == "stg"
     assert container.settings().artifact_bucket == "shop-stg-artifacts"
+
+
+def test_publisher_is_required_outside_local():
+    for env in ("stg", "prd"):
+        with pytest.raises(SettingsError, match="event publisher must be configured outside local"):
+            build_container(_settings(env=env))
+
+
+def test_publisher_is_optional_in_local_and_defaults_to_logging():
+    from shop_core import LoggingEventPublisher
+
+    container = build_container(_settings(env="local"))
+    assert isinstance(container.event_publisher(), LoggingEventPublisher)
+
+
+def test_given_publisher_is_used_in_every_env():
+    for env in ("local", "stg", "prd"):
+        publisher = InMemoryEventPublisher()
+        container = build_container(_settings(env=env), publisher=publisher)
+        assert container.event_publisher() is publisher
+
+
+def test_given_publisher_receives_the_events_of_a_commit():
+    from shop_core.testing import FakeUnitOfWork, InMemoryState
+
+    publisher = InMemoryEventPublisher()
+    container = build_container(_settings(env="prd"), publisher=publisher)
+    # uow だけをフェイクにして、publisher は渡したものを使う
+    state = InMemoryState()
+
+    with container.override(uow=lambda: FakeUnitOfWork(state, publisher=container.event_publisher())):
+        container.user_service().register("a@example.com", "A")
+    assert [e.email for e in publisher.published] == ["a@example.com"]
 
 
 def test_build_container_fails_without_database_url(monkeypatch):
@@ -153,7 +188,14 @@ def test_check_database_rejects_owner_role(pg_url, schema_exists):
 
 
 @needs_pg
-def test_check_database_accepts_restricted_role(app_role):
+def test_check_database_accepts_restricted_role(pg_url, app_role):
+    # 版の検査があるので、head まで移行した DB で、版の表を読める権限を付ける
+    migrate_to_head(pg_url)
+    admin = create_engine(pg_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f"grant usage on schema {SCHEMA} to boot_app_test"))
+        conn.execute(text(f"grant select on {SCHEMA}.alembic_version to boot_app_test"))
+    admin.dispose()
     container = build_container(Settings(database_url=app_role))
     try:
         assert check_database(container) is None
@@ -167,8 +209,9 @@ def test_check_database_fails_when_unreachable():
         Settings(database_url="postgresql+psycopg://u:p@127.0.0.1:1/shop")
     )
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(DependencyError) as ei:
             check_database(container)
+        assert ei.value.code == "db_unavailable"
     finally:
         container.engine().dispose()
 
@@ -218,6 +261,15 @@ def test_shop_app_role_can_use_but_not_change_schema(pg_url, shop_app_role):
         # サービス経由(シーケンスの採番を含む)も通る
         user = container.user_service().register("b@example.com", "B")
         assert user.id > 1
+        # ビューには書き込めない(0007 が INSERT / UPDATE / DELETE を取り消す)。SELECT はできる
+        with container.engine().connect() as conn:
+            assert conn.scalar(text("select count(*) from v_product_stock")) == 0
+        with pytest.raises(ProgrammingError, match="permission denied"):
+            with container.engine().begin() as conn:
+                conn.execute(
+                    text("insert into v_product_stock (product_id, name, price, stock) "
+                         "values (99, 'x', 1, 1)")
+                )
     finally:
         container.engine().dispose()
 
@@ -229,7 +281,7 @@ def test_migrations_pass_without_shop_app_role(pg_url):
     engine = create_engine(pg_url)
     try:
         with engine.connect() as conn:
-            assert conn.scalar(text("select version_num from shop.alembic_version")) == "0006"
+            assert conn.scalar(text("select version_num from shop.alembic_version")) == HEAD_REVISION
     finally:
         engine.dispose()
 
@@ -266,3 +318,27 @@ def test_check_image_store_fails_for_wrong_endpoint(monkeypatch):
     container = build_container(_settings(s3_endpoint_url="http://127.0.0.1:1"))
     with pytest.raises(ArtifactStoreError):
         check_image_store(container)
+
+
+def test_build_container_accepts_engine_factory(monkeypatch):
+    """ADR 0002: build_container(engine_factory=...) で Engine の作り方を丸ごと差し込める"""
+    from sqlalchemy import create_engine
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    settings = Settings(database_url="postgresql+psycopg://u:p@localhost:1/db")
+    calls = []
+
+    def factory():
+        calls.append(1)
+        return create_engine("postgresql+psycopg://u:p@localhost:1/db")
+
+    container = build_container(settings, engine_factory=factory)
+    assert calls == []  # build_container は Engine を作らない
+    assert container.engine() is container.engine()
+    assert calls == [1]
+
+
+def test_build_container_rejects_engine_factory_with_credentials():
+    settings = Settings(database_url="postgresql+psycopg://u:p@localhost:1/db")
+    with pytest.raises(SettingsError):
+        build_container(settings, engine_factory=lambda: None, credentials=lambda: ("u", "p"))

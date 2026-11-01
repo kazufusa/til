@@ -1,7 +1,6 @@
 """接続設定の解決。環境変数は初めて DB を使うときに読む"""
 
 import pytest
-from dependency_injector import providers
 
 from shop_core import Container, Execution, Settings, SettingsError, new_id
 from shop_core.testing import InMemoryState, fake_backend
@@ -128,8 +127,42 @@ def test_container_passes_public_endpoint_to_image_store(monkeypatch):
         s3_endpoint_url="http://s3:9090",
         s3_public_endpoint_url="http://localhost:9000",
     )
-    container = Container(settings=providers.Object(settings))
+    container = Container(settings)
     url = container.image_store().presigned_get_url(
         Execution(id=new_id(), order_id=1), new_id()
     )
     assert url.startswith("http://localhost:9000/")
+
+
+def test_timeouts_default_to_zero(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.delenv("DB_STATEMENT_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("DB_LOCK_TIMEOUT_MS", raising=False)
+    s = Settings.from_env()
+    assert (s.statement_timeout_ms, s.lock_timeout_ms) == (0, 0)
+
+
+def test_timeouts_are_read_from_env(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("DB_STATEMENT_TIMEOUT_MS", "5000")
+    monkeypatch.setenv("DB_LOCK_TIMEOUT_MS", "800")
+    s = Settings.from_env()
+    assert (s.statement_timeout_ms, s.lock_timeout_ms) == (5000, 800)
+
+
+def test_timeout_must_be_a_number(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("DB_LOCK_TIMEOUT_MS", "soon")
+    with pytest.raises(SettingsError, match="DB_LOCK_TIMEOUT_MS"):
+        Settings.from_env()
+
+
+def test_negative_timeouts_are_rejected():
+    from dataclasses import replace
+
+    from shop_core import validate_environment
+
+    base = Settings(database_url="postgresql+psycopg://u:p@localhost:5432/shop")
+    for kw in ({"statement_timeout_ms": -1}, {"lock_timeout_ms": -1}):
+        with pytest.raises(SettingsError):
+            validate_environment(replace(base, **kw))

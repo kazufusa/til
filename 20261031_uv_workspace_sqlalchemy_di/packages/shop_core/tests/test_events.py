@@ -7,10 +7,11 @@ import os
 from datetime import UTC, timedelta
 
 import pytest
-from dependency_injector import providers
 
 from shop_core import (
     Container,
+    DomainError,
+    EventPublishError,
     ExecutionCompleted,
     ExecutionFailed,
     ExecutionStarted,
@@ -36,7 +37,7 @@ def kit(request):
         pytest.skip("TEST_DATABASE_URL not set")
     c = request.getfixturevalue("pg_container")
     pub = InMemoryEventPublisher()
-    with c.event_publisher.override(providers.Object(pub)):
+    with c.override(event_publisher=lambda: pub):
         yield c, pub
 
 
@@ -194,16 +195,20 @@ def test_nested_scope_success_hands_events_to_parent(kit):
 
 def test_publisher_error_after_commit_keeps_data_and_propagates(kit):
     c, pub = kit
-    with c.event_publisher.override(providers.Object(ExplodingPublisher())):
-        with pytest.raises(ConnectionError):
+    with c.override(event_publisher=lambda: ExplodingPublisher()):
+        with pytest.raises(EventPublishError) as ei:
             c.user_service().register("a@example.com", "A")
+    # 元の例外は __cause__、送れなかった束は events。DomainError ではない
+    assert isinstance(ei.value.__cause__, ConnectionError)
+    assert [type(e).__name__ for e in ei.value.events] == ["UserRegistered"]
+    assert not isinstance(ei.value, DomainError)
     assert [u.email for u in c.user_service().list()] == ["a@example.com"]
 
 
 def test_publisher_error_at_scope_exit_keeps_data_and_propagates(kit):
     c, pub = kit
-    with c.event_publisher.override(providers.Object(ExplodingPublisher())):
-        with pytest.raises(ConnectionError):
+    with c.override(event_publisher=lambda: ExplodingPublisher()):
+        with pytest.raises(EventPublishError):
             with c.transaction():
                 c.user_service().register("a@example.com", "A")
                 c.user_service().register("b@example.com", "B")
@@ -212,8 +217,8 @@ def test_publisher_error_at_scope_exit_keeps_data_and_propagates(kit):
 
 def test_scope_is_reusable_after_publisher_error(kit):
     c, pub = kit
-    with c.event_publisher.override(providers.Object(ExplodingPublisher())):
-        with pytest.raises(ConnectionError):
+    with c.override(event_publisher=lambda: ExplodingPublisher()):
+        with pytest.raises(EventPublishError):
             with c.transaction():
                 c.user_service().register("a@example.com", "A")
     # 失敗したスコープのイベントが次のスコープに残らない
@@ -279,8 +284,8 @@ async def test_async_nested_scope_drops_failed_events(kit):
 @pytest.mark.anyio
 async def test_async_publisher_error_keeps_data_and_propagates(kit):
     c, pub = kit
-    with c.event_publisher.override(providers.Object(ExplodingPublisher())):
-        with pytest.raises(ConnectionError):
+    with c.override(event_publisher=lambda: ExplodingPublisher()):
+        with pytest.raises(EventPublishError):
             async with c.transaction_async() as tx:
                 await tx.run(c.user_service().register, "a@example.com", "A")
     assert [u.email for u in c.user_service().list()] == ["a@example.com"]

@@ -5,16 +5,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from uuid import UUID
 
-from dependency_injector.wiring import Provide, inject
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shop_core import (
-    Container,
     BusinessRuleError,
     DependencyError,
     DomainError,
+    EventPublishError,
     InputError,
     ExecutionService,
     NotFoundError,
@@ -25,23 +24,28 @@ from shop_core import (
     check_database,
     check_image_store,
 )
+from shop_core.fastapi import (
+    execution_service,
+    image_store,
+    order_service,
+    product_service,
+    user_service,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """起動時に Container を作って検査し、wire する。終了時に片付ける。
+    """起動時に Container を作って検査し、app.state に置く。終了時に片付ける。
 
     Container はここでだけ作り、app.state に置く。モジュールのグローバルには持たない
     """
     container = build_container()
     check_database(container)
     check_image_store(container)
-    container.wire(modules=[__name__])
     app.state.container = container
     try:
         yield
     finally:
-        container.unwire()
         container.engine().dispose()
 
 
@@ -94,44 +98,37 @@ class OrderOut(BaseModel):
 
 
 @app.post("/users", response_model=UserOut, status_code=201)
-@inject
-def register(body: RegisterIn, svc: UserService = Depends(Provide[Container.user_service])):
+def register(body: RegisterIn, svc: UserService = Depends(user_service)):
     return svc.register(body.email, body.name)
 
 
 @app.get("/users", response_model=list[UserOut])
-@inject
-def list_users(svc: UserService = Depends(Provide[Container.user_service])):
+def list_users(svc: UserService = Depends(user_service)):
     return svc.list()
 
 
 @app.get("/users/{user_id}", response_model=UserOut)
-@inject
-def get_user(user_id: int, svc: UserService = Depends(Provide[Container.user_service])):
+def get_user(user_id: int, svc: UserService = Depends(user_service)):
     return svc.get(user_id)
 
 
 @app.post("/products", response_model=ProductOut, status_code=201)
-@inject
-def add_product(body: ProductIn, svc: ProductService = Depends(Provide[Container.product_service])):
+def add_product(body: ProductIn, svc: ProductService = Depends(product_service)):
     return svc.add(body.name, body.price, body.stock)
 
 
 @app.get("/products", response_model=list[ProductOut])
-@inject
-def list_products(svc: ProductService = Depends(Provide[Container.product_service])):
+def list_products(svc: ProductService = Depends(product_service)):
     return svc.list()
 
 
 @app.post("/orders", response_model=OrderOut, status_code=201)
-@inject
-def place_order(body: OrderIn, svc: OrderService = Depends(Provide[Container.order_service])):
+def place_order(body: OrderIn, svc: OrderService = Depends(order_service)):
     return svc.place(body.user_id, [(i.product_id, i.quantity) for i in body.items])
 
 
 @app.get("/users/{user_id}/orders", response_model=list[OrderOut])
-@inject
-def list_orders(user_id: int, svc: OrderService = Depends(Provide[Container.order_service])):
+def list_orders(user_id: int, svc: OrderService = Depends(order_service)):
     return svc.list_by_user(user_id)
 
 
@@ -168,32 +165,29 @@ def _execution_out(execution, store) -> ExecutionOut:
 
 
 @app.post("/orders/{order_id}/executions", response_model=ExecutionOut, status_code=201)
-@inject
 def start_execution(
     order_id: int,
-    svc: ExecutionService = Depends(Provide[Container.execution_service]),
-    store=Depends(Provide[Container.image_store]),
+    svc: ExecutionService = Depends(execution_service),
+    store=Depends(image_store),
 ):
     return _execution_out(svc.start(order_id), store)
 
 
 @app.post("/executions/{execution_id}/complete", response_model=ExecutionOut)
-@inject
 def complete_execution(
     execution_id: UUID,
     body: CompleteIn,
-    svc: ExecutionService = Depends(Provide[Container.execution_service]),
-    store=Depends(Provide[Container.image_store]),
+    svc: ExecutionService = Depends(execution_service),
+    store=Depends(image_store),
 ):
     return _execution_out(svc.complete(execution_id, body.image_ids), store)
 
 
 @app.get("/executions/{execution_id}", response_model=ExecutionOut)
-@inject
 def get_execution(
     execution_id: UUID,
-    svc: ExecutionService = Depends(Provide[Container.execution_service]),
-    store=Depends(Provide[Container.image_store]),
+    svc: ExecutionService = Depends(execution_service),
+    store=Depends(image_store),
 ):
     return _execution_out(svc.get(execution_id), store)
 
@@ -211,3 +205,15 @@ def domain_error(_, exc: DomainError):
     else:
         status = 500
     return JSONResponse({"code": exc.code, "detail": str(exc)}, status_code=status)
+
+
+@app.exception_handler(EventPublishError)
+def event_publish_error(_, exc: EventPublishError):
+    """書き込みは確定済みでイベントだけ送れなかった。DomainError ではないので別に受ける。
+
+    クライアントが同じリクエストをやり直すと二重に書くことになるため、detail でそれを伝える
+    """
+    return JSONResponse(
+        {"code": "event_publish_failed", "detail": str(exc)},
+        status_code=500,
+    )

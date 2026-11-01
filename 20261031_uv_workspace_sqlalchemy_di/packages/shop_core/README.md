@@ -6,8 +6,8 @@ DB の接続、トランザクション、オブジェクトストレージ、�
 
 アプリチームがやることは 4 つです。
 
-- プロセスの入口で `build_container()` を 1 回呼び、検査して wire します
-- サービスを DI で受け取って呼びます
+- プロセスの入口で `build_container()` を 1 回呼び、検査して `app.state` に置きます
+- コンテナからサービスを取り出して呼びます
 - `DomainError` を分類ごとに HTTP ステータスなどへ変換します
 - 新しい機能は `shop_core` への PR か依頼で足します
 
@@ -36,13 +36,15 @@ dev-mode-dirs = ["src"]
 `dev-mode-dirs` は、アプリがワークスペースの直下にあるときに必要です。
 直下のディレクトリ名が `src/<app>` を隠すのを防ぎます。
 
-import できるのは、次の 3 つです。
+import できるのは、次の 4 つです。
 
 - `shop_core` の直下は、`__all__` にある名前です
 - `shop_core.tables` は、全テーブルの mapped class です
 - `shop_core.testing` は、テスト用のフェイクです
+- `shop_core.fastapi` は、FastAPI の `Depends` 用の関数です
 
-`shop_core.infra` と `shop_core.usecase` の内部は、予告なく変えます。アプリから import しないでください。
+`shop_core.infra`、`shop_core.usecase`、`shop_core.di` などの内部は、予告なく変えます。アプリから import しないでください。
+`tests/test_public_surface.py` が、app1 と app2 のソースを走査して、4 つ以外の import を検出します。
 
 組み立ては、プロセスの入口で 1 回だけ行います。
 import 時には何も実行されず、`build_container()` の戻り値が唯一の持ち手です。
@@ -58,12 +60,10 @@ async def lifespan(app: FastAPI):
     container = build_container()     # 環境変数を読んで検証する。接続はしない
     check_database(container)         # DB を使うプロセスだけ
     check_image_store(container)      # ストアを使うプロセスだけ
-    container.wire(modules=[__name__])
     app.state.container = container   # モジュール変数には置かない
     try:
         yield
     finally:
-        container.unwire()
         container.engine().dispose()
 
 
@@ -72,14 +72,17 @@ app = FastAPI(lifespan=lifespan)
 
 バッチや CLI では、`main()` の先頭で同じ順に呼びます。
 `build_container()` は I/O なしで設定を検査し、不正なら `SettingsError` です。
-`check_database()` は、接続できることと、アプリ用のロールであることを確かめます。
+`check_database()` は、接続できること、アプリ用のロールであること、スキーマの版がライブラリの head と同じことを確かめます。
+接続できなければ `DependencyError`、ロールや版が違えば `SettingsError` です。
+版が古いのは、マイグレーションより先にアプリが起動した印です。マイグレーションを流してから、起動し直します。
+ローカル以外の `ENV` では、`build_container(publisher=...)` でイベントの送り先を明示します。省くと `SettingsError` です。
 `check_image_store()` は、バケットに届くことを確かめ、失敗は `ArtifactStoreError` です。
+async のプロセスは、lifespan で `configure_thread_limit(container)` も呼びます(「async からの利用」を見てください)。
 
 ## ドメインモデルと ID
 
 SQLAlchemy に依存しない `dataclass` です。
-サービスは ORM のオブジェクトを外に出さないので、lazy load や session の寿命を気にする必要はありません。
-サービスの戻り値は DB から切り離した写しです。属性を書き換えても保存されません。
+サービスの戻り値は DB から切り離した写しなので、lazy load や session の寿命を気にする必要はなく、属性を書き換えても保存されません。
 
 | 型 | 属性 |
 |---|---|
@@ -93,8 +96,7 @@ SQLAlchemy に依存しない `dataclass` です。
 ユーザー、商品、注文の ID は DB が振る整数です。
 新しく作る集約(Execution と Image)の ID は UUIDv7 で、`new_id()` で振ります。
 採番の関数はこの 1 つだけです。他の UUID 生成を使わないでください。
-文字列にするのは境界(JSON、ログ)だけで、`str(uuid)` の小文字ハイフン区切りに揃えます。
-ドメインの型は `UUID` のままです。
+文字列にするのは境界(JSON、ログ)だけで、ドメインの型は `UUID` のままです。
 
 ## サービスと例外
 
@@ -113,8 +115,8 @@ SQLAlchemy に依存しない `dataclass` です。
 | `OrderService.place(user_id, items)` | `Order` | `items` は `(product_id, quantity)` の列 |
 | `OrderService.list_by_user(user_id)` | `list[Order]` | id 順。ユーザーがなければ空 |
 | `ExecutionService.start(order_id)` | `Execution` | 注文がなければ `OrderNotFoundError` |
-| `ExecutionService.complete(execution_id, image_ids)` | `Execution` | 実行中でなければ `ExecutionNotRunningError` |
-| `ExecutionService.fail(execution_id, reason)` | `Execution` | 同上 |
+| `ExecutionService.complete(execution_id, image_ids, *, expected_version=None)` | `Execution` | 実行中でなければ `ExecutionNotRunningError` |
+| `ExecutionService.fail(execution_id, reason, *, expected_version=None)` | `Execution` | 同上 |
 | `ExecutionService.get(execution_id)` | `Execution` | なければ `ExecutionNotFoundError` |
 
 `place` は、ユーザー、空の注文、商品の順に検査します。
@@ -161,72 +163,95 @@ SQLAlchemy に依存しない `dataclass` です。
 | `ConcurrentUpdateError` | `execution_concurrent_update` | BusinessRule |
 | 制約違反(後述) | `user_email_taken` など | Input か BusinessRule |
 | `ArtifactStoreError` | `artifact_store_unavailable` | Dependency |
-| DB の接続切れ、起動中、接続数超過 | `db_unavailable` | Dependency |
+| DB に接続できない、接続切れ、起動中、接続数超過 | `db_unavailable` | Dependency |
+| 資格情報を返す関数が失敗した | `db_credentials_unavailable` | Dependency |
+| 接続プールの待ちが切れた | `db_pool_exhausted` | Dependency |
+| `statement_timeout` で文が打ち切られた | `db_statement_timeout` | Dependency |
+| `lock_timeout` か NOWAIT でロックが取れない | `db_lock_timeout` | Dependency |
 | 直列化の失敗 | `db_serialization_failure` | Dependency |
 | デッドロック | `db_deadlock` | Dependency |
 
 `InsufficientStockError` は `product_id`、`requested`、`available` を持ちます。
-`DependencyError` は再試行できる前提で、`ArtifactStoreError.retryable` が `False` なら直りません。
+`InputError` は権限の誤りも含みます。見分けるときは `code` を見てください。
 
-DB の制約違反は、宣言のあるものだけがドメインの例外になります(次節の制約の表)。
-宣言にない制約の違反は、想定外として `IntegrityError` のまま届きます。
-SQLAlchemy と botocore の例外は、DB の接続障害と S3 の障害に限って `DependencyError` に包まれて届きます。
-`DomainError` を継承しない例外は、想定外の失敗です。握りつぶさず、境界で 500 にしてください。
+DB の制約違反は、宣言のあるものだけがドメインの例外になります(後述の制約の表)。
+DB の接続障害、時間切れ、直列化の失敗、デッドロックは、`DependencyError` に変わって届きます。
+この変換が働くのは、サービス、`transaction()` と `transaction_async()`、`container.db()`、`check_database()` です。
+S3 の障害も、`ArtifactStoreError` に包まれて届きます。
+上の表にない DB 例外は想定外なので、`IntegrityError` などの SQLAlchemy の型のまま届きます。
+
+`DependencyError` を再試行してよいのは、その書き込みが冪等なときだけです。
+`retryable` が `False` なら、再試行しません。
+commit の最中に接続が切れたときは、commit が通ったかどうか分かりません。
+再試行の前に、結果を読んで確かめてください。
+
+次の例外は `DomainError` を継承しません。握りつぶさず、境界で 500 にしてください。
+
+- `GuardedColumnError` は、ガード列をサービスの外で変えた印です。呼び出し側のプログラムの誤りです
+- `SettingsError` は、設定やロール、スキーマの版が合わない印です。起動時に出ます
+- `EventPublishError` は、commit が成功し、イベントだけ送れなかった印です。書き込みをやり直してはいけません(app1 は `event_publish_failed` の 500 で返します)
 
 冪等に挿入したいときは、例外に頼らず `INSERT ... ON CONFLICT DO NOTHING` で書きます。
 `UserService.register` が内部で使う `store_if_absent` が実例です。
 
 app1 は、`@app.exception_handler(DomainError)` で上の表の目安どおりに変換します。
-`NotFoundError` を `InputError` より先に見て、どれにも当たらなければ 500 です。
-本文は `{"code": exc.code, "detail": str(exc)}` に揃えます。
+`NotFoundError` を `InputError` より先に見て、どれにも当たらなければ 500 です。本文は `{"code": exc.code, "detail": str(exc)}` です。
 
 ## Container と配線
 
 `build_container()` が返す `Container` を使います。
-アプリ側で `DATABASE_URL` を渡すコードは書きません。
 
 アプリが使う属性は、`user_service`、`product_service`、`order_service`、`execution_service`、`image_store`、`transaction`、`transaction_async`、`db` です。
 `settings` と `event_publisher` は、差し替えるときだけ触ります。
 `engine`、`session_factory`、`uow` は触らないでください。
 ただし終了時の `container.engine().dispose()` は呼びます。
 
-Engine は `container.engine()` を最初に呼んだときに作られます。
-`build_container` 自体は接続しません。
+`build_container` 自体は接続しません。Engine は `container.engine()` を最初に呼んだときに作られます。
 
 | 引数 | 使いどころ |
 |---|---|
 | `build_container(settings)` | `Settings` を明示します。環境変数の `DATABASE_URL` などは読まれません |
 | `build_container(credentials=fn)` | 接続のたびに `(user, password)` を返す関数です。Secrets Manager のローテーション向けです |
-| `Container(engine_factory=providers.Object(fn))` | Engine の作り方を丸ごと差し込みます。`fn()` は `Engine` を返します |
+| `build_container(publisher=p)` | ドメインイベントの送り先です。`ENV` が `local` 以外では必須です |
+| `build_container(engine_factory=fn)` | Engine の作り方を丸ごと差し込みます。`fn()` は `Engine` を返します。`credentials` とは同時に渡せません |
 
-`credentials` の関数は、新しい接続を張るたびに呼ばれ、URL のユーザー名とパスワードは捨てられます。
+`credentials` の関数は、新しい接続を張るたびに、複数のスレッドから同時に呼ばれます。
+URL のユーザー名とパスワードは捨てられ、ローテーションは同じロール名でパスワードだけを替えます。
 認証失敗(SQLSTATE 28P01)のときだけ、関数をもう 1 度呼んで 1 回やり直します。
 Secrets Manager の応答は、関数の側で短くキャッシュしてください。
-Engine を作る `make_engine` は `shop_core.infra.db` にあり、`engine_factory` に自前の Engine を渡すときだけ使います。
+`DB_STATEMENT_TIMEOUT_MS` と `DB_LOCK_TIMEOUT_MS` は、接続の起動パラメータ(`search_path` と同じ経路)で渡します。
+プロキシを挟むときは、これらが通ることを確かめてください。
 
-ルートは、`Container` のクラスの属性を `Provide` に渡します。
-インスタンスは lifespan が wire するので、モジュール変数は要りません。
+コンテナは、手書きの `provider` デコレータで書いています。DI ライブラリは使いません。
+`singleton=True` は初回に 1 度だけ作り(同時に呼ばれても 1 度)、それ以外は呼ぶたびに作ります。
+サービスと `image_store` は singleton で、`uow` と `transaction` は呼ぶたびに作ります。
+サービスは `uow` の束縛メソッドを持つので、サービスを先に取り出していても、差し替えは効きます。
+
+ルートでは、`shop_core.fastapi` の関数を `Depends` に渡します。配線の登録は要りません。
 
 ```python
+from shop_core import OrderService
+from shop_core.fastapi import order_service
+
+
 @app.post("/orders", status_code=201)
-@inject
-def place_order(body: OrderIn, svc: OrderService = Depends(Provide[Container.order_service])):
+def place_order(body: OrderIn, svc: OrderService = Depends(order_service)):
     return svc.place(body.user_id, [(i.product_id, i.quantity) for i in body.items])
 ```
 
-`@inject` は `@app.post` より内側に付けます。
-ルーターを別モジュールに分けたら、そのモジュールも `wire(modules=[...])` に並べます。
 サービスの戻り値は `dataclass` なので、pydantic の `response_model` にそのまま渡せます。
 `Order.total` のようなプロパティも、同名のフィールドがあれば拾われます。
 
-独自の依存を足すときは、自前のコンテナで `providers.Container` を使い、`Container` を入れ子にします。
-app2 が実例です。`app2/bootstrap.py` の `build_app_container` が、`build_container` の戻り値を `core` に差し込みます。
-サービスは `Provide[AppContainer.core.user_service]` のように受け取ります。
+独自の依存を足すときは、`shop_core` から `ContainerBase` と `provider` を import し、自前のコンテナを書きます。
+`Container` は属性として持たせます(`self.core = core`)。
+app2 が実例です。`app2/bootstrap.py` の `build_app_container` が、`build_container` の戻り値を `core` に渡します。
+サービスは `c.core.user_service()` のように取り出します。
+`ContainerBase` には、テスト用の `override(名前=工場)` と、保持した singleton を捨てる `reset()` があります。
 
 ## transaction() と transaction_async()
 
 サービス呼び出しと直接の SQL や ORM は、`transaction()` で囲むと 1 トランザクションになります。
-ルートでは `Provide[Container.transaction]` で受け取り、バッチでは `container.transaction()` を呼びます。
+ルートもバッチも `container.transaction()` を呼びます。
 
 ```python
 with container.transaction() as tx:
@@ -255,7 +280,7 @@ with container.transaction():
 `tx.session` が `Session` で、`tx.execute(statement, params)` と `tx.flush()` はその短縮形です。
 `tx.flush()` で出た制約違反は、宣言のあるものがドメインの例外になります。
 
-長い処理(生成、外部 API、オブジェクトの転送)は、トランザクションの外で行ってください。
+長い処理(モデルの推論、外部 API、オブジェクトの転送)は、トランザクションの外で行ってください。プールを握ったまま待たないためです。
 
 ### async からの利用
 
@@ -264,7 +289,7 @@ Session とサービスは同期のままで、スレッドで呼びます。`As
 app2 のスラッシュコマンドが実例です。
 
 ```python
-async with scope as tx:     # scope は Provide[AppContainer.core.transaction_async]
+async with scope as tx:     # scope は container.core.transaction_async()
     uid = await tx.run(resolve_user_id, tx, users, slack_user_id, user_name)
     order = await tx.run(orders.place, uid, [(product_id, quantity)])
 await run_sync(notifier.post, channel_id, text)   # スコープの外の同期処理
@@ -275,14 +300,29 @@ await run_sync(notifier.post, channel_id, text)   # スコープの外の同期�
 `with` を抜けるときの commit と rollback もスレッドで走るので、イベントループは止まりません。
 入れ子のスコープと例外の扱いは、同期のスコープと同じです。
 
-守ってほしい規則は 3 つです。
+守ってほしい規則は 5 つです。
 
 - 1 つのスコープを複数のタスクから同時に使わないでください。`asyncio.gather` で同じ `tx` を使うのは禁止です
+- スコープの中で起こしたタスクを、スコープより長く生かさないでください
+- エージェントのループ全体をスコープで囲まないでください。スコープはツール呼び出しごとに張ります
 - `tx.run` に渡すのは同期のサービスと関数です。`async def` の関数は渡せません
-- `AsyncSession` や `create_async_engine` は使いません。プールの大きさが同時実行の上限になります
+- `AsyncSession` や `create_async_engine` は使いません。同時実行の上限は、プールとスレッド上限の小さい方です
+
+起動時(lifespan)に `configure_thread_limit(container)` を 1 度呼ぶと、anyio のスレッド上限が `DB_POOL_SIZE + DB_MAX_OVERFLOW` にそろいます。
+スレッドが接続より多いと、余ったスレッドが接続を待ち、`db_pool_exhausted` が増えます。
 
 スレッドを自分で起こす処理は、ContextVar をコピーして渡さない限りスコープに参加しません。
+参加しない処理は別のトランザクションになり、外側のロックと待ち合います。
 `tx.run` と `run_sync` は、コピーを渡します。
+
+### FastAPI の Depends
+
+`shop_core.fastapi` は、`app.state.container` から部品を取り出す依存関数を持ちます。
+FastAPI は shop_core の依存ではないので、`import shop_core` では読まれません。アプリが `from shop_core.fastapi import ...` と明示します。
+関数は `get_container`、`user_service`、`product_service`、`order_service`、`execution_service`、`image_store`、`transaction`、`transaction_async` です。
+`transaction` と `transaction_async` は、リクエストごとに新しいスコープを返します。
+`app.state.container` に `core` 属性を持つ AppContainer を置いたときは、`get_container` が `core` の方を返します。
+アプリ固有の部品は、アプリ側の依存関数で AppContainer から取ります(app2 の `get_notifier` が実例です)。
 
 ## 同時更新
 
@@ -295,14 +335,31 @@ await run_sync(notifier.post, channel_id, text)   # スコープの外の同期�
 
 `Execution.version` は、保存のたびに必ず 1 上がります。変更が無くても上がります。
 古い版で保存すると `ConcurrentUpdateError`(`execution_concurrent_update`)になります。app1 の変換では 409 です。
-冪等な `complete` の再呼び出しでも版は上がります。
-衝突したら、読み直してやり直すのが基本です。
+冪等な `complete` と `fail` の再呼び出しは、保存せず、イベントも出さず、版も上げません。
+`complete` と `fail` は `expected_version` を受け取れます。読んだ版と違えば、何も変えずに `ConcurrentUpdateError` です。
+ライブラリは `ConcurrentUpdateError` を再試行しません。読み直してやり直すかどうかは、呼び出し側が決めます。
 
 `shop_core.tables` で `executions` を直接更新しても、版は上がりません。
 上げたいときは、サービスを通してください。
 
-行ロックを自分で取るときは、`select(...).with_for_update()` を使います(後述)。
+行ロックを自分で取るときは、`transaction()` の中で `tx.session.scalars(select(...).with_for_update())` を使います。
+ロックは `with` を抜けるまで続きます。
 在庫の行ロックは `OrderService.place` が取るので、自分で書かないでください。
+複数の行は、集約の種類、次に id の昇順で取ります。
+
+## 追記専用の子と採番
+
+1 つの親に数十件の記録が付く集約は、追記専用の子として扱います。
+この規則は ADR 0002 の決定で、このリポジトリのコードでは実演していません。
+`Execution` の画像は、全件を置き換える作りで、追記専用の子ではありません。
+
+- 子は集約に読み込みません。追記は、別のリポジトリのメソッドで行います
+- 親ごとの連番は、親の行の `UPDATE ... RETURNING` で振ります
+- この `UPDATE` は親の行ロックを取るので、同じ親への追記が直列になります
+- 連番の `UPDATE` は、親の版を進めません
+- 連番はポートのメソッドで振り、フェイクも同じ規則で振ります
+
+数十件の追記は、ループでサービスを呼ばず、1 回のサービス呼び出しで行ってください(SAVEPOINT は 50 回までです)。この形が要るときは、基盤に依頼してください。
 
 ## DB への直接アクセス
 
@@ -324,7 +381,8 @@ await run_sync(notifier.post, channel_id, text)   # スコープの外の同期�
 
 生 SQL や、サービスを使わない書き込みには `connect()` を使います。
 サービス呼び出しとトランザクションを共有するときは、`tx.session` を使います。
-`connect()` の Core 接続を通る書き込みは、ガード列とビューの検査を通りません。
+`connect()` の Core 接続も、ガード列の変更は DB のトリガーが止めます。ビューへの書き込みは `shop_app` の権限がありません。
+接続の失敗やタイムアウトは、`transaction()` と同じく `DependencyError` になります。
 
 ### 全テーブルの mapped class
 
@@ -353,17 +411,15 @@ with container.transaction() as tx:
 `shop_core.tables` で変更を flush すると、`GuardedColumnError`(`RuntimeError` の子)になり、書き込まれません。
 insert の初期値は許されます。他の列(`failure_reason` など)は直接変えられます。
 
-これは ORM の検査で、止められる経路には限りがあります。
+検査は 2 段です。ORM の検査は、DB に行く前に失敗を返す早い経路です。
+DB のトリガー(マイグレーション 0007)は、生 SQL、Core の `update` 文、ORM の一括 `update` も止めます。
+トリガーの例外も `GuardedColumnError` に翻訳されます。トリガーはサービスの UoW が立てるフラグを見ます。
 
-- 生 SQL と Core の `update` 文は、検査を通りません
-- サービスの実行中に、同じ Session に溜まっていた直接の変更が一緒に書かれると、通ってしまいます
-- 新しいスレッドは、ContextVar をコピーして渡さない限り、スコープにも検査にも参加しません
+抜け道が 1 つあります。
+サービスの実行中に、同じ Session に溜まっていた直接の変更が一緒に書かれると、通ってしまいます。
+サービスを呼ぶ前に `tx.flush()` を呼んでください。
 
-確実に止めるのは、DB のトリガと GRANT です。ORM の検査は、プログラムの誤りを早く見つけるための網です。
-フェイクには ORM がないので、この検査は働きません。Postgres のテストで確かめてください。
-
-CHECK 制約(`stock >= 0`、`quantity > 0`)を破る書き込みは、宣言のあるものがドメインの例外になります。
-制約で表せない条件は、サービスを通したときにしか守られません。
+フェイクには ORM もトリガーもないので、この検査は働きません。Postgres のテストで確かめてください。
 
 ### ビュー
 
@@ -377,16 +433,11 @@ ORM で書くと長くなる集計のために、基盤が SQL ビューを公�
 読み取り専用の mapped class `OrderSummary` と `ProductStock` があります。
 単純なビューは Postgres が書き込みを通し、元のテーブルを書き換えてしまいます。
 そのため、これらの `add`、属性の変更、`delete` は flush で、`session.execute(update(ProductStock)...)` のような一括文は実行時に、`RuntimeError` になります。
-Core 接続からの書き込みは止まりません。確実に防ぐのは、DB ロールの GRANT です。
+Core 接続や生 SQL からの書き込みは ORM では止まりません。止めるのは DB ロールの権限で、`shop_app` はビューに `SELECT` しか持ちません。
 
 `tx.session.get(OrderSummary, user.id)` のように読みます。
 生 SQL で読むなら、結果はアプリ側の frozen dataclass に詰めます。
 新しい集計は、基盤にビューの追加を依頼してください。
-
-### 行ロック
-
-`tx.session.scalars(select(...).with_for_update())` は、どのテーブルにも使えます。
-ロックは `with` を抜けるまで続きます。複数の行は、id の昇順で取ってください。
 
 ### LISTEN と NOTIFY
 
@@ -422,8 +473,8 @@ container.execution_service().complete(execution.id, [image_id])    # 失敗な�
 ```
 
 置いてから commit する順なので、`complete` が失敗すると、置いたオブジェクトが孤児として残ります。
-孤児は許容します。やり直しは、新しい `start` で別の実行として行うのが基本です。
-`put` は DB トランザクションの外で行ってください。
+孤児は許容し、定期の棚卸しで消します。やり直しは、新しい `start` で別の実行として行うのが基本です。
+`put` は DB トランザクションの外で行ってください。全量をメモリに載せます。
 
 | メソッド | 説明 |
 |---|---|
@@ -441,7 +492,8 @@ container.execution_service().complete(execution.id, [image_id])    # 失敗な�
 
 バケット名は、設定が `ENV` から決めます。
 `ENV` が `stg` なら `shop-stg-artifacts` で、`ARTIFACT_BUCKET` を設定すると上書きします。
-`ENV` は `local`、`stg`、`prd` のいずれかです。
+署名付き URL の有効期間は、認証情報の期限を超えません。
+ユーザーメタデータは、合計 2 KB までで、ASCII だけです。
 AWS の認証情報は、boto3 が既定の経路(環境変数、ロール)で読みます。
 ローカルでは compose の `s3` サービス(s3mock)が `S3_ENDPOINT_URL` の先になります。
 
@@ -469,12 +521,17 @@ s3mock は、CopyObject で Content-Type を置き換えられません。
 `transaction()` の中のサービスのイベントは、スコープを抜けて commit された後に出ます。
 
 送り先は `EventPublisher` ポートの `publish(events)` です。既定の `LoggingEventPublisher` はログに出すだけです。
-別の送り先は、`container.event_publisher.override(providers.Object(publisher))` で差し込みます。本番の送り先は基盤に相談してください。
+別の送り先は、`build_container(publisher=...)` で渡します。テストでは `with container.override(event_publisher=lambda: publisher):` でも差し込めます。
+`publish` はイベントを発生順に受け取ります。ブローカーのメッセージ ID には `event_id` を使ってください。本番の送り先は基盤に相談してください。
+送り先は複数のスレッドから呼ばれるので、スレッド安全に書き、短い時間で戻してください。
+async のスコープでは、`publish` はスレッドで呼ばれます。
 
 Outbox はありません。commit の後、発行の前にプロセスが落ちると、そのイベントは失われます。
 送り側は 1 回以下で、受け側はブローカーが受け取った後に 1 回以上です。
-発行先が例外を投げると、commit 済みのまま、その例外が呼び出し元に伝わります。書き込みは戻りません。
-この例外を、書き込みの失敗と取り違えないでください。
+発行先が例外を投げると、commit 済みのまま、`EventPublishError`(元の例外は `__cause__`、送れなかった束は `events`)が呼び出し元に伝わります。書き込みは戻りません。
+この例外を、書き込みの失敗と取り違えないでください。書き込みをやり直すと二重に書きます。
+1 つの束の途中で失敗すると、残りのイベントは失われます。
+app2 は `EventPublishError` をログに残し、注文を受け付けた 200 を返します。
 
 ## テスト
 
@@ -482,15 +539,14 @@ Outbox はありません。commit の後、発行の前にプロセスが落ち
 
 `fake_backend` が、`uow`、`transaction`、`transaction_async`、`image_store`、`event_publisher` を同じ state のフェイクに差し替えます。
 `Container()` を作るだけでは環境変数を読まないので、`DATABASE_URL` は要りません。
-lifespan は走らせず、テストが `Container()` を作って wire します。
+lifespan は走らせず、テストが `Container()` を作って `app.state` に置きます。
 
 ```python
 @pytest.fixture
 def container():
     c = Container()
-    c.wire(modules=[main])
-    yield c
-    c.unwire()
+    app.state.container = c
+    return c
 
 
 @pytest.fixture
@@ -503,19 +559,23 @@ def client(container):
 
 - サービスが `commit()` するまで変更は見えず、例外で抜けた変更は捨てられます
 - `transaction()` の中では、捕まえた例外のサービス呼び出しだけが戻り、入れ子も SAVEPOINT になります
-- 一意制約と CHECK 制約は、次節の宣言から同じ検査をします
+- 一意制約と CHECK 制約は、後述の宣言から同じ検査をします
 - `Execution` の版の衝突は、`ConcurrentUpdateError` になります
+- 整数 id の採番は、ロールバックしても戻らず、トランザクションどうしで重なりません
 - イベントは `state.events.published` に溜まり、最も外側の commit の後にだけ入ります
 
-`providers.Container` で入れ子にしたコンテナでは、`fake_backend(container.core, state)` のように内側を渡します。
+入れ子にしたコンテナでは、`fake_backend(container.core, state)` のように内側を渡します。
+個別の差し替えは `container.override(名前=関数)` です。名前がプロバイダでなければ `AttributeError` です。
 `db` は差し替わりません。
 
-フェイクで確かめられないものは、行ロック、生 SQL、ガード列の検査、Core 接続です。
-フェイクの一意検査は、同時に commit した別の UoW の行を見ません。
+フェイクで確かめられないものは、行ロック、生 SQL、ガード列のトリガー、Core 接続、連番の衝突です。
+フェイクの commit は、その UoW で変えた分だけを共有の state に書きます。先に commit した別の UoW の書き込みは消えません。
+一意制約と部分一意は、commit 時にも共有の state に対して調べるので、同時 commit の衝突も再現します。
+`Execution` は、開始後に他が版を進めていれば、commit で `ConcurrentUpdateError` です。
+行ロックはないので、在庫の同時更新は後勝ちです。
 
 `InMemoryState` は `users`、`products`、`orders`(整数 id のキー)、`executions`(UUID のキー)、`image_store`、`events` を持ちます。
-整数 id はユーザー、商品、注文を通した 1 本の連番です。
-「ユーザー 1、商品 1」を前提にせず、`next(iter(state.users))` のように state から取り出してください。
+整数 id は 1 本の連番なので、「ユーザー 1、商品 1」を前提にせず、`next(iter(state.users))` のように取り出してください。
 事前のデータは、`fake_backend` の中でサービスを呼んで積むのが簡単です。
 
 ### tx.session を使う処理の差し替え
@@ -546,8 +606,7 @@ DB が守る不変条件は、`domain/constraints.py` に 1 件ずつ宣言さ�
 制約を足すときは、マイグレーションと宣言の両方を基盤への PR に含めます。
 宣言にない制約の違反は、翻訳されません。
 
-Postgres のテストは `TEST_DATABASE_URL`、S3 のテストは `TEST_S3_ENDPOINT_URL` がなければ skip されます。
-手順とコマンドは、リポジトリのルートの README にあります。
+Postgres のテストは `TEST_DATABASE_URL`、S3 のテストは `TEST_S3_ENDPOINT_URL` がなければ skip されます。手順は、ルートの README にあります。
 
 ## 環境変数
 
@@ -557,8 +616,10 @@ Postgres のテストは `TEST_DATABASE_URL`、S3 のテストは `TEST_S3_ENDPO
 | `SQL_ECHO` | いいえ | `1`、`true`、`yes`(大文字小文字は問わない)で SQL をログに出します。既定では出しません |
 | `DB_POOL_SIZE` | いいえ | プールに常に置く接続の数です。既定は 5 |
 | `DB_MAX_OVERFLOW` | いいえ | `DB_POOL_SIZE` を超えて一時的に開ける接続の数です。既定は 10 |
-| `DB_POOL_TIMEOUT` | いいえ | 接続が空くのを待つ秒数です。超えると `TimeoutError` になります。既定は 30 |
+| `DB_POOL_TIMEOUT` | いいえ | 接続が空くのを待つ秒数です。超えると `DependencyError`(`db_pool_exhausted`)になります。既定は 30 |
 | `DB_POOL_RECYCLE` | いいえ | 接続を作り直すまでの秒数です。既定は -1(作り直さない) |
+| `DB_STATEMENT_TIMEOUT_MS` | いいえ | 1 文の実行時間の上限(ミリ秒)です。超えると `db_statement_timeout` になります。既定は 0(無制限) |
+| `DB_LOCK_TIMEOUT_MS` | いいえ | ロック待ちの上限(ミリ秒)です。超えると `db_lock_timeout` になります。既定は 0(無制限) |
 | `DB_POOL_PRE_PING` | いいえ | 接続を渡す前に生きているか確かめます。未設定なら有効。`1`、`true`、`yes` で有効、それ以外の値は無効です |
 | `ENV` | いいえ | `local`、`stg`、`prd` のいずれか。既定は `local` |
 | `ARTIFACT_BUCKET` | いいえ | 画像のバケット名。既定は `shop-{ENV}-artifacts` |
@@ -568,7 +629,8 @@ Postgres のテストは `TEST_DATABASE_URL`、S3 のテストは `TEST_S3_ENDPO
 
 AWS の認証情報(`AWS_ACCESS_KEY_ID` など)は、boto3 が自分で読みます。`Settings` には入りません。
 数値でない値を入れると、変数名を含む `SettingsError` になります。
-`build_container()` は、`ENV` の値、`DB_POOL_SIZE` が 1 以上、`DB_MAX_OVERFLOW` が 0 以上、バケット名が空でないこと、URL に DB 名があることも検査します。
+`build_container()` は、`ENV` の値、`DB_POOL_SIZE` が 1 以上、`DB_MAX_OVERFLOW` が 0 以上、2 つのタイムアウトが 0 以上、バケット名が空でないこと、URL に DB 名があることも検査します。
+接続先は常に `DATABASE_URL` で渡します。URL に埋めるパスワードは、URL エンコードしてください。
 
 アプリが決めるのは `DB_POOL_SIZE` と `DB_MAX_OVERFLOW` だけです。
 Web は既定のまま、バッチやワーカーは小さく(例: 2 と 0)、`listen()` を使うプロセスは 1 本足します。
@@ -584,7 +646,12 @@ Web は既定のまま、バッチやワーカーは小さく(例: 2 と 0)、`l
 アプリは alembic を実行せず、完了も待ちません。
 マイグレーションは、アプリのデプロイより先に、CI/CD の migrate コンテナが適用します。
 ローカルでの適用は、リポジトリのルートの README を見てください。
-古いスキーマに対して起動すると、`check_database` かその後のクエリで失敗します。
+古いスキーマに対して起動すると、`check_database` が `SettingsError` で止めます。
+migrate は持ち主ロールで動き、`DATABASE_URL` だけを読みます(`credentials` は使いません)。
+マイグレーションは advisory lock で直列になり、DDL のロック待ちは 10 秒で切れます。
+版は 0001 から 0007 です。0006 が GRANT、0007 がガード列のトリガーとビューの REVOKE です。
+古いアプリと新しいスキーマが同居することがあるので、マイグレーションは後方互換(expand/contract)で書きます。
+contract は、旧版のアプリが消えた次のリリースで行います。本番で downgrade は使いません。
 
 DB のロールは 2 つです。
 
@@ -593,13 +660,10 @@ DB のロールは 2 つです。
 | `shop` | スキーマの持ち主。DDL を実行できます | migrate だけ |
 | `shop_app` | スキーマの USAGE と、テーブルの DML、シーケンスの USAGE と SELECT | アプリ |
 
-ロールは、DB の初期化スクリプト(`docker/postgres-init/01_app_role.sql`)が作ります。
-権限は、マイグレーション 0006 が付けます。以降に足すテーブルにも、既定の権限で付きます。
+ロールは、DB の初期化スクリプト(`docker/postgres-init/01_app_role.sql`)が作り、権限は 0006 が付けます。
+以降に足すテーブルにも、既定の権限で付きます(持ち主ロールで流したときだけ効きます)。
+ビューへの書き込み権限は 0007 が取り消します。既定の権限はビューを区別できないので、ビューを足すマイグレーションは作った直後に `REVOKE INSERT, UPDATE, DELETE` を実行してください。
 `check_database` は、接続中のロールがスキーマに CREATE できると、`SettingsError` で落とします。
-アプリに `shop` で接続させると、起動時に止まります。
-
-`shop_app` で `create table shop.x (id int)` を実行すると、`permission denied for schema shop` になります。
-`select` と `insert` は通ります。
 
 ## 機能の追加の依頼
 
@@ -612,19 +676,25 @@ DB のロールは 2 つです。
 - 既存のメソッドで足りない理由を書きます
 
 集計はビューの追加を、テーブルや列は用途を書いて依頼してください。
-ドメインのルールを変える依頼(たとえば「在庫が負になってよい」)は、全アプリに影響するので先に相談してください。
+「在庫が負になってよい」のようにドメインのルールを変える依頼は、全アプリに影響するので先に相談してください。
 
 ## 守ってほしいこと
 
-- サービスがある操作は、サービスを使い、ORM で再実装しないでください
-- ガード列(`products.stock`、`executions.status`)を、`shop_core.tables` で直接書かないでください
-- S3 のキーを自分で組み立てず、`ImageStore` にエンティティを渡してください
-- `put` には必ず `content_type` を付けてください
+コードや DB が止めない次の 7 つは、レビューで守ります。
+
+- `build_container()` は、プロセスの入口で 1 回だけ呼んでください。モジュールの直下では呼ばず、結果をグローバルに持たないでください
 - 1 つのトランザクションのスコープを、複数のタスクから同時に使わないでください
-- `build_container()` は、プロセスの入口でだけ呼んでください。モジュールの直下では呼ばず、結果をグローバルに持たないでください
-- `shop_core.infra` と `shop_core.usecase` を import しないでください。テーブルは `shop_core.tables` から使います
-- `container.session_factory()` や `container.uow()` を呼ばないでください(生の接続は `container.db()` です)
+- モデルの推論、外部 API、オブジェクトの転送は、トランザクションの外で行ってください
+- 1 トランザクションの SAVEPOINT は、50 回までにしてください。数十件の追記は、1 回のサービス呼び出しで行ってください
+- 直接ロックを取るときは、集約の種類、次に id の昇順で取ってください
+- オブジェクトストレージには、置いてから commit してください
+- マイグレーションは、後方互換で書いてください
+
+コード、DB、CI が止める規則は、ADR 0002 の「守る主体」の表にあります。
+
+次の使い方は避けてください。
+
+- サービスがある操作を、ORM で再実装しないでください
 - 自前の `DeclarativeBase` や mapped class を書かず、`create_all()` も呼ばないでください
 - サービスの戻り値の `dataclass` を書き換えて、保存されることを期待しないでください
 - `transaction()` の外で、2 つのサービス呼び出しが 1 トランザクションになることを期待しないでください
-- `db` にフェイクはないので、使うコードは Postgres のテストで確かめてください

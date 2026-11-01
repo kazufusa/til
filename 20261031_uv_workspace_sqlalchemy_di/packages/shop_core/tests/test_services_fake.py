@@ -1,7 +1,6 @@
 """DB なしでサービスのルールを検証する"""
 
 import pytest
-from dependency_injector import providers
 
 from shop_core import (
     Container,
@@ -17,8 +16,9 @@ from shop_core.testing import FakeUnitOfWork, InMemoryState
 @pytest.fixture
 def container():
     c = Container()
-    c.uow.override(providers.Factory(FakeUnitOfWork, state=InMemoryState()))
-    return c
+    state = InMemoryState()
+    with c.override(uow=lambda: FakeUnitOfWork(state=state)):
+        yield c
 
 
 def test_place_order_reserves_stock(container):

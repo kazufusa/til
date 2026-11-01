@@ -1,7 +1,8 @@
 """アプリチーム向けのフェイク。DB なしでサービスの振る舞いをテストできる
 
     state = InMemoryState()
-    container.uow.override(providers.Factory(FakeUnitOfWork, state=state))
+    with container.override(uow=lambda: FakeUnitOfWork(state=state)):
+        ...
 
 transaction() も含めて差し替えるなら:
 
@@ -35,11 +36,9 @@ from typing import Any, Self
 from urllib.parse import urlencode
 from uuid import UUID
 
-from dependency_injector import providers
-
 from shop_core.domain.constraints import CONSTRAINTS
 from shop_core.domain.errors import ArtifactNotFoundError, ConcurrentUpdateError
-from shop_core.domain.events import DomainEvent, EventBuffer
+from shop_core.domain.events import DomainEvent, EventBuffer, publish_events
 from shop_core.domain.execution import Execution
 from shop_core.domain.models import Order, Product, User
 from shop_core.domain.ports import ArtifactInfo, EventPublisher
@@ -142,16 +141,25 @@ class InMemoryState:
     # トランザクションの作業用コピーだけが使う、イベントの置き場の段(本物の session.info["event_stack"] 相当)
     event_stack: list[list[DomainEvent]] = field(default_factory=list)
     _seq: int = 0
+    # 作業用コピーが採番を共有する先(共有の state)。共有の state 自身は None。
+    # DB のシーケンスと同じく、採番はロールバックしても戻らず、トランザクション間で重ならない
+    _root: "InMemoryState | None" = field(default=None, repr=False, compare=False)
 
     def next_id(self) -> int:
-        self._seq += 1
-        return self._seq
+        root = self._root if self._root is not None else self
+        root._seq += 1
+        return root._seq
 
 
 def _copy_state(state: InMemoryState) -> InMemoryState:
-    """image_store と events は共有のまま、DB 相当の部分だけ複製する"""
+    """image_store と events は共有のまま、DB 相当の部分だけ複製する。採番は元の共有の state と共有する"""
+    root = state._root if state._root is not None else state
     memo = {id(state.image_store): state.image_store, id(state.events): state.events}
-    return copy.deepcopy(state, memo)
+    if root is not state:
+        memo[id(root)] = root
+    copied = copy.deepcopy(state, memo)
+    copied._root = root
+    return copied
 
 
 def _snapshot(work: InMemoryState) -> InMemoryState:
@@ -164,7 +172,40 @@ def _restore(work: InMemoryState, snap: InMemoryState) -> None:
     work.products = snap.products
     work.orders = snap.orders
     work.executions = snap.executions
-    work._seq = snap._seq
+
+
+_AGGREGATES = ("users", "products", "orders", "executions")
+
+
+def _commit_changes(shared: InMemoryState, work: InMemoryState, base: InMemoryState) -> None:
+    """作業用コピーの変更(base との差)だけを、いまの共有の state に書く。
+
+    トランザクションの開始後に他がコミットした行を、丸ごと上書きして失わないようにする。
+    書く前に、変更した各行が登録済みの制約(domain/constraints.py)を、開始時のスナップショットではなく
+    いまの共有の state に対して満たすか調べる。破るなら宣言されたエラーを投げ、何も書かない。
+    変更した Execution は、開始後に他が版を進めていれば ConcurrentUpdateError にする(DB の楽観ロックと同じ)。
+    """
+    upserts: dict[str, dict[Any, Any]] = {}
+    deletes: dict[str, list[Any]] = {}
+    for attr in _AGGREGATES:
+        w, b = getattr(work, attr), getattr(base, attr)
+        upserts[attr] = {k: v for k, v in w.items() if k not in b or v != b[k]}
+        deletes[attr] = [k for k in b if k not in w]
+    for eid in upserts["executions"]:
+        current = shared.executions.get(eid)
+        started = base.executions.get(eid)
+        if current is not None and started is not None and current.version != started.version:
+            raise ConcurrentUpdateError("execution", eid)
+    merged = SimpleNamespace(**{attr: dict(getattr(shared, attr)) for attr in _AGGREGATES})
+    for attr in _AGGREGATES:
+        for key in deletes[attr]:
+            getattr(merged, attr).pop(key, None)
+        getattr(merged, attr).update(upserts[attr])
+    for attr in _AGGREGATES:
+        for aggregate in upserts[attr].values():
+            _enforce(merged, aggregate, attr=attr)
+    for attr in _AGGREGATES:
+        setattr(shared, attr, {k: copy.deepcopy(v) for k, v in getattr(merged, attr).items()})
 
 
 _ambient_work: ContextVar[InMemoryState | None] = ContextVar("shop_core_fake_work", default=None)
@@ -322,7 +363,13 @@ class _Executions:
 
 
 class FakeUnitOfWork:
-    """commit しなければ state に反映しない、という点だけ本物と同じにしてある"""
+    """commit しなければ state に反映しない、という点が本物と同じ。
+
+    commit は、開始時との差だけを共有の state に書く。同じ state に開いた別の UoW が先にコミットした行は
+    失われない。書く前に、一意制約・部分一意・CHECK(domain/constraints.py)をいまの共有の state に対して
+    調べ、破るなら宣言されたエラーを投げる。Execution は開始後に版が進んでいれば ConcurrentUpdateError。
+    行ロックはなく(resolve_by_id_for_update はただの読み取り)、Product の在庫の同時更新は後勝ちになる。
+    """
 
     def __init__(self, state: InMemoryState, publisher: EventPublisher | None = None) -> None:
         self._shared = state
@@ -333,6 +380,8 @@ class FakeUnitOfWork:
         self._joined = ambient is not None
         # transaction() の中なら外側の work を直接使う
         self._work = ambient if ambient is not None else _copy_state(self._shared)
+        # 開始時の写し。commit で、これとの差だけを共有の state に書く
+        self._base = None if self._joined else _copy_state(self._work)
         self.users = _Users(self._work)
         self.products = _Products(self._work)
         self.orders = _Orders(self._work)
@@ -362,19 +411,18 @@ class FakeUnitOfWork:
                 self._work.event_stack.append([])
             self._work.event_stack[-1].extend(self.events.drain())
             return
-        self._shared.users = self._work.users
-        self._shared.products = self._work.products
-        self._shared.orders = self._work.orders
-        self._shared.executions = self._work.executions
-        self._shared._seq = self._work._seq
+        assert self._base is not None
+        _commit_changes(self._shared, self._work, self._base)
+        self._base = _copy_state(self._work)
         self.committed = True
-        self._publisher.publish(self.events.drain())
+        publish_events(self._publisher, self.events.drain())
 
     def rollback(self) -> None:
         if self._joined:
             self._restore_snapshot()
             return
         self._work = _copy_state(self._shared)
+        self._base = _copy_state(self._work)
 
     def _restore_snapshot(self) -> None:
         if self._snap is not None:
@@ -423,19 +471,16 @@ class FakeTransactionScope:
             return
         work = _copy_state(self._shared)
         work.event_stack = [[]]
+        base = _copy_state(work)
         token = _ambient_work.set(work)
         try:
             yield FakeTransaction(work)
         finally:
             _ambient_work.reset(token)
-        # 例外ならここに来ない
-        self._shared.users = work.users
-        self._shared.products = work.products
-        self._shared.orders = work.orders
-        self._shared.executions = work.executions
-        self._shared._seq = work._seq
+        # 例外ならここに来ない。開始後に他がコミットした行を失わないよう、差だけを書く
+        _commit_changes(self._shared, work, base)
         # コミットしたあとに送る。publisher の例外は書き込みを戻さない
-        self._publisher.publish(work.event_stack[0])
+        publish_events(self._publisher, work.event_stack[0])
 
 
 class FakeAsyncTransaction(FakeTransaction):
@@ -456,6 +501,7 @@ class FakeAsyncTransactionScope:
         self._outer: InMemoryState | None = None
         self._snap: InMemoryState | None = None
         self._work: InMemoryState | None = None
+        self._base: InMemoryState | None = None
         self._token: Any = None
 
     async def __aenter__(self) -> FakeAsyncTransaction:
@@ -467,6 +513,7 @@ class FakeAsyncTransactionScope:
             return FakeAsyncTransaction(outer)
         self._work = _copy_state(self._shared)
         self._work.event_stack = [[]]
+        self._base = _copy_state(self._work)
         self._token = _ambient_work.set(self._work)
         return FakeAsyncTransaction(self._work)
 
@@ -483,34 +530,25 @@ class FakeAsyncTransactionScope:
         _ambient_work.reset(self._token)
         if exc_type is not None:
             return
-        self._shared.users = work.users
-        self._shared.products = work.products
-        self._shared.orders = work.orders
-        self._shared.executions = work.executions
-        self._shared._seq = work._seq
+        assert self._base is not None
+        _commit_changes(self._shared, work, self._base)
         from shop_core.usecase.async_support import run_sync
 
-        await run_sync(self._publisher.publish, work.event_stack[0])
+        await run_sync(publish_events, self._publisher, work.event_stack[0])
 
 
 @contextmanager
 def fake_backend(container: Any, state: InMemoryState) -> Iterator[None]:
     """uow、transaction、image_store、event_publisher を同じ state のフェイクに差し替える"""
-    with (
-        container.uow.override(
-            providers.Factory(FakeUnitOfWork, state=state, publisher=container.event_publisher)
+    with container.override(
+        uow=lambda: FakeUnitOfWork(state=state, publisher=container.event_publisher()),
+        transaction=lambda: FakeTransactionScope(
+            state=state, publisher=container.event_publisher()
         ),
-        container.transaction.override(
-            providers.Factory(
-                FakeTransactionScope, state=state, publisher=container.event_publisher
-            )
+        transaction_async=lambda: FakeAsyncTransactionScope(
+            state=state, publisher=container.event_publisher()
         ),
-        container.image_store.override(providers.Object(state.image_store)),
-        container.event_publisher.override(providers.Object(state.events)),
-        container.transaction_async.override(
-            providers.Factory(
-                FakeAsyncTransactionScope, state=state, publisher=container.event_publisher
-            )
-        ),
+        image_store=lambda: state.image_store,
+        event_publisher=lambda: state.events,
     ):
         yield

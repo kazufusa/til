@@ -3,7 +3,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app1 import main
 from app1.main import app
 from shop_core import Container, DependencyError, UserService
 from shop_core.testing import InMemoryState, fake_backend
@@ -11,11 +10,10 @@ from shop_core.testing import InMemoryState, fake_backend
 
 @pytest.fixture
 def container():
-    # lifespan は走らせない(TestClient を with で開かない)。Container はテストが作って wire する
+    # lifespan は走らせない(TestClient を with で開かない)。Container はテストが作って app.state に置く
     c = Container()
-    c.wire(modules=[main])
+    app.state.container = c
     yield c
-    c.unwire()
 
 
 @pytest.fixture
@@ -100,3 +98,16 @@ def test_execution_flow(client, container):
 def test_execution_not_found(client):
     assert client.post("/orders/999/executions").status_code == 404
     assert client.get("/executions/00000000-0000-7000-8000-000000000000").status_code == 404
+
+
+def test_event_publish_failure_is_500_with_code_and_write_is_kept(client, container):
+    class Exploding:
+        def publish(self, events):
+            raise ConnectionError("broker down")
+
+    with container.override(event_publisher=lambda: Exploding()):
+        r = client.post("/users", json={"email": "a@example.com", "name": "A"})
+    assert r.status_code == 500
+    assert r.json()["code"] == "event_publish_failed"
+    # 書き込みは確定している
+    assert [u["email"] for u in client.get("/users").json()] == ["a@example.com"]

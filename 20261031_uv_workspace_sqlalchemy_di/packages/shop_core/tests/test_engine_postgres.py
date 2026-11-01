@@ -4,7 +4,6 @@ import os
 
 import psycopg
 import pytest
-from dependency_injector import providers
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -58,7 +57,7 @@ def test_container_uses_injected_engine_factory(pg_url, monkeypatch):
         calls.append(1)
         return make_engine(pg_url)
 
-    c = Container(engine_factory=providers.Object(factory))
+    c = Container(engine_factory=factory)
     try:
         with c.engine().begin() as conn:
             conn.execute(text(f"create schema if not exists {SCHEMA}"))

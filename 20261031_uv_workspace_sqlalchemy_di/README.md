@@ -14,16 +14,18 @@ docs/adr/                 # 設計判断の記録(ADR)
 packages/shop_core/       # 基盤チームの持ち物
   README.md               # アプリ開発者向けの使い方
   Dockerfile              # migrate 用。shop_core だけ入れる
-  migrations/             # alembic の 0001 から 0006。テーブルとビューと権限の所有者は基盤
+  migrations/             # alembic の 0001 から 0007。テーブルとビューと権限の所有者は基盤
   src/shop_core/
     bootstrap.py          # build_container と起動時の検査(コンポジションルート)
-    container.py          # dependency-injector のコンテナ
+    container.py          # 手書きのコンテナ(singleton と factory)
+    di.py                 # provider デコレータと ContainerBase(外部の DI ライブラリは使わない)
+    fastapi.py            # Depends 用の関数(get_container、各サービス、transaction)
     settings.py           # 環境変数の解決
     ids.py                # UUIDv7 の採番 new_id
     views.py              # 公開ビューの読み取り専用 mapped class
     testing.py            # フェイクと fake_backend
     domain/               # dataclass のモデル、例外、制約の宣言、イベント、Protocol
-    infra/                # engine、ORM、リポジトリ、制約の翻訳、ガード列、S3、Database
+    infra/                # engine、ORM、リポジトリ、制約の翻訳、ガード列、スキーマの版、S3、Database
     usecase/              # UnitOfWork、サービス、transaction()、async 対応
     tables/               # 全テーブルの書き込める mapped class
   tests/                  # フェイクのテストと Postgres、S3 のテスト
@@ -36,18 +38,26 @@ app2/                     # Slack アプリ。イベントの受信とスラッ�
 ```
 
 アプリはサービスを呼ぶだけで、`Session` の生成も `commit()` も書きません。
-Container は、アプリの lifespan が `build_container()` で作り、モジュール変数には置きません。
+Container は、アプリの lifespan が `build_container()` で作り、`app.state.container` に置きます。
+ルートでは `shop_core.fastapi` の `Depends` 用の関数でサービスを受け取ります。
+
+アプリが import してよいのは、`shop_core`、`shop_core.tables`、`shop_core.testing`、`shop_core.fastapi` の 4 つです。
+`tests/test_public_surface.py` が、app1 と app2 のソースを走査して、それ以外の import を検出します。
 
 ## ローカルでの起動
 
-アプリは起動時に DB を検査します。テーブルがないと落ちるので、migrate を先に流します。
+アプリは起動時に、DB のロールとスキーマの版を検査します。
+テーブルがないか版が古いと落ちるので、migrate を先に流します。
 
 ```sh
 docker compose up -d db s3                  # db(:5432)と s3mock(:9000)
 docker compose --profile migrate build      # マイグレーションを足したら先にイメージを作り直す
-docker compose run --rm migrate             # 0001 から 0006 を適用(パイプラインのローカル版)
+docker compose run --rm migrate             # 0001 から 0007 を適用(パイプラインのローカル版)
 docker compose up -d --build app1 app2      # app1(:8001)、app2(:8002)
 ```
+
+動いていたアプリは、migrate の後で `docker compose restart app1 app2` します。
+`check_database` は起動時に 1 度だけ版を確かめるので、再起動しないと新しい版を確認し直しません。
 
 `docker compose build` は profile の migrate を作り直しません。
 `--profile migrate build` を忘れると、古いイメージで `Can't locate revision` になります。
@@ -63,7 +73,7 @@ migrate は持ち主の `shop` で、アプリは USAGE と DML だけの `shop_
 
 ```sh
 uv sync --all-packages
-uv run --all-packages pytest -q    # 131 passed, 112 skipped(Postgres と S3 向けが skip)
+uv run --all-packages pytest -q    # 181 passed, 139 skipped(Postgres と S3 向けが skip)
 ```
 
 `--all-packages` は、ワークスペースの全メンバーを入れて実行するために付けます。
@@ -74,7 +84,7 @@ Postgres と S3 を使うテストは、DB と s3mock を起動し、マイグ�
 TEST_DATABASE_URL=postgresql+psycopg://shop:shop@localhost:5432/shop \
 TEST_S3_ENDPOINT_URL=http://localhost:9000 TEST_S3_IMPL=s3mock \
 AWS_ACCESS_KEY_ID=x AWS_SECRET_ACCESS_KEY=x \
-  uv run --all-packages pytest -q    # 241 passed, 1 xfailed
+  uv run --all-packages pytest -q    # 319 passed, 1 xfailed
 ```
 
 xfail の 1 件は、s3mock が CopyObject で Content-Type を置き換えない制約です。
@@ -86,33 +96,40 @@ Postgres のテストは `TEST_DATABASE_URL` の `shop` と `app_test` のスキ
 
 ## 確認した動作
 
-- `docker compose run --rm migrate` で 0001 から 0006 が当たり、2 回目は何もしません
+- `docker compose run --rm migrate` で 0001 から 0007 が当たり、2 回目は何もしません
 - `alembic upgrade head` の後に `alembic check` が通り、モデルとマイグレーションのずれはありません
 - `shop_app` は `select` と `insert` ができ、`create table shop.x` は `permission denied for schema shop` になります
 - 持ち主の `shop` で接続したアプリは、起動時の `check_database` が `SettingsError` で止めます
+- スキーマの版が head と違う DB に対しても、`check_database` は `SettingsError` で止めます
 - app1 でユーザー登録、商品登録、注文ができます。在庫超過は 409、未知のユーザーは 404、入力の誤りは 400 です
 - 在庫超過で失敗した注文は、orders にも products にも痕跡が残りません
 - 実行は start、画像の put、complete の順で進みます。注文ごとに実行中は 1 件で、重複は 409 です
 - 古い版での保存は `execution_concurrent_update` になり、版は保存のたびに 1 上がります
 - イベントは最も外側の commit の後に発行され、SAVEPOINT が戻った分は捨てられます
 - ガード列(`products.stock`、`executions.status`)を `shop_core.tables` で変えると `GuardedColumnError` です
+- 生 SQL と Core の `update` でガード列を変えても、DB のトリガーが止めて `GuardedColumnError` になります
+- `shop_app` は、ビューへの `insert` と `update` で `permission denied` になります
+- フェイクの commit は、自分が変えた分だけを共有の状態に書きます。同じメールの同時登録は、後の commit が `user_email_taken` で失敗します
+- 発行先が例外を投げると、app1 は 500 で `event_publish_failed` を返し、書き込みは残ります
 - app2 は署名のないリクエストを 401 で断り、スラッシュコマンドのドメインエラーを 200 の ephemeral で返します
+- app2 は `DependencyError` を code 付きの ephemeral で、`EventPublishError` を注文確定の旨を添えた 200 で返します
 - `shop_core.tables`、公開ビュー、`container.db()`(行ロック、LISTEN/NOTIFY、autocommit)が、Postgres のテストで動きます
 
 ## Slack アプリ
 
-app2 は自前の `AppContainer` を持ち、`providers.Container` で shop_core の `Container` を入れ子にします。
-`app2/bootstrap.py` の `build_app_container` が核を `build_container` で作り、lifespan が検査して wire します。
+app2 は自前の `AppContainer` を持ち、shop_core の `Container` を `core` 属性として持ちます。
+`app2/bootstrap.py` の `build_app_container` が核を `build_container` で作り、lifespan が検査して `app.state` に置きます。
 app2 は S3 を使わないので、`check_image_store` は呼びません。
-テストでは `fake_backend(container.core, state)` で DB を差し替え、`slack_client` と `verifier` も差し替えます。
+async のプロセスなので、`configure_thread_limit` でスレッドの上限をプールの接続数にそろえます。
+テストでは `fake_backend(container.core, state)` で DB を差し替え、`container.override(slack_client=..., verifier=...)` で Slack の部品も差し替えます。
 
 Slack ユーザーは、`slack_links` テーブルで基盤のユーザーに対応づけます。
 初めてのユーザーは、仮のメールアドレス(`<slack_user_id>@slack.local`)で登録し、リンクを追加します。
 この処理は `resolve_user_id` にまとめ、注文と同じ `transaction_async()` の中で `tx.run` から呼びます。
 `tx.session` はフェイクにないので、DB なしのテストでは `resolve_user_id` を差し替えます。
 
-Slack の設定(`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`)はアプリが読み、`DATABASE_URL` などはライブラリが読みます。
-`Configuration.from_env(required=True)` は import 時に読んで落ちるので、最初の利用まで読まない `Singleton` にしています。
+Slack の設定(`SLACK_BOT_TOKEN`、`SLACK_SIGNING_SECRET`)はアプリの `SlackSettings` が読み、`DATABASE_URL` などはライブラリが読みます。
+`SlackSettings` は、`provider(singleton=True)` のメソッドで最初の利用まで読みません。
 
 Slack への投稿は取り消せないので、スコープを抜けて commit された後に行います。
 投稿に失敗しても、注文は残ります。
@@ -156,7 +173,8 @@ DATABASE_URL=postgresql+psycopg://shop:shop@localhost:5432/shop uv run alembic r
 ```
 
 PR のレビューでは `alembic check` でモデルとのずれがないことを確かめます。
-ビューと GRANT は metadata に載らないので、autogenerate の対象外です。手で書きます。
+ビュー、GRANT、トリガーは metadata に載らないので、autogenerate の対象外です。手で書きます。
+ビューを足すマイグレーションは、作った直後に `shop_app` から `INSERT, UPDATE, DELETE` を `REVOKE` します。
 デプロイした後のマイグレーションは変更せず、新しい版を足します。
 マイグレーションは後方互換(expand/contract)で書きます。
 

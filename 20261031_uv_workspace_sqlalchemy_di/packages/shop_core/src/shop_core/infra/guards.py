@@ -8,11 +8,16 @@ GuardedColumnError を投げる。insert の初期値は許す。
 サービスの中かどうかは ContextVar で判断する。SqlAlchemyUnitOfWork が入口で立て、出口で戻す。
 サービスは必ず UoW を通るので、transaction() の中で tables を直接書いても立たない。
 
+ORM の検査だけでは、ORM の外(Core の update 文、生 SQL、ORM の一括 update)を止められない。
+そこで DB のトリガー(マイグレーション 0007 の shop.guard_column_change)が同じ列を守る。
+UoW が各トランザクションで set_config('app.in_service', 'on', true) を実行し、
+BEFORE UPDATE トリガーが current_setting('app.in_service', true) を見て、'on' でなければ例外にする。
+トリガーの例外(P0001)は infra/constraints.py が GuardedColumnError に翻訳するので、
+ORM の検査と同じ例外型で受けられる。ORM の検査は、DB に行く前に失敗を返す早い経路として残す。
+
 既知の穴: サービスの実行中に、同じ Session に溜まっていた直接の変更が autoflush で
-一緒に書かれると、サービスの中とみなされて通る。ORM の外(Core の update 文や生 SQL)も見えない。
-確実に防ぐには DB のトリガーを使う。UoW が各トランザクションの先頭で
-set_config('app.in_service', 'on', true) を実行し、ガード列の BEFORE UPDATE トリガーが
-current_setting('app.in_service', true) を見て、'on' でなければ例外にする。ここでは実装しない。
+一緒に書かれると、サービスの中とみなされて ORM の検査もトリガーも通る。
+トランザクションの中で、サービスを呼ぶ前に tx.flush() を呼んでおけば避けられる。
 """
 
 from collections.abc import Iterator

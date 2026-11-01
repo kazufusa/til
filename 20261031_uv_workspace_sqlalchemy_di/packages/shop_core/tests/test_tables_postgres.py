@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from dependency_injector import providers
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -20,7 +19,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def container(pg_url):
     migrate_to_head(pg_url)
-    c = Container(settings=providers.Object(Settings(database_url=pg_url)))
+    c = Container(Settings(database_url=pg_url))
     yield c
     c.engine().dispose()
 
@@ -84,8 +83,9 @@ def test_negative_stock_violates_check_constraint(container):
     pen = container.product_service().add("pen", 100, 5)
     # 登録済みの制約なので、IntegrityError ではなくドメインのエラーになる
     with pytest.raises(BusinessRuleError, match="stock must not be negative"):
-        # DB の CHECK を確かめるため、ガード列の検査は通す
+        # DB の CHECK を確かめるため、ガード列の検査(ORM とトリガー)は通す
         with service_context(), container.transaction() as tx:
+            tx.execute(text("select set_config('app.in_service', 'on', true)"))
             tx.session.get(tables.Product, pen.id).stock = -1
     assert container.product_service().list()[0].stock == 5
 

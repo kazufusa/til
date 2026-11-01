@@ -3,14 +3,12 @@
 from urllib.parse import urlencode
 
 import pytest
-from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from app2 import main
 from app2.container import AppContainer
 from app2.main import app
 from app2.slack import SlackNotifier
-from shop_core import Container
+from shop_core import Container, DependencyError
 from shop_core.testing import InMemoryState, fake_backend
 
 
@@ -42,12 +40,10 @@ def slack():
 
 @pytest.fixture
 def container():
-    """lifespan は走らせない(TestClient を with で開かない)。コンテナはテストが作って wire する"""
-    c = AppContainer()
-    c.core.override(Container())
-    c.wire(modules=[main])
-    yield c
-    c.unwire()
+    """lifespan は走らせない(TestClient を with で開かない)。コンテナはテストが作って app.state に置く"""
+    c = AppContainer(core=Container())
+    app.state.container = c
+    return c
 
 
 @pytest.fixture
@@ -58,11 +54,12 @@ def client(container, state, slack, monkeypatch):
 
     monkeypatch.setattr("app2.main.resolve_user_id", fake_resolve)
     with (
-        fake_backend(container.core(), state),
-        container.slack_client.override(providers.Object(slack)),
-        # notifier は Singleton なので、テストごとに作り直さないと最初の slack を握ったままになる
-        container.notifier.override(providers.Factory(SlackNotifier, client=slack)),
-        container.verifier.override(providers.Object(StubVerifier(True))),
+        fake_backend(container.core, state),
+        container.override(
+            slack_client=lambda: slack,
+            notifier=lambda: SlackNotifier(client=slack),
+            verifier=lambda: StubVerifier(True),
+        ),
     ):
         yield TestClient(app)
 
@@ -149,9 +146,8 @@ def test_same_command_twice_registers_one_user(client, container, state):
 
 def test_invalid_signature_is_401(container, state, slack):
     with (
-        fake_backend(container.core(), state),
-        container.slack_client.override(providers.Object(slack)),
-        container.verifier.override(providers.Object(StubVerifier(False))),
+        fake_backend(container.core, state),
+        container.override(slack_client=lambda: slack, verifier=lambda: StubVerifier(False)),
     ):
         c = TestClient(app)
         assert c.post("/slack/events", json={"type": "url_verification", "challenge": "x"}).status_code == 401
@@ -183,3 +179,37 @@ def test_post_happens_after_commit(client, container, state, slack):
     slack.chat_postMessage = spy
     _command(client, f"{pid} 1")
     assert seen == [1]
+
+
+class ExplodingPublisher:
+    def publish(self, events):
+        raise ConnectionError("broker down")
+
+
+def test_event_publish_failure_still_accepts_the_committed_order(
+    client, container, state, slack
+):
+    pid = _add_product(container, 5)
+    with container.core.override(event_publisher=lambda: ExplodingPublisher()):
+        r = _command(client, f"{pid} 1")
+    # 注文は確定済みなので、受付を返し、通知も投稿する
+    assert r.status_code == 200
+    assert "受け付けました" in r.json()["text"]
+    assert len(state.orders) == 1
+    assert len(slack.posts) == 1
+
+
+def test_dependency_error_is_ephemeral_200_with_code(client, container, state, slack):
+    pid = _add_product(container, 5)
+
+    class DownOrders:
+        def place(self, *args, **kwargs):
+            raise DependencyError("db_unavailable", "database connection is unavailable")
+
+    with container.core.override(order_service=lambda: DownOrders()):
+        r = _command(client, f"{pid} 1")
+    assert r.status_code == 200
+    assert r.json()["response_type"] == "ephemeral"
+    assert "db_unavailable" in r.json()["text"]
+    assert state.orders == {}
+    assert slack.posts == []

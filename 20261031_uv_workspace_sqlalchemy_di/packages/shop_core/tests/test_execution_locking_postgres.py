@@ -92,12 +92,44 @@ class TestOptimisticLock:
                     a.commit()
                 assert fut.result(timeout=10) is True
 
-    def test_idempotent_complete_bumps_version(self, container, order_id):
+    def test_idempotent_complete_leaves_version_unchanged(self, container, order_id):
         svc = container.execution_service()
         e = svc.start(order_id)
         ids = [new_id()]
         assert svc.complete(e.id, ids).version == 1
-        assert svc.complete(e.id, ids).version == 2
+        # 冪等な再呼び出しは保存しないので、版は上がらない
+        assert svc.complete(e.id, ids).version == 1
+        assert svc.get(e.id).version == 1
+
+    def test_idempotent_fail_leaves_version_unchanged(self, container, order_id):
+        svc = container.execution_service()
+        e = svc.start(order_id)
+        assert svc.fail(e.id, "boom").version == 1
+        assert svc.fail(e.id, "boom").version == 1
+        assert svc.get(e.id).version == 1
+
+    def test_expected_version_mismatch_conflicts_before_any_change(self, container, order_id):
+        svc = container.execution_service()
+        e = svc.start(order_id)
+        with pytest.raises(ConcurrentUpdateError) as ei:
+            svc.complete(e.id, [new_id()], expected_version=5)
+        assert ei.value.code == "execution_concurrent_update"
+        with pytest.raises(ConcurrentUpdateError):
+            svc.fail(e.id, "x", expected_version=5)
+        got = svc.get(e.id)
+        assert (got.status, got.version) == ("running", 0)
+
+    def test_expected_version_match_succeeds(self, container, order_id):
+        svc = container.execution_service()
+        e = svc.start(order_id)
+        done = svc.complete(e.id, [new_id()], expected_version=e.version)
+        assert (done.status, done.version) == ("done", 1)
+
+    def test_expected_version_match_succeeds_for_fail(self, container, order_id):
+        svc = container.execution_service()
+        e = svc.start(order_id)
+        failed = svc.fail(e.id, "boom", expected_version=0)
+        assert (failed.status, failed.version) == ("failed", 1)
 
     def test_tables_alias_insert_defaults_version_to_zero(self, container, order_id):
         eid = new_id()

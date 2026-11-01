@@ -1,12 +1,15 @@
-"""DI コンテナ。アプリチームはこれを 1 つ作って wire するだけ。
+"""DI コンテナ。アプリチームはこれを 1 つ作って、リクエストの処理から呼ぶだけ。
 
     container = Container()
-    container.wire(modules=[__name__])
+    container.user_service().register(...)
+
+仕組みは shop_core.di の provider デコレータだけで、外部の DI ライブラリは使わない。
+singleton は初回に 1 度だけ作り、factory は呼ぶたびに作る。
 
 接続設定は DATABASE_URL と SQL_ECHO を最初の DB アクセスで読む。
 明示的に渡すときは次のようにする:
 
-    Container(settings=providers.Object(Settings(database_url="...")))
+    Container(Settings(database_url="..."))
 
 複数の操作を 1 トランザクションにまとめるときは transaction() を使う:
 
@@ -18,7 +21,12 @@
 Engine を自前で作るとき(接続ごとの資格情報など)は、factory を渡す。
 このとき DATABASE_URL は読まれない:
 
-    Container(engine_factory=providers.Object(lambda: make_engine(url, credentials=get_secret)))
+    Container(engine_factory=lambda: make_engine(url, credentials=get_secret))
+
+ドメインイベントの送り先は event_publisher= で渡す。省くとログに出すだけの
+LoggingEventPublisher になる(ローカル向け。ローカル以外は build_container が明示を求める):
+
+    Container(settings, event_publisher=MyBrokerPublisher())
 
 サービスを使わない直接の SQL や LISTEN/NOTIFY は container.db() を使う。
 全テーブルの mapped class は shop_core.tables にある。
@@ -27,17 +35,22 @@ db にフェイクはないので、Postgres で確かめる:
     with container.db().connect() as conn:
         conn.execute(text("..."))
 
-テストでは fake_backend で uow と transaction をまとめて差し替える:
+テストでは fake_backend で uow と transaction をまとめて差し替える。
+個別に差し替えるときは override に関数を渡す:
 
     with fake_backend(container, state):
+        ...
+    with container.override(event_publisher=lambda: publisher):
         ...
 """
 
 from collections.abc import Callable
 
-from dependency_injector import containers, providers
 from sqlalchemy import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
+from shop_core.di import ContainerBase, provider
+from shop_core.domain.ports import EventPublisher
 from shop_core.infra.artifact_store import S3ImageStore
 from shop_core.infra.database import Database
 from shop_core.infra.events import LoggingEventPublisher
@@ -49,67 +62,106 @@ from shop_core.usecase.transaction import TransactionScope
 from shop_core.usecase.uow import SqlAlchemyUnitOfWork
 
 
-def _build_engine(factory: Callable[[], Engine] | None, default: Callable[[], Engine]) -> Engine:
-    return (factory or default)()
+class Container(ContainerBase):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        engine_factory: Callable[[], Engine] | None = None,
+        event_publisher: EventPublisher | None = None,
+    ) -> None:
+        super().__init__()
+        self._settings = settings
+        # 外から publisher を渡す口。None なら LoggingEventPublisher(ログに出すだけ)
+        self._event_publisher = event_publisher
+        # 外から Engine の作り方を渡す口。None なら settings から作る
+        self._engine_factory = engine_factory
 
+    # 環境変数は最初に使うときに読む。フェイクだけのテストでは読まれない
+    @provider(singleton=True)
+    def settings(self) -> Settings:
+        return self._settings if self._settings is not None else Settings.from_env()
 
-class Container(containers.DeclarativeContainer):
-    # 環境変数は engine を初めて作るときに読む。フェイクだけのテストでは読まれない
-    settings = providers.Singleton(Settings.from_env)
+    # engine_factory を渡したときは Settings の DB 接続設定を使わない
+    @provider(singleton=True)
+    def engine(self) -> Engine:
+        if self._engine_factory is not None:
+            return self._engine_factory()
+        s = self.settings()
+        return make_engine(
+            database_url=s.database_url,
+            echo=s.echo,
+            pool_size=s.pool_size,
+            max_overflow=s.max_overflow,
+            pool_timeout=s.pool_timeout,
+            pool_recycle=s.pool_recycle,
+            pool_pre_ping=s.pool_pre_ping,
+            statement_timeout_ms=s.statement_timeout_ms,
+            lock_timeout_ms=s.lock_timeout_ms,
+        )
 
-    # 既定の Engine。Settings から作る。engine_factory を渡したときは呼ばれない
-    settings_engine = providers.Singleton(
-        make_engine,
-        database_url=settings.provided.database_url,
-        echo=settings.provided.echo,
-        pool_size=settings.provided.pool_size,
-        max_overflow=settings.provided.max_overflow,
-        pool_timeout=settings.provided.pool_timeout,
-        pool_recycle=settings.provided.pool_recycle,
-        pool_pre_ping=settings.provided.pool_pre_ping,
-    )
-
-    # 外から Engine の作り方を渡す口。None なら settings_engine を使う。
-    # Container(engine_factory=providers.Object(fn)) で fn() -> Engine を差し込める
-    engine_factory = providers.Object(None)
-
-    engine = providers.Singleton(
-        _build_engine, factory=engine_factory, default=settings_engine.provider
-    )
-    session_factory = providers.Singleton(make_session_factory, engine=engine)
+    @provider(singleton=True)
+    def session_factory(self) -> sessionmaker[Session]:
+        return make_session_factory(self.engine())
 
     # 生の接続の窓口。fake_backend では差し替わらない
-    db = providers.Singleton(Database, engine=engine)
+    @provider(singleton=True)
+    def db(self) -> Database:
+        return Database(self.engine())
 
     # ドメインイベントの送り先。最も外側の commit が成功したあとに publish される。fake_backend では InMemoryEventPublisher に差し替わる
-    event_publisher = providers.Singleton(LoggingEventPublisher)
+    @provider(singleton=True)
+    def event_publisher(self) -> EventPublisher:
+        if self._event_publisher is not None:
+            return self._event_publisher
+        return LoggingEventPublisher()
 
-    # Factory なのでサービスが呼ぶたびに新しい UoW(=新しい Session)になる
-    uow = providers.Factory(
-        SqlAlchemyUnitOfWork, session_factory=session_factory, publisher=event_publisher
-    )
+    # factory なのでサービスが呼ぶたびに新しい UoW(=新しい Session)になる
+    @provider()
+    def uow(self) -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(
+            session_factory=self.session_factory(), publisher=self.event_publisher()
+        )
 
     # container.transaction() が with に渡せる。スコープの中のサービス呼び出しは同じ Session に参加し、抜けるときに 1 回だけ commit する
-    transaction = providers.Factory(
-        TransactionScope, session_factory=session_factory, publisher=event_publisher
-    )
+    @provider()
+    def transaction(self) -> TransactionScope:
+        return TransactionScope(
+            session_factory=self.session_factory(), publisher=self.event_publisher()
+        )
 
     # async 用。async with container.transaction_async() as tx: で使う。同期のスコープと同じ ContextVar を使う
-    transaction_async = providers.Factory(
-        AsyncTransactionScope, session_factory=session_factory, publisher=event_publisher
-    )
+    @provider()
+    def transaction_async(self) -> AsyncTransactionScope:
+        return AsyncTransactionScope(
+            session_factory=self.session_factory(), publisher=self.event_publisher()
+        )
 
-    user_service = providers.Singleton(UserService, uow=uow.provider)
-    product_service = providers.Singleton(ProductService, uow=uow.provider)
-    order_service = providers.Singleton(OrderService, uow=uow.provider)
+    # サービスには self.uow(束縛メソッド)を渡す。呼ぶたびに override を見るので、
+    # サービスを先に作っていても fake_backend の差し替えが効く
+    @provider(singleton=True)
+    def user_service(self) -> UserService:
+        return UserService(uow=self.uow)
 
-    execution_service = providers.Singleton(ExecutionService, uow=uow.provider)
+    @provider(singleton=True)
+    def product_service(self) -> ProductService:
+        return ProductService(uow=self.uow)
+
+    @provider(singleton=True)
+    def order_service(self) -> OrderService:
+        return OrderService(uow=self.uow)
+
+    @provider(singleton=True)
+    def execution_service(self) -> ExecutionService:
+        return ExecutionService(uow=self.uow)
 
     # オブジェクトストレージ。fake_backend では InMemoryImageStore に差し替わる
-    image_store = providers.Singleton(
-        S3ImageStore,
-        bucket=settings.provided.artifact_bucket,
-        endpoint_url=settings.provided.s3_endpoint_url,
-        public_endpoint_url=settings.provided.s3_public_endpoint_url,
-        region=settings.provided.s3_region,
-    )
+    @provider(singleton=True)
+    def image_store(self) -> S3ImageStore:
+        s = self.settings()
+        return S3ImageStore(
+            bucket=s.artifact_bucket,
+            endpoint_url=s.s3_endpoint_url,
+            public_endpoint_url=s.s3_public_endpoint_url,
+            region=s.s3_region,
+        )

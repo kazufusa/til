@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from dependency_injector import providers
 from sqlalchemy import text
 
 from shop_core import Container, Settings
@@ -20,7 +19,7 @@ _SUMMARY = text("select * from v_order_summary where user_id = :id")
 @pytest.fixture
 def container(pg_url):
     migrate_to_head(pg_url)
-    c = Container(settings=providers.Object(Settings(database_url=pg_url)))
+    c = Container(Settings(database_url=pg_url))
     c.product_service().add("pen", 100, 5)
     yield c
     c.engine().dispose()

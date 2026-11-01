@@ -2,6 +2,7 @@
 
 from shop_core.bootstrap import build_container, check_database, check_image_store, validate_environment
 from shop_core.container import Container
+from shop_core.di import ContainerBase, provider
 from shop_core.infra.artifact_store import S3ImageStore
 from shop_core.infra.events import LoggingEventPublisher
 from shop_core.infra.database import Database, Notification
@@ -29,6 +30,7 @@ from shop_core.domain import (
     DomainError,
     InputError,
     EmptyOrderError,
+    EventPublishError,
     InsufficientStockError,
     InvalidProductError,
     InvalidQuantityError,
@@ -43,7 +45,7 @@ from shop_core.domain import (
 from shop_core.infra.guards import GuardedColumnError
 from shop_core.settings import Settings, SettingsError
 from shop_core.usecase.services import ExecutionService, OrderService, ProductService, UserService
-from shop_core.usecase.async_support import AsyncTransactionScope, run_sync
+from shop_core.usecase.async_support import AsyncTransactionScope, configure_thread_limit, run_sync
 from shop_core.views import OrderSummary, ProductStock
 
 __all__ = [
@@ -70,6 +72,8 @@ __all__ = [
     "S3ImageStore",
     "new_id",
     "Container",
+    "ContainerBase",
+    "provider",
     "build_container",
     "check_database",
     "check_image_store",
@@ -81,6 +85,7 @@ __all__ = [
     "DomainError",
     "InputError",
     "EmptyOrderError",
+    "EventPublishError",
     "InsufficientStockError",
     "InvalidProductError",
     "InvalidQuantityError",
@@ -99,5 +104,6 @@ __all__ = [
     "User",
     "UserNotFoundError",
     "UserService",
+    "configure_thread_limit",
     "run_sync",
 ]

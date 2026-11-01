@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from dependency_injector import providers
 from sqlalchemy import text
 
 from shop_core import Container, InsufficientStockError, Settings

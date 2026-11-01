@@ -1,20 +1,35 @@
-"""app2 のコンテナ。shop_core の Container を入れ子にして、Slack の部品を足す"""
+"""app2 のコンテナ。shop_core の Container を属性として持ち、Slack の部品を足す"""
 
-from dependency_injector import containers, providers
 from slack_sdk import WebClient
 from slack_sdk.signature import SignatureVerifier
 
+from shop_core import Container as CoreContainer
+from shop_core import ContainerBase, provider
+
 from app2.settings import SlackSettings
 from app2.slack import SlackNotifier
-from shop_core import Container as CoreContainer
 
 
-class AppContainer(containers.DeclarativeContainer):
-    # Configuration.from_env(required=True) は import 時に読んで落ちるので、最初の利用まで遅らせる Singleton にする
-    settings = providers.Singleton(SlackSettings.from_env)
+class AppContainer(ContainerBase):
+    def __init__(self, core: CoreContainer, settings: SlackSettings | None = None) -> None:
+        super().__init__()
+        # 入れ子は属性として持つ。core.user_service() のように呼ぶ
+        self.core = core
+        self._settings = settings
 
-    core = providers.Container(CoreContainer)
+    # 環境変数は最初の利用まで読まない
+    @provider(singleton=True)
+    def settings(self) -> SlackSettings:
+        return self._settings if self._settings is not None else SlackSettings.from_env()
 
-    slack_client = providers.Singleton(WebClient, token=settings.provided.bot_token)
-    verifier = providers.Singleton(SignatureVerifier, signing_secret=settings.provided.signing_secret)
-    notifier = providers.Singleton(SlackNotifier, client=slack_client)
+    @provider(singleton=True)
+    def slack_client(self) -> WebClient:
+        return WebClient(token=self.settings().bot_token)
+
+    @provider(singleton=True)
+    def verifier(self) -> SignatureVerifier:
+        return SignatureVerifier(signing_secret=self.settings().signing_secret)
+
+    @provider(singleton=True)
+    def notifier(self) -> SlackNotifier:
+        return SlackNotifier(client=self.slack_client())

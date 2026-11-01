@@ -7,6 +7,7 @@ from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
+from shop_core.domain.errors import DependencyError
 from shop_core.infra.schema import SCHEMA
 from shop_core.settings import SettingsError
 
@@ -26,6 +27,8 @@ def make_engine(
     pool_recycle: int = -1,
     pool_pre_ping: bool = True,
     credentials: Credentials | None = None,
+    statement_timeout_ms: int = 0,
+    lock_timeout_ms: int = 0,
 ) -> Engine:
     """Engine を作る。
 
@@ -39,7 +42,17 @@ def make_engine(
       張り直す接続は新しい資格情報で入る
 
     関数の側で Secrets Manager の応答を短時間キャッシュしておくと、接続のたびに API を呼ばずに済む。
+    関数が例外を投げたときは DependencyError("db_credentials_unavailable") になる。
+
+    statement_timeout_ms と lock_timeout_ms は、0 でなければ接続ごとの設定(Postgres の
+    statement_timeout と lock_timeout)として張る。0 は無制限(サーバーの既定のまま)。
+    超えたときは DependencyError("db_statement_timeout" / "db_lock_timeout") になる。
     """
+    options = f"-c search_path={SCHEMA}"
+    if statement_timeout_ms:
+        options += f" -c statement_timeout={int(statement_timeout_ms)}"
+    if lock_timeout_ms:
+        options += f" -c lock_timeout={int(lock_timeout_ms)}"
     url = make_url(database_url)
     if credentials is not None:
         url = url.set(username=None, password=None)
@@ -51,7 +64,7 @@ def make_engine(
         pool_timeout=pool_timeout,
         pool_recycle=pool_recycle,
         pool_pre_ping=pool_pre_ping,
-        connect_args={"options": f"-c search_path={SCHEMA}"},
+        connect_args={"options": options},
     )
     if credentials is not None:
         _attach_credentials(engine, credentials)
@@ -59,9 +72,17 @@ def make_engine(
 
 
 def _attach_credentials(engine: Engine, credentials: Credentials) -> None:
+    def fetch() -> tuple[str, str]:
+        try:
+            return credentials()
+        except Exception as exc:
+            raise DependencyError(
+                "db_credentials_unavailable", f"could not obtain database credentials: {exc}"
+            ) from exc
+
     @event.listens_for(engine, "do_connect")
     def _fill(dialect, conn_rec, cargs, cparams):
-        user, password = credentials()
+        user, password = fetch()
         cparams["user"], cparams["password"] = user, password
         try:
             return dialect.connect(*cargs, **cparams)
@@ -70,7 +91,7 @@ def _attach_credentials(engine: Engine, credentials: Credentials) -> None:
             if exc.sqlstate != _AUTH_FAILED and "password authentication failed" not in str(exc):
                 raise
         # ローテーションで古くなった資格情報だった。取り直して 1 回だけやり直す
-        user, password = credentials()
+        user, password = fetch()
         cparams["user"], cparams["password"] = user, password
         return dialect.connect(*cargs, **cparams)
 

@@ -4,6 +4,8 @@
 code は機械が読む識別子で、message は人が読む説明。
 """
 
+from collections.abc import Sequence
+
 
 class DomainError(Exception):
     """ドメインのルール違反。アプリ側はこれを捕まえて分類ごとに変換する"""
@@ -121,3 +123,19 @@ class ArtifactStoreError(DependencyError):
     def __init__(self, message: str, *, retryable: bool = True) -> None:
         super().__init__("artifact_store_unavailable", message)
         self.retryable = retryable
+
+
+class EventPublishError(RuntimeError):
+    """コミットは成功したが、ドメインイベントを EventPublisher に渡せなかった。
+
+    DomainError ではない。書き込みはすでにコミットされているので、呼び出し側は書き込みをやり直してはならない
+    (やり直すと二重に書く)。失敗したイベントの束は events にあり、元の例外は __cause__ にある。
+    送り直す手段(ログに残す、アウトボックスに回すなど)を持つかどうかは、呼び出し側の判断になる。
+    """
+
+    def __init__(self, events: Sequence[object]) -> None:
+        super().__init__(
+            f"failed to publish {len(events)} event(s) after commit; "
+            "the write is committed, do not retry it"
+        )
+        self.events = tuple(events)

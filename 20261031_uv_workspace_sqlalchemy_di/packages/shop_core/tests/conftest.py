@@ -4,7 +4,6 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 import pytest
-from dependency_injector import providers
 from sqlalchemy import create_engine, text
 
 from shop_core import Container, Settings
@@ -50,7 +49,7 @@ def pg_url():
 @pytest.fixture
 def pg_container(pg_url):
     """テーブルだけ create_all で作った Container。ビューが要るときは migrate_to_head を使う"""
-    c = Container(settings=providers.Object(Settings(database_url=pg_url)))
+    c = Container(Settings(database_url=pg_url))
     with c.engine().begin() as conn:
         conn.execute(text("create schema if not exists shop"))
     Base.metadata.create_all(c.engine())

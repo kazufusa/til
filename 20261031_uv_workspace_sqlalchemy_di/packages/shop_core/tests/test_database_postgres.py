@@ -5,11 +5,9 @@ import threading
 import time
 
 import pytest
-from dependency_injector import providers
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 
-from shop_core import Container, Notification, Settings
+from shop_core import Container, DependencyError, Notification, Settings
 
 pytestmark = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ, reason="TEST_DATABASE_URL not set"
@@ -85,7 +83,9 @@ def test_for_update_in_transaction_locks_row(container):
         t.start()
         t.join(5)
     assert len(errors) == 1
-    assert isinstance(errors[0], OperationalError)
+    # NOWAIT の失敗(55P03)は DependencyError になる
+    assert isinstance(errors[0], DependencyError)
+    assert errors[0].code == "db_lock_timeout"
 
     # スコープを抜ければロックは外れる
     with container.db().connect() as conn:
@@ -93,16 +93,12 @@ def test_for_update_in_transaction_locks_row(container):
 
 
 def test_pool_settings_reach_the_pool():
-    from sqlalchemy.exc import TimeoutError as PoolTimeout
-
     c = Container(
-        settings=providers.Object(
-            Settings(
-                database_url=os.environ["TEST_DATABASE_URL"],
-                pool_size=2,
-                max_overflow=0,
-                pool_timeout=0.5,
-            )
+        Settings(
+            database_url=os.environ["TEST_DATABASE_URL"],
+            pool_size=2,
+            max_overflow=0,
+            pool_timeout=0.5,
         )
     )
     try:
@@ -110,9 +106,11 @@ def test_pool_settings_reach_the_pool():
         db = c.db()
         with db.autocommit(), db.autocommit():
             start = time.monotonic()
-            with pytest.raises(PoolTimeout):
+            # プールの待ちの失敗は DependencyError になる
+            with pytest.raises(DependencyError) as ei:
                 with db.connect():
                     pass
+            assert ei.value.code == "db_pool_exhausted"
             assert time.monotonic() - start < 3
     finally:
         c.engine().dispose()

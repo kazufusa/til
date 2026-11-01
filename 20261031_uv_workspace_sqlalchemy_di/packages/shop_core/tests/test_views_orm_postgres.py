@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from dependency_injector import providers
 from sqlalchemy import delete, select, update
 
 from shop_core import Container, OrderSummary, ProductStock, Settings
@@ -18,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def container(pg_url):
     migrate_to_head(pg_url)
-    c = Container(settings=providers.Object(Settings(database_url=pg_url)))
+    c = Container(Settings(database_url=pg_url))
     yield c
     c.engine().dispose()
 

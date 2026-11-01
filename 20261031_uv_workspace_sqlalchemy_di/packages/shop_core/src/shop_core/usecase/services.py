@@ -11,6 +11,7 @@ from collections.abc import Callable
 from uuid import UUID
 
 from shop_core.domain.errors import (
+    ConcurrentUpdateError,
     ExecutionNotFoundError,
     OrderNotFoundError,
     EmptyOrderError,
@@ -122,6 +123,14 @@ class ExecutionService:
 
     エージェントは container.image_store().put(execution, image_id, ...) で
     画像を保存してから complete を呼ぶ。
+
+    楽観ロック: Execution は版(version)を持ち、保存のたびに 1 つ上がる。
+    読んだ版のまま保存できなければ ConcurrentUpdateError になる(別のトランザクションが先に更新した)。
+    complete と fail は expected_version を受け取れる。呼び出し側が先に get で読んだ版を渡すと、
+    その間に更新されていた場合に、何も変えずに ConcurrentUpdateError を返す。
+
+    ライブラリは ConcurrentUpdateError を再試行しない。読み直して判断し直すのは呼び出し側の仕事で、
+    状態が変わっていることがあるため、同じ入力をそのままやり直してよいとは限らない。
     """
 
     def __init__(self, uow: UowFactory) -> None:
@@ -136,43 +145,64 @@ class ExecutionService:
             uow.commit()
             return execution
 
-    def complete(self, execution_id: UUID, image_ids: list[UUID]) -> Execution:
-        """同じ image_ids での再呼び出しは何も変えずに現在の状態を返す"""
+    def complete(
+        self, execution_id: UUID, image_ids: list[UUID], *, expected_version: int | None = None
+    ) -> Execution:
+        """完了させる。expected_version を渡すと、版が違えば何も変えずに ConcurrentUpdateError。
+
+        すでに同じ image_ids で完了していれば、何も変えない(冪等)。
+        保存もイベントもなく、版も上がらず、現在の状態をそのまま返す。
+        """
         with self._uow() as uow:
             execution = self._load(uow, execution_id)
+            self._check_version(execution, expected_version)
             before = (execution.status, [i.id for i in execution.images])
             execution.complete([Image(id=i) for i in image_ids])
+            if before == (execution.status, [i.id for i in execution.images]):
+                return execution
             uow.executions.store(execution)
-            # 冪等な再呼び出し(状態が変わらなかったとき)はイベントを足さない
-            if before != (execution.status, [i.id for i in execution.images]):
-                uow.events.add(
-                    ExecutionCompleted(
-                        execution_id=execution.id,
-                        order_id=execution.order_id,
-                        image_ids=tuple(i.id for i in execution.images),
-                    )
+            uow.events.add(
+                ExecutionCompleted(
+                    execution_id=execution.id,
+                    order_id=execution.order_id,
+                    image_ids=tuple(i.id for i in execution.images),
                 )
+            )
             uow.commit()
             return execution
 
-    def fail(self, execution_id: UUID, reason: str) -> Execution:
+    def fail(
+        self, execution_id: UUID, reason: str, *, expected_version: int | None = None
+    ) -> Execution:
+        """失敗させる。expected_version を渡すと、版が違えば何も変えずに ConcurrentUpdateError。
+
+        すでに同じ reason で失敗していれば、何も変えない(冪等)。
+        保存もイベントもなく、版も上がらず、現在の状態をそのまま返す。
+        """
         with self._uow() as uow:
             execution = self._load(uow, execution_id)
+            self._check_version(execution, expected_version)
             before = execution.status
             execution.fail(reason)
+            if before == execution.status:
+                return execution
             uow.executions.store(execution)
-            if before != execution.status:
-                uow.events.add(
-                    ExecutionFailed(
-                        execution_id=execution.id, order_id=execution.order_id, reason=reason
-                    )
+            uow.events.add(
+                ExecutionFailed(
+                    execution_id=execution.id, order_id=execution.order_id, reason=reason
                 )
+            )
             uow.commit()
             return execution
 
     def get(self, execution_id: UUID) -> Execution:
         with self._uow() as uow:
             return self._load(uow, execution_id)
+
+    @staticmethod
+    def _check_version(execution: Execution, expected_version: int | None) -> None:
+        if expected_version is not None and expected_version != execution.version:
+            raise ConcurrentUpdateError("execution", execution.id)
 
     @staticmethod
     def _load(uow: UnitOfWork, execution_id: UUID) -> Execution:

@@ -35,6 +35,10 @@ class Settings:
     pool_timeout: float = 30.0
     pool_recycle: int = -1  # 秒。-1 は再利用の期限なし
     pool_pre_ping: bool = True
+    # 接続ごとの Postgres の上限(ミリ秒)。0 は無制限。超えると DependencyError
+    # (db_statement_timeout / db_lock_timeout)
+    statement_timeout_ms: int = 0
+    lock_timeout_ms: int = 0
     # オブジェクトストレージ(S3)。バケット名は shop-{env}-artifacts が既定
     env: str = "local"
     artifact_bucket: str = "shop-local-artifacts"
@@ -60,6 +64,10 @@ class Settings:
             pool_timeout=_number("DB_POOL_TIMEOUT", float, d["pool_timeout"].default),
             pool_recycle=_number("DB_POOL_RECYCLE", int, d["pool_recycle"].default),
             pool_pre_ping=_flag("DB_POOL_PRE_PING", d["pool_pre_ping"].default),
+            statement_timeout_ms=_number(
+                "DB_STATEMENT_TIMEOUT_MS", int, d["statement_timeout_ms"].default
+            ),
+            lock_timeout_ms=_number("DB_LOCK_TIMEOUT_MS", int, d["lock_timeout_ms"].default),
             env=env,
             artifact_bucket=os.environ.get("ARTIFACT_BUCKET", "").strip() or f"shop-{env}-artifacts",
             s3_endpoint_url=os.environ.get("S3_ENDPOINT_URL", "").strip() or None,

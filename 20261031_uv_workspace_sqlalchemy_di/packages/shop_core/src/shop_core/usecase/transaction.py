@@ -16,7 +16,7 @@ SAVEPOINT まで戻す。入れ子のスコープも同じ。
 入れ子が成功すれば親のリストに足し、例外なら捨てる。サービス(UoW)は commit() で
 いちばん上のリストに足す。最も外側のスコープは commit が成功したあとにだけ、
 1 つ目のリストを EventPublisher に渡す。publish はトランザクションの外で呼ばれ、
-publisher の例外は呼び出し元に伝わる。書き込みはすでにコミットされているので、
+publisher の例外は EventPublishError に包まれて呼び出し元に伝わる。書き込みはすでにコミットされているので、
 送れなかったイベントは失われる(アウトボックスがない限り、送る側は at-most-once)。
 """
 
@@ -32,9 +32,9 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import Executable
 
-from shop_core.domain.events import DomainEvent
+from shop_core.domain.events import DomainEvent, publish_events
 from shop_core.domain.ports import EventPublisher
-from shop_core.infra.constraints import translated_errors
+from shop_core.infra.constraints import translate_db_error, translated_errors
 
 _ambient: ContextVar[Session | None] = ContextVar("shop_core_ambient_session", default=None)
 
@@ -105,7 +105,8 @@ class TransactionScope:
         outer = _ambient.get()
         if outer is not None:
             # 入れ子は SAVEPOINT で囲む。外側の Session の commit と close は外側がやる
-            nested = outer.begin_nested()
+            with translated_errors():
+                nested = outer.begin_nested()
             begin_staging(outer)
             keep = False
             try:
@@ -129,7 +130,7 @@ class TransactionScope:
             with translated_errors():
                 session.commit()
             # commit が成功したあとにだけ、トランザクションの外で送る
-            self._publisher.publish(end_staging(session, keep=True))
+            publish_events(self._publisher, end_staging(session, keep=True))
         except BaseException as exc:
             _quiet(session.rollback)
             _reraise_translated(exc)
@@ -149,7 +150,7 @@ def _quiet(action) -> None:
 
 def _reraise_translated(exc: BaseException) -> None:
     """DB 例外は翻訳できればドメインのエラーにして、できなければそのまま投げ直す"""
-    if isinstance(exc, DBAPIError):
-        with translated_errors():
-            raise exc
+    err = translate_db_error(exc)
+    if err is not None:
+        raise err from exc
     raise exc

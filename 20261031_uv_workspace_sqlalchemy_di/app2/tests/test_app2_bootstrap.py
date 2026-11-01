@@ -10,7 +10,7 @@ def test_build_app_container_resolves_core_services(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
     container = build_app_container(Settings(database_url="postgresql+psycopg://u:p@localhost:5432/shop"))
-    core = container.core()
+    core = container.core
     with fake_backend(core, InMemoryState()):
         assert container.core.user_service().register("a@example.com", "A").id == 1
     assert core.settings().database_url.endswith("/shop")

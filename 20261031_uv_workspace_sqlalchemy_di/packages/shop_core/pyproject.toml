@@ -7,7 +7,6 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
-    "dependency-injector>=4.46",
     "uuid6>=2025.0.1",
     "boto3>=1.43.118",
     "anyio>=4.15.1",
