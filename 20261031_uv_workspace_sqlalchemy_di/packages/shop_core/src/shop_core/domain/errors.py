@@ -26,3 +26,19 @@ class InsufficientStockError(DomainError):
         self.product_id = product_id
         self.requested = requested
         self.available = available
+
+
+class InvalidQuantityError(DomainError):
+    def __init__(self, product_id: int, quantity: int) -> None:
+        super().__init__(f"product {product_id}: quantity must be positive, got {quantity}")
+        self.product_id = product_id
+        self.quantity = quantity
+
+
+class EmptyOrderError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("order must have at least one line")
+
+
+class InvalidProductError(DomainError):
+    pass

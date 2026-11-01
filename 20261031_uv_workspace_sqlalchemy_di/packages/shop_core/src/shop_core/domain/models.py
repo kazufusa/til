@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from shop_core.domain.errors import InsufficientStockError
+from shop_core.domain.errors import InsufficientStockError, InvalidQuantityError
 
 
 @dataclass
@@ -21,6 +21,8 @@ class Product:
     stock: int
 
     def reserve(self, quantity: int) -> None:
+        if quantity <= 0:
+            raise InvalidQuantityError(self.id or 0, quantity)
         if quantity > self.stock:
             raise InsufficientStockError(self.id or 0, quantity, self.stock)
         self.stock -= quantity

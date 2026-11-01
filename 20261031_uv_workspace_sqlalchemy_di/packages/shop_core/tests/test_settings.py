@@ -36,3 +36,36 @@ def test_engine_without_env_raises(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(SettingsError):
         Container().engine()
+
+
+_POOL_ENV = ("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_TIMEOUT", "DB_POOL_RECYCLE", "DB_POOL_PRE_PING")
+
+
+def test_pool_defaults_when_env_unset(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    for name in _POOL_ENV:
+        monkeypatch.delenv(name, raising=False)
+    s = Settings.from_env()
+    assert (s.pool_size, s.max_overflow, s.pool_timeout, s.pool_recycle, s.pool_pre_ping) == (
+        5, 10, 30.0, -1, True
+    )
+
+
+def test_pool_env_is_parsed(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("DB_POOL_SIZE", "2")
+    monkeypatch.setenv("DB_MAX_OVERFLOW", "0")
+    monkeypatch.setenv("DB_POOL_TIMEOUT", "1.5")
+    monkeypatch.setenv("DB_POOL_RECYCLE", "1800")
+    monkeypatch.setenv("DB_POOL_PRE_PING", "false")
+    s = Settings.from_env()
+    assert (s.pool_size, s.max_overflow, s.pool_timeout, s.pool_recycle, s.pool_pre_ping) == (
+        2, 0, 1.5, 1800, False
+    )
+
+
+def test_invalid_pool_size_names_variable(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("DB_POOL_SIZE", "abc")
+    with pytest.raises(SettingsError, match="DB_POOL_SIZE"):
+        Settings.from_env()

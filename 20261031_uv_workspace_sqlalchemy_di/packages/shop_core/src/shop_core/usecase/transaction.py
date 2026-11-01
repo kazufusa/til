@@ -8,7 +8,8 @@
 
 スコープの外でサービスを呼んだときは、今まで通りメソッドごとに閉じる。
 スコープの中で開いた UnitOfWork は、スコープの Session を使い、
-commit() は flush() になる。
+SAVEPOINT を張る。commit() は SAVEPOINT の解放になり、例外や commit() 忘れなら
+SAVEPOINT まで戻す。入れ子のスコープも同じ。
 """
 
 from __future__ import annotations
@@ -31,7 +32,11 @@ def current_session() -> Session | None:
 
 
 class Transaction:
-    """スコープの中で直接 DB を触るための窓口。読み取り(CQ の Q 側)にも使う"""
+    """スコープの中で直接 DB を触るための窓口。ORM(shop_core.tables)や生 SQL の読み書きに使う。
+
+    行ロックは tx.session.execute(select(...).with_for_update()) で取る。
+    ロックはスコープを抜けるまで続く。
+    """
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -60,8 +65,15 @@ class TransactionScope:
     def _scope(self) -> Iterator[Transaction]:
         outer = _ambient.get()
         if outer is not None:
-            # 入れ子は外側に参加するだけ。commit も rollback も外側がやる
-            yield Transaction(outer)
+            # 入れ子は SAVEPOINT で囲む。外側の Session の commit と close は外側がやる
+            nested = outer.begin_nested()
+            try:
+                yield Transaction(outer)
+            except BaseException:
+                if nested.is_active:
+                    nested.rollback()
+                raise
+            nested.commit()
             return
         session = self._session_factory()
         token = _ambient.set(session)

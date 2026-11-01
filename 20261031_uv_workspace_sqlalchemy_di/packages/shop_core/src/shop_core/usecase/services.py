@@ -6,7 +6,12 @@
 
 from collections.abc import Callable
 
-from shop_core.domain.errors import ProductNotFoundError, UserNotFoundError
+from shop_core.domain.errors import (
+    EmptyOrderError,
+    InvalidProductError,
+    ProductNotFoundError,
+    UserNotFoundError,
+)
 from shop_core.domain.models import Order, OrderLine, Product, User
 from shop_core.usecase.uow import UnitOfWork
 
@@ -43,6 +48,10 @@ class ProductService:
         self._uow = uow
 
     def add(self, name: str, price: int, stock: int) -> Product:
+        if price < 0:
+            raise InvalidProductError(f"price must not be negative, got {price}")
+        if stock < 0:
+            raise InvalidProductError(f"stock must not be negative, got {stock}")
         with self._uow() as uow:
             product = uow.products.store(Product(id=None, name=name, price=price, stock=stock))
             uow.commit()
@@ -62,16 +71,25 @@ class OrderService:
         with self._uow() as uow:
             if uow.users.resolve_by_id(user_id) is None:
                 raise UserNotFoundError(user_id)
-            lines: list[OrderLine] = []
-            for product_id, quantity in items:
+            if not items:
+                raise EmptyOrderError()
+            # 同時注文でデッドロックしないよう、行ロックは商品 id の昇順で取る。
+            # order.lines は呼び出し側の順序のまま残す
+            reserved: dict[int, Product] = {}
+            for product_id in sorted({pid for pid, _ in items}):
                 product = uow.products.resolve_by_id_for_update(product_id)
                 if product is None:
                     raise ProductNotFoundError(product_id)
+                reserved[product_id] = product
+            lines: list[OrderLine] = []
+            for product_id, quantity in items:
+                product = reserved[product_id]
                 product.reserve(quantity)
-                uow.products.store(product)
                 lines.append(
                     OrderLine(product_id=product_id, quantity=quantity, unit_price=product.price)
                 )
+            for product in reserved.values():
+                uow.products.store(product)
             order = uow.orders.store(Order(id=None, user_id=user_id, lines=lines))
             uow.commit()
             return order

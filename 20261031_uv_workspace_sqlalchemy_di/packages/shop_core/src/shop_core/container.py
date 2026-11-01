@@ -15,6 +15,13 @@
         tx.execute(text("..."))
         order_service.place(...)
 
+サービスを使わない直接の SQL や LISTEN/NOTIFY は container.db() を使う。
+全テーブルの mapped class は shop_core.tables にある。
+db にフェイクはないので、Postgres で確かめる:
+
+    with container.db().connect() as conn:
+        conn.execute(text("..."))
+
 テストでは fake_backend で uow と transaction をまとめて差し替える:
 
     with fake_backend(container, state):
@@ -23,6 +30,7 @@
 
 from dependency_injector import containers, providers
 
+from shop_core.infra.database import Database
 from shop_core.infra.db import make_engine, make_session_factory
 from shop_core.settings import Settings
 from shop_core.usecase.services import OrderService, ProductService, UserService
@@ -38,8 +46,16 @@ class Container(containers.DeclarativeContainer):
         make_engine,
         database_url=settings.provided.database_url,
         echo=settings.provided.echo,
+        pool_size=settings.provided.pool_size,
+        max_overflow=settings.provided.max_overflow,
+        pool_timeout=settings.provided.pool_timeout,
+        pool_recycle=settings.provided.pool_recycle,
+        pool_pre_ping=settings.provided.pool_pre_ping,
     )
     session_factory = providers.Singleton(make_session_factory, engine=engine)
+
+    # 生の接続の窓口。fake_backend では差し替わらない
+    db = providers.Singleton(Database, engine=engine)
 
     # Factory なのでサービスが呼ぶたびに新しい UoW(=新しい Session)になる
     uow = providers.Factory(SqlAlchemyUnitOfWork, session_factory=session_factory)

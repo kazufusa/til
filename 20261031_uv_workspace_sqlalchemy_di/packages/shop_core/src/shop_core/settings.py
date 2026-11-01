@@ -10,10 +10,31 @@ class SettingsError(RuntimeError):
     """必須の設定が足りないときのエラー"""
 
 
+def _number(name, kind, default):
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return kind(raw)
+    except ValueError:
+        raise SettingsError(f"{name} must be a number: {raw!r}") from None
+
+
+def _flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    return default if not raw else raw in _TRUE
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
     echo: bool = False
+    # 接続プール。既定値は SQLAlchemy のもの
+    pool_size: int = 5
+    max_overflow: int = 10
+    pool_timeout: float = 30.0
+    pool_recycle: int = -1  # 秒。-1 は再利用の期限なし
+    pool_pre_ping: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -21,4 +42,13 @@ class Settings:
         if not database_url:
             raise SettingsError("DATABASE_URL is not set")
         echo = os.environ.get("SQL_ECHO", "").strip().lower() in _TRUE
-        return cls(database_url=database_url, echo=echo)
+        d = cls.__dataclass_fields__
+        return cls(
+            database_url=database_url,
+            echo=echo,
+            pool_size=_number("DB_POOL_SIZE", int, d["pool_size"].default),
+            max_overflow=_number("DB_MAX_OVERFLOW", int, d["max_overflow"].default),
+            pool_timeout=_number("DB_POOL_TIMEOUT", float, d["pool_timeout"].default),
+            pool_recycle=_number("DB_POOL_RECYCLE", int, d["pool_recycle"].default),
+            pool_pre_ping=_flag("DB_POOL_PRE_PING", d["pool_pre_ping"].default),
+        )

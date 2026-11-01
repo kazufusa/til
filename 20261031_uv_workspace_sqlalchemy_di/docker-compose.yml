@@ -14,8 +14,14 @@ services:
       interval: 2s
       retries: 15
 
-  # マイグレーションは基盤(shop_core)の持ち物。app より先に 1 回だけ走る
+  # マイグレーションは基盤(shop_core)の持ち物で、本番では CI/CD が適用する。
+  # これはパイプラインのローカル版で、`docker compose up` では起動しない。
+  # profile のサービスは `docker compose build` では作り直されないので、マイグレーションを足したら先に
+  #   docker compose --profile migrate build
+  #   docker compose run --rm migrate
+  # Postgres のテストは shop スキーマを消すので、開発用 DB で走らせたら当て直す
   migrate:
+    profiles: ["migrate"]
     build:
       context: .
       dockerfile: packages/shop_core/Dockerfile
@@ -31,15 +37,18 @@ services:
     environment: *env
     ports: ["8001:8000"]
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
 
   app2:
     build:
       context: .
       dockerfile: app2/Dockerfile
-    environment: *env
+    environment:
+      <<: *env
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-xoxb-dummy}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-dummy}
     ports: ["8002:8000"]
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy

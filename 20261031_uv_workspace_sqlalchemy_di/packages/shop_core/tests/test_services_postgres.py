@@ -3,11 +3,9 @@
 import os
 
 import pytest
-from dependency_injector import providers
 from sqlalchemy import text
 
 from shop_core import Container, InsufficientStockError, Settings
-from shop_core.infra.orm import Base
 
 pytestmark = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ, reason="TEST_DATABASE_URL not set"
@@ -15,15 +13,8 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def container():
-    c = Container(
-        settings=providers.Object(Settings(database_url=os.environ["TEST_DATABASE_URL"]))
-    )
-    engine = c.engine()
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    yield c
-    engine.dispose()
+def container(pg_container):
+    return pg_container
 
 
 def test_place_order_roundtrip(container):
@@ -44,3 +35,29 @@ def test_failed_order_leaves_no_rows(container):
     with container.engine().connect() as conn:
         assert conn.scalar(text("select count(*) from orders")) == 0
         assert conn.scalar(text("select stock from products")) == 1
+
+
+def test_opposite_order_lines_do_not_deadlock(container):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    user = container.user_service().register("a@example.com", "A")
+    a = container.product_service().add("a", 10, 100)
+    b = container.product_service().add("b", 10, 100)
+    rounds = 5
+    barrier = Barrier(2)
+
+    def run(items):
+        for _ in range(rounds):
+            barrier.wait()
+            container.order_service().place(user.id, items)
+
+    with ThreadPoolExecutor(2) as pool:
+        futures = [
+            pool.submit(run, [(a.id, 1), (b.id, 1)]),
+            pool.submit(run, [(b.id, 1), (a.id, 1)]),
+        ]
+        for f in futures:
+            f.result()  # OperationalError(deadlock detected) があればここで上がる
+    assert {p.name: p.stock for p in container.product_service().list()} == {"a": 90, "b": 90}
+    assert len(container.order_service().list_by_user(user.id)) == rounds * 2

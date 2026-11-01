@@ -6,6 +6,7 @@ dependencies = [
     "shop-core",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "slack-sdk",
 ]
 
 [tool.uv.sources]

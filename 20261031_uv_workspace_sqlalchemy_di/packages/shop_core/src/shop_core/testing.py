@@ -7,6 +7,9 @@ transaction() も含めて差し替えるなら:
 
     with fake_backend(container, state):
         ...
+
+フェイクの tx は state だけを持つ。tx.session や tx.execute を使う処理は、
+関数に切り出して monkeypatch で差し替える。container.db() はフェイクにならない。
 """
 
 from __future__ import annotations
@@ -35,6 +38,18 @@ class InMemoryState:
     def next_id(self) -> int:
         self._seq += 1
         return self._seq
+
+
+def _snapshot(work: InMemoryState) -> InMemoryState:
+    return copy.deepcopy(work)
+
+
+def _restore(work: InMemoryState, snap: InMemoryState) -> None:
+    # 外側のスコープが同じ参照を持っているので、置き換えずに中身を入れ替える
+    work.users = snap.users
+    work.products = snap.products
+    work.orders = snap.orders
+    work._seq = snap._seq
 
 
 _ambient_work: ContextVar[InMemoryState | None] = ContextVar("shop_core_fake_work", default=None)
@@ -115,6 +130,8 @@ class FakeUnitOfWork:
         self.products = _Products(self._work)
         self.orders = _Orders(self._work)
         self.committed = False
+        # 参加したときは入った時点の状態を控えておき、例外や commit() 忘れなら戻す
+        self._snap = _snapshot(self._work) if self._joined else None
         return self
 
     def __exit__(
@@ -123,10 +140,12 @@ class FakeUnitOfWork:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        pass
+        if self._joined and (exc_type is not None or not self.committed):
+            self._restore_snapshot()
 
     def commit(self) -> None:
         if self._joined:
+            self.committed = True
             return
         self._shared.users = self._work.users
         self._shared.products = self._work.products
@@ -136,17 +155,24 @@ class FakeUnitOfWork:
 
     def rollback(self) -> None:
         if self._joined:
+            self._restore_snapshot()
             return
         self._work = copy.deepcopy(self._shared)
 
+    def _restore_snapshot(self) -> None:
+        if self._snap is not None:
+            _restore(self._work, self._snap)
+
 
 class FakeTransaction:
+    """session も execute も持たない。state だけを見せる"""
+
     def __init__(self, state: InMemoryState) -> None:
         self.state = state
 
 
 class FakeTransactionScope:
-    """本物の TransactionScope と同じく、入れ子は外側に参加し、例外なら全部捨てる"""
+    """本物の TransactionScope と同じく、入れ子は外側に参加し、例外なら入れ子の分だけ捨てる"""
 
     def __init__(self, state: InMemoryState) -> None:
         self._shared = state
@@ -162,7 +188,12 @@ class FakeTransactionScope:
     def _scope(self) -> Iterator[FakeTransaction]:
         outer = _ambient_work.get()
         if outer is not None:
-            yield FakeTransaction(outer)
+            snap = _snapshot(outer)
+            try:
+                yield FakeTransaction(outer)
+            except BaseException:
+                _restore(outer, snap)
+                raise
             return
         work = copy.deepcopy(self._shared)
         token = _ambient_work.set(work)
