@@ -232,11 +232,11 @@ UoW は、1 トランザクションの間だけ生きる作業単位です。
 
 ```python
 with self._uow() as uow:
-    ex = uow.executions.resolve_by_id(execution_id)   # 取る
-    ex.complete(images)                               # 集約のメソッドで変える
-    uow.executions.store(ex)                          # 保存する。版の検査はここで起きる
-    uow.events.add(Completed(...))                    # 知らせを積む
-    uow.commit()                                      # 確定する。知らせはこの後に出る
+    item = uow.items.resolve_by_id(item_id)   # 取る
+    item.apply(command)                       # 集約のメソッドで変える
+    uow.items.store(item)                     # 保存する。版の検査はここで起きる
+    uow.events.add(ItemChanged(...))          # 知らせを積む
+    uow.commit()                              # 確定する。知らせはこの後に出る
 ```
 
 集約は UoW の外では写しです。変えても、`store` を通さなければ保存されません。
@@ -251,6 +251,7 @@ UoW はサービスの中だけで使います。アプリは UoW もリポジ�
 
 ### トランザクション
 
+トランザクション境界は UoW です。
 ユースケースサービスの 1 メソッドが 1 トランザクションです。
 複数の操作を 1 つにまとめるには `transaction()` を使います。
 スコープの中では、サービス呼び出しと入れ子のスコープごとに SAVEPOINT を張ります。
@@ -278,6 +279,7 @@ async のプロセスは、スレッドの上限をプールの接続数に合�
 ロックの方式は集約ごとに選びます。
 読んで直後に書く操作は行ロック(`resolve_by_id_for_update`)です。
 読んで、考えて、後から書く操作は版の楽観ロックです。
+版は集約の属性として表します。写しがどの時点の状態かを示す値だからです。
 この操作は、読んだときの版をサービスに渡します。
 版が合わなければ、サービスは何も変えずに `ConcurrentUpdateError` を投げます。
 版を持つ集約は、既存の行を保存するたびに版を 1 進めます。変更が無くても進めます。
